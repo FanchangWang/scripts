@@ -51,9 +51,11 @@
         const month = (dateTime.getMonth() + 1).toString().padStart(2, "0");
         const day = dateTime.getDate().toString().padStart(2, "0");
 
-        return year === now.getFullYear()
-            ? `${month}-${day} ${timeStr}`
-            : `${year}-${month}-${day} ${timeStr}`;
+        if (year === now.getFullYear()) {
+            return `${month}-${day} ${timeStr}`;
+        } else {
+            return `${year}-${month}-${day} ${timeStr}`;
+        }
     }
 
     /**
