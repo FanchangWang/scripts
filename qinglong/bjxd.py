@@ -216,7 +216,7 @@ class BeiJingHyundai:
     # 签到相关
     def execute_sign_task(self) -> None:
         """执行签到任务"""
-        max_attempts = 10  # 最大尝试次数
+        max_attempts = 5  # 最大尝试次数
         best_score = 0
         best_params = None
 
