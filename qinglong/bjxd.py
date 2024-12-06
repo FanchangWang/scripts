@@ -376,7 +376,10 @@ class BeiJingHyundai:
             )
             response.raise_for_status()
 
-            answer = response.json()["choices"][0]["message"]["content"]
+            response_json = response.json()
+            print(f"腾讯混元AI response ——> {response_json}")
+
+            answer = response_json["choices"][0]["message"]["content"]
             if answer in ["A", "B", "C", "D"]:
                 return answer
 
