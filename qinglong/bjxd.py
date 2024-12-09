@@ -476,13 +476,19 @@ class BeiJingHyundai:
 
     def run(self) -> None:
         """运行主程序"""
-        tokens = set()  # 使用 set 来自动去重
+        # 使用列表保持顺序，使用集合实现去重
+        tokens = []
+        tokens_set = set()
 
         # 方式1: 从BJXD环境变量获取(逗号分隔的多个token)
         token_str = os.getenv("BJXD")
         if token_str:
-            # 过滤空值并添加到集合中
-            tokens.update(token.strip() for token in token_str.split(",") if token.strip())
+            # 过滤空值并保持顺序添加
+            for token in token_str.split(","):
+                token = token.strip()
+                if token and token not in tokens_set:
+                    tokens.append(token)
+                    tokens_set.add(token)
 
         # 方式2: 从BJXD1/BJXD2/BJXD3等环境变量获取
         i = 1
@@ -493,13 +499,11 @@ class BeiJingHyundai:
                 empty_count += 1
             else:
                 token = token.strip()
-                if token:  # 确保 token 不是空字符串
+                if token and token not in tokens_set:  # 确保token不是空字符串且未重复
                     empty_count = 0  # 重置连续空值计数
-                    tokens.add(token)
+                    tokens.append(token)
+                    tokens_set.add(token)
             i += 1
-
-        # 转换回列表
-        tokens = list(tokens)
 
         if not tokens:
             self.log(
