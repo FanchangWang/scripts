@@ -1,0 +1,22 @@
+### 提交文章积分
+# @name submitArticleScore
+POST {{$dotenv BASE_URL}}/v1/app/score
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+{
+    "action": 12,
+    "ctu_token": ""
+}
+
+# response 成功
+# {
+#   "code": 0,
+#   "data": {
+#     "is_stop": false,
+#     "score": 5
+#   },
+#   "msg": "",
+#   "title": ""
+# }

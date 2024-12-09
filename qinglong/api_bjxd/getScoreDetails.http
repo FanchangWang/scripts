@@ -1,0 +1,73 @@
+### 获取积分明细
+# @name getScoreDetails
+GET {{$dotenv BASE_URL}}/v1/app/user/my_score
+    ?page_no=1
+    &page_size=5
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+# response
+# {
+#   "code": 0,
+#   "data": {
+#     "current_month": 0,
+#     "half_year": 0,
+#     "points_record": {
+#       "list": [
+#         {
+#           "hid": "",
+#           "created_at": "2024-12-09 00:17:50",
+#           "updated_at": "2024-12-09 00:17:50",
+#           "user_hid": "a6688ec1a9ee429fa7b68d50e0c92b1f",
+#           "is_flag": 0,
+#           "desc": "日常答题转发",
+#           "score_str": "+2"
+#         },
+#         {
+#           "hid": "",
+#           "created_at": "2024-12-09 00:15:53",
+#           "updated_at": "2024-12-09 00:15:53",
+#           "user_hid": "a6688ec1a9ee429fa7b68d50e0c92b1f",
+#           "is_flag": 0,
+#           "desc": "浏览文章",
+#           "score_str": "+5"
+#         },
+#         {
+#           "hid": "",
+#           "created_at": "2024-12-09 00:14:53",
+#           "updated_at": "2024-12-09 00:14:53",
+#           "user_hid": "a6688ec1a9ee429fa7b68d50e0c92b1f",
+#           "is_flag": 0,
+#           "desc": "日常签到",
+#           "score_str": "+3"
+#         },
+#         {
+#           "hid": "",
+#           "created_at": "2024-12-08 00:17:58",
+#           "updated_at": "2024-12-08 00:17:58",
+#           "user_hid": "a6688ec1a9ee429fa7b68d50e0c92b1f",
+#           "is_flag": 0,
+#           "desc": "每日答题",
+#           "score_str": "+3"
+#         },
+#         {
+#           "hid": "",
+#           "created_at": "2024-12-08 00:17:58",
+#           "updated_at": "2024-12-08 00:17:58",
+#           "user_hid": "a6688ec1a9ee429fa7b68d50e0c92b1f",
+#           "is_flag": 0,
+#           "desc": "日常答题转发",
+#           "score_str": "+2"
+#         }
+#       ],
+#       "total_count": 50,
+#       "page_no": 1,
+#       "page_size": 5
+#     },
+#     "score": 247,
+#     "user_hid": "a6688ec1a9ee429fa7b68d50e0c92b1f"
+#   },
+#   "msg": "",
+#   "title": ""
+# }

@@ -1,0 +1,54 @@
+### 获取问题信息
+# @name getQuestionInfo
+GET {{$dotenv BASE_URL}}/v1/app/special/daily/ask_info?date={{$datetime 'YYYYMMDD'}} HTTP/1.1
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+### 提交问题答案
+# @name submitQuestionAnswer
+# @prompt answer 请输入答案（仅输入 A、B、C、D 中的一个字母）
+POST {{$dotenv BASE_URL}}/v1/app/special/daily/ask_answer
+Content-Type: application/json
+token: {{$dotenv BJXD}} 
+device: mp
+
+{
+    "questions_hid": "{{getQuestionInfo.response.body.data.question_info.questions_hid}}",
+    "answer": "{{answer}}",
+    "share_user_hid": "a6688ec1a9ee429fa7b68d50e0c92b1f",
+    "date": "{{$datetime 'YYYYMMDD'}}",
+    "ctu_token": null
+}
+
+# response 答题正确
+# {
+#     "code": 0,
+#     "data": {
+#         "answer": "B.腾讯视频",
+#         "answer_score": "5",
+#         "state": 2
+#     },
+#     "msg": "",
+#     "title": ""
+# }
+
+# response 答题失败 答案错误
+# {
+#     "code": 0,
+#     "data": {
+#         "answer": "",
+#         "answer_score": "",
+#         "state": 3
+#     },
+#     "msg": "",
+#     "title": ""
+# }
+
+# response 答题失败 请勿重复答题
+# {
+#   "code": -1,
+#   "data": {},
+#   "msg": "请勿重复答题",
+#   "title": ""
+# }
