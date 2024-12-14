@@ -30,7 +30,7 @@ class BeiJingHyundai:
     # 基础配置
     NAME = "北京现代 APP 自动任务"
     BASE_URL = "https://bm2-api.bluemembers.com.cn"
-    
+
     # API endpoints
     API_USER_INFO = "/v1/app/account/users/info"
     API_MY_SCORE = "/v1/app/user/my_score"
@@ -48,7 +48,7 @@ class BeiJingHyundai:
         "a6688ec1a9ee429fa7b68d50e0c92b1f",
         "bb8cd2e44c7b45eeb8cc5f7fa71c3322",
         "5f640c50061b400c91be326c8fe0accd",
-        "55a5d82dacd9417483ae369de9d9b82d"
+        "55a5d82dacd9417483ae369de9d9b82d",
     ]
 
     def __init__(self):
@@ -71,7 +71,7 @@ class BeiJingHyundai:
     def push_notification(self) -> None:
         """推送通知"""
         try:
-            QLAPI.notify(self.NAME, self.log_content.replace("\n", "<br/>"))
+            QLAPI.notify(self.NAME, self.log_content)
         except NameError:
             print(f"\n\n🚀 推送通知\n\n{self.NAME}\n\n{self.log_content}")
 
@@ -263,7 +263,7 @@ class BeiJingHyundai:
             # 从文章列表中随机选择3个ID
             article_list = [item["data_id"] for item in response["data"]["list"]]
             return random.sample(article_list, min(3, len(article_list)))
-        
+
         self.log(f'❌ 获取文章列表失败: {response["msg"]}')
         return []
 
@@ -279,7 +279,9 @@ class BeiJingHyundai:
             "ctu_token": "",
             "action": 12,
         }
-        response = self.make_request("POST", self.API_ARTICLE_SCORE_SUBMIT, json=json_data)
+        response = self.make_request(
+            "POST", self.API_ARTICLE_SCORE_SUBMIT, json=json_data
+        )
         print(f"submit_article_score API response ——> {response}")
 
         if response["code"] == 0:
@@ -325,7 +327,7 @@ class BeiJingHyundai:
                 print(f"跳过错误选项 {option['option']}. {option['option_content']}")
 
         print(f"\n问题详情:\n{question_str}")
-        
+
         # 如果只剩一个选项，直接使用
         if len(valid_options) == 1:
             answer = valid_options[0]["option"]
@@ -359,7 +361,7 @@ class BeiJingHyundai:
             response = requests.post(
                 "https://api.hunyuan.cloud.tencent.com/v1/chat/completions",
                 headers=headers,
-                json=json_data
+                json=json_data,
             )
             response.raise_for_status()
             response_json = response.json()
@@ -367,11 +369,11 @@ class BeiJingHyundai:
 
             # 获取AI回答内容并转大写
             ai_response = response_json["choices"][0]["message"]["content"].upper()
-            
+
             # 使用集合操作找出有效答案
             valid_answers = set("ABCD") - self.wrong_answers
             found_answers = set(ai_response) & valid_answers
-            
+
             # 如果找到答案则返回其中一个
             if found_answers:
                 return found_answers.pop()
@@ -564,7 +566,7 @@ class BeiJingHyundai:
                 time.sleep(random.randint(5, 10))
 
             self.log(f"\n======== ▷ 第 {i} 个账号 ◁ ========")
-            
+
             # 打印用户信息
             self.log(
                 f"👻 用户名: {self.user['nickname']} | "
@@ -622,7 +624,9 @@ class BeiJingHyundai:
             self.log(f"\n======== ▷ 第 {i} 个账号 ◁ ========")
 
             # 打印用户信息
-            self.log(f"👻 用户名: {self.user['nickname']} | 手机号: {self.user['phone']}")
+            self.log(
+                f"👻 用户名: {self.user['nickname']} | 手机号: {self.user['phone']}"
+            )
 
             # 显示积分详情
             self.get_score_details()

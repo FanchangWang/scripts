@@ -72,8 +72,9 @@ while true; do
     echo "102. 安装 xiaoya 容器"
     echo "103. 安装 qinglong 容器"
     echo "104. 安装 dpanel 容器"
+    echo "105. 安装 ddns-go 容器"
     echo "0. 退出"
-    read -p "请选择要执行的功能 (0-104): " choice
+    read -p "请选择要执行的功能 (0-105): " choice
 
     # 退出程序
     if [[ "$choice" -eq 0 ]]; then
@@ -374,6 +375,21 @@ EOL
             docker run -e TZ=Asia/Shanghai -v $dpanel_dir:/dpanel -v /var/run/docker.sock:/var/run/docker.sock -d --restart=unless-stopped -p 8807:8080 --name dpanel dpanel/dpanel:lite
             echo "dpanel 容器安装完成"
             echo "请访问 http://$internal_ip:8807"
+        fi
+        continue
+    fi
+
+    # 105. 安装 ddns-go 容器
+    if [[ "$choice" -eq 105 ]]; then
+        if docker ps -a | grep -q jeessy/ddns-go; then
+            echo "ddns-go 容器已存在，跳过安装"
+        else
+            echo "安装 ddns-go 容器..."
+            ddns_go_dir="$software_dir/ddns-go" 
+            mkdir -p "$ddns_go_dir"
+            docker pull jeessy/ddns-go:latest
+            docker run -e TZ=Asia/Shanghai -v $ddns_go_dir:/root -d --restart=unless-stopped --net=host --name ddns-go jeessy/ddns-go:latest
+            echo "ddns-go 容器安装完成"
         fi
         continue
     fi
