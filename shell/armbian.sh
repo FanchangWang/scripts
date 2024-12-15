@@ -74,8 +74,9 @@ while true; do
     echo "104. 安装 dpanel 容器"
     echo "105. 安装 ddns-go 容器"
     echo "106. 安装 nginx-proxy-manager 容器"
+    echo "107. 安装 sun-panel:1.3.0 容器"
     echo "0. 退出"
-    read -p "请选择要执行的功能 (0-106): " choice
+    read -p "请选择要执行的功能 (0-107): " choice
 
     # 退出程序
     if [[ "$choice" -eq 0 ]]; then
@@ -409,6 +410,22 @@ EOL
             echo "nginx-proxy-manager 容器安装完成"
         fi
         echo "请访问 http://$internal_ip:81"
+        continue
+    fi
+
+    # 107. 安装 sun-panel:1.3.0 容器
+    if [[ "$choice" -eq 107 ]]; then
+        if docker ps -a | grep -q hslr/sun-panel; then
+            echo "sun-panel 容器已存在，跳过安装"
+        else
+            echo "安装 sun-panel:1.3.0 容器..."
+            sun_panel_dir="$software_dir/sun-panel"
+            mkdir -p "$sun_panel_dir"
+            docker pull hslr/sun-panel:1.3.0
+            docker run -e TZ=Asia/Shanghai -v $sun_panel_dir/conf:/app/conf -v $sun_panel_dir/uploads:/app/uploads -v $sun_panel_dir/database:/app/database -d --restart=unless-stopped -p 3002:3002 --name sun-panel hslr/sun-panel:1.3.0
+            echo "sun-panel:1.3.0 容器安装完成"
+        fi
+        echo "请访问 http://$internal_ip:3002"
         continue
     fi
 done
