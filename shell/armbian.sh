@@ -73,8 +73,9 @@ while true; do
     echo "103. 安装 qinglong 容器"
     echo "104. 安装 dpanel 容器"
     echo "105. 安装 ddns-go 容器"
+    echo "106. 安装 nginx-proxy-manager 容器"
     echo "0. 退出"
-    read -p "请选择要执行的功能 (0-105): " choice
+    read -p "请选择要执行的功能 (0-106): " choice
 
     # 退出程序
     if [[ "$choice" -eq 0 ]]; then
@@ -319,8 +320,8 @@ EOL
             docker pull yuexuangu/allinone_format:latest
             docker run -e TZ=Asia/Shanghai -v $allinone_format_dir:/app/config -d --restart=unless-stopped -p 35456:35456 --name allinone_format yuexuangu/allinone_format:latest
             echo "allinone_format 容器安装完成"
-            echo "请访问 http://$internal_ip:35456"
         fi
+        echo "请访问 http://$internal_ip:35456"
         continue
     fi
 
@@ -335,8 +336,8 @@ EOL
             docker pull xiaoyaliu/alist:latest
             docker run -e TZ=Asia/Shanghai -v $xiaoya_dir/data:/data -v $xiaoya_dir/www:/www/data -v $xiaoya_dir/alist:/opt/alist/data -d --restart=unless-stopped -p 5678:80 --name=xiaoya xiaoyaliu/alist:latest
             echo "xiaoya 容器安装完成"
-            echo "请访问 http://$internal_ip:5678"
         fi
+        echo "请访问 http://$internal_ip:5678"
         continue
     fi
 
@@ -358,8 +359,8 @@ EOL
             docker pull whyour/qinglong:$qinglong_version
             docker run -e TZ=Asia/Shanghai -v $qinglong_dir:/ql/data -d --restart=unless-stopped -p 5700:5700 --name qinglong whyour/qinglong:$qinglong_version
             echo "qinglong 容器安装完成"
-            echo "请访问 http://$internal_ip:5700"
         fi
+        echo "请访问 http://$internal_ip:5700"
         continue
     fi
 
@@ -372,10 +373,10 @@ EOL
             dpanel_dir="$software_dir/dpanel"
             mkdir -p "$dpanel_dir"
             docker pull dpanel/dpanel:lite
-            docker run -e TZ=Asia/Shanghai -v $dpanel_dir:/dpanel -v /var/run/docker.sock:/var/run/docker.sock -d --restart=unless-stopped -p 8807:8080 --name dpanel dpanel/dpanel:lite
+            docker run -e TZ=Asia/Shanghai -v $dpanel_dir:/dpanel -v /var/run/docker.sock:/var/run/docker.sock -d --restart=unless-stopped -p 8807:8080 --name dpanel dpanel/dpanel:lite 
             echo "dpanel 容器安装完成"
-            echo "请访问 http://$internal_ip:8807"
         fi
+        echo "请访问 http://$internal_ip:8807"
         continue
     fi
 
@@ -391,6 +392,23 @@ EOL
             docker run -e TZ=Asia/Shanghai -v $ddns_go_dir:/root -d --restart=unless-stopped --net=host --name ddns-go jeessy/ddns-go:latest
             echo "ddns-go 容器安装完成"
         fi
+        echo "请访问 http://$internal_ip:9876"
+        continue
+    fi
+
+    # 106. 安装 nginx-proxy-manager 容器
+    if [[ "$choice" -eq 106 ]]; then
+        if docker ps -a | grep -q jc21/nginx-proxy-manager; then
+            echo "nginx-proxy-manager 容器已存在，跳过安装"
+        else
+            echo "安装 nginx-proxy-manager 容器..."
+            nginx_proxy_manager_dir="$software_dir/nginx-proxy-manager"
+            mkdir -p "$nginx_proxy_manager_dir"
+            docker pull jc21/nginx-proxy-manager:latest
+            docker run -e TZ=Asia/Shanghai -v $nginx_proxy_manager_dir/data:/data -v $nginx_proxy_manager_dir/letsencrypt:/etc/letsencrypt -d --restart=unless-stopped -p 80:80 -p 81:81 -p 443:443 --name nginx-proxy-manager jc21/nginx-proxy-manager:latest
+            echo "nginx-proxy-manager 容器安装完成"
+        fi
+        echo "请访问 http://$internal_ip:81"
         continue
     fi
 done
