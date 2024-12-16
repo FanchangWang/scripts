@@ -406,10 +406,10 @@ EOL
             nginx_proxy_manager_dir="$software_dir/nginx-proxy-manager"
             mkdir -p "$nginx_proxy_manager_dir"
             docker pull jc21/nginx-proxy-manager:latest
-            docker run -e TZ=Asia/Shanghai -v $nginx_proxy_manager_dir/data:/data -v $nginx_proxy_manager_dir/letsencrypt:/etc/letsencrypt -d --restart=unless-stopped -p 80:80 -p 81:81 -p 443:443 --name nginx-proxy-manager jc21/nginx-proxy-manager:latest
+            docker run -e TZ=Asia/Shanghai -v $nginx_proxy_manager_dir/data:/data -v $nginx_proxy_manager_dir/letsencrypt:/etc/letsencrypt -d --restart=unless-stopped -p 30080:80 -p 30081:81 -p 30443:443 --name nginx-proxy-manager jc21/nginx-proxy-manager:latest
             echo "nginx-proxy-manager 容器安装完成"
         fi
-        echo "请访问 http://$internal_ip:81"
+        echo "请访问 http://$internal_ip:30081"
         continue
     fi
 
