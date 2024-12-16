@@ -316,11 +316,18 @@ EOL
             echo "allinone_format 容器已存在，跳过安装"
         else
             echo "安装 allinone_format 容器..."
+            echo "请选择安装镜像版本 latest 或 dev"
+            read -p "请输入选项 (1: latest[默认] 或 2: dev): " allinone_format_version
+            if [[ "$allinone_format_version" == "2" ]]; then
+                allinone_format_version="dev"
+            else
+                allinone_format_version="latest"
+            fi
             allinone_format_dir="$software_dir/allinone_format"
             mkdir -p "$allinone_format_dir"
-            docker pull yuexuangu/allinone_format:latest
-            docker run -e TZ=Asia/Shanghai -v $allinone_format_dir:/app/config -d --restart=unless-stopped -p 35456:35456 --name allinone_format yuexuangu/allinone_format:latest
-            echo "allinone_format 容器安装完成"
+            docker pull yuexuangu/allinone_format:$allinone_format_version
+            docker run -e TZ=Asia/Shanghai -v $allinone_format_dir:/app/config -d --restart=unless-stopped -p 35456:35456 --name allinone_format yuexuangu/allinone_format:$allinone_format_version
+            echo "allinone_format:$allinone_format_version 容器安装完成"
         fi
         echo "请访问 http://$internal_ip:35456"
         continue
@@ -359,7 +366,7 @@ EOL
             mkdir -p "$qinglong_dir"
             docker pull whyour/qinglong:$qinglong_version
             docker run -e TZ=Asia/Shanghai -v $qinglong_dir:/ql/data -d --restart=unless-stopped -p 5700:5700 --name qinglong whyour/qinglong:$qinglong_version
-            echo "qinglong 容器安装完成"
+            echo "qinglong:$qinglong_version 容器安装完成"
         fi
         echo "请访问 http://$internal_ip:5700"
         continue
