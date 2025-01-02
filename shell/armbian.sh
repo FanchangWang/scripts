@@ -438,8 +438,12 @@ function install_allinone() {
         echo "allinone 容器已存在，跳过安装"
     else
         echo "安装 allinone 容器..."
+        # 定义 aesKey 和 userid 和 token
+        local aesKey="423iupx13z65gh46bmxyusyk9rvs63v9"
+        local userid="834158134"
+        local token="df286cf77e20498ed11a2ffa9512352d2e1678125ca1cebdcbc510473472dbb9f69826c884f8291811093c2f28f67793774a722c41d1589b2016846fe40eb400348e7d0342c5"
         docker pull youshandefeiyang/allinone:latest
-        docker run -e TZ=Asia/Shanghai -d --restart=unless-stopped -p 35455:35455 --name allinone youshandefeiyang/allinone:latest
+        docker run -e TZ=Asia/Shanghai -d --restart=unless-stopped -p 35455:35455 --name allinone youshandefeiyang/allinone:latest -aesKey=$aesKey -userid=$userid -token=$token
         echo "allinone 容器安装完成"
     fi
     if docker ps -a | grep -q yuexuangu/allinone_format; then
