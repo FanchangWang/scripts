@@ -1,0 +1,51 @@
+### 获取签到列表
+# @name getSignList
+GET {{$dotenv BASE_URL}}/v1/app/user/reward_list
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+# response
+# {
+#   "code": 0,
+#   "data": {
+#     "hid": "66573b272cf648e1880ac21172f12587",
+#     "list": [
+#       {
+#         "hid": "329a5cac618c457685b7c9180d225b8c",
+#         "score": 1
+#       },
+#       {
+#         "hid": "66573b272cf648e1880ac21172f12587",
+#         "score": 2
+#       },
+#       {
+#         "hid": "40e95aea36e64c399e76cd19a60975b2",
+#         "score": 3
+#       },
+#       {
+#         "hid": "3d92f6c53f4b4d5d8cbe0b61e7966adc",
+#         "score": 4
+#       },
+#       {
+#         "hid": "93c5b876aa5047fda06c2c3593787955",
+#         "score": 5
+#       },
+#       {
+#         "hid": "1156627d6f6046dc9663de247cecbd1b",
+#         "score": 6
+#       },
+#       {
+#         "hid": "9313db9ec488400ca46d8401422e4f54",
+#         "score": 7
+#       },
+#       {
+#         "hid": "f52fe25a655848fbbfbaadfcc91dc40d",
+#         "score": 8
+#       }
+#     ],
+#     "rewardHash": "97be6218117eab588746f7a481b61aa9"
+#   },
+#   "msg": "",
+#   "title": ""
+# }

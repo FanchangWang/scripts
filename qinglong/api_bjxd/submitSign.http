@@ -1,0 +1,45 @@
+### 获取签到列表
+# @name getSignList
+GET {{$dotenv BASE_URL}}/v1/app/user/reward_list
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+### 提交签到
+# @name submitSign
+POST {{$dotenv BASE_URL}}/v1/app/user/reward_report
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+{
+    "hid": "{{getSignList.response.body.data.hid}}",
+    "hash": "{{getSignList.response.body.data.rewardHash}}",
+    "sm_deviceId": "",
+    "ctu_token": null
+}
+
+# response 签到成功
+# {
+#     "code": 0,
+#     "data": {},
+#     "msg": "",
+#     "title": ""
+# }
+
+# response 签到失败 重复签到
+# {
+#   "code": -1,
+#   "data": {},
+#   "msg": "重复签到",
+#   "title": ""
+# }
+
+# response 签到失败 中奖信息已过期请重新摇奖
+# {
+#   "code": -1,
+#   "data": {},
+#   "msg": "中奖信息已过期请重新摇奖",
+#   "title": ""
+# }
+

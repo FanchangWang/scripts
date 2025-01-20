@@ -1,0 +1,108 @@
+### 获取文章列表
+# @name getArticleList
+GET {{$dotenv BASE_URL}}/v1/app/white/article/list2
+    ?page_no=1
+    &page_size=2
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+# response
+# {
+#   "code": 0,
+#   "data": {
+#     "list": [
+#       {
+#         "data_id": "418a690699a6461fa7e638c08d017aa4",
+#         "category": 4,
+#         "title": "问答集锦（第九十四期）--用车零部件 更换周期大盘点2",
+#         "fine_level": 0,
+#         "thumbnail": "https://bm2-res.bluemembers.com.cn/ugc/admin_1733468000789-67619918_660_440.jpg",
+#         "thumbnail_width": "",
+#         "thumbnail_height": "",
+#         "pic_list": [],
+#         "comment_num": 4,
+#         "hot_like": 154,
+#         "have_like": false,
+#         "user_hid": "8c40f5a4e09341bbb8b037d3825874a8",
+#         "topic": "",
+#         "topic_hid": "",
+#         "planet_hid": "",
+#         "planet": "",
+#         "raiders_hid": "",
+#         "hid": "418a690699a6461fa7e638c08d017aa4",
+#         "pub_chanel": 0,
+#         "activity_status": 0,
+#         "created_at": "2024-12-06 14:54:52",
+#         "topic_hot_list": null,
+#         "article_list": null,
+#         "ios_content": "",
+#         "planet_rec_status": 0,
+#         "retrieve_id": "",
+#         "log_id": "",
+#         "module_sort": 0,
+#         "exp_id": "",
+#         "strategy_id": "",
+#         "user_hidu": "8c40f5a4e09341bbb8b037d3825874a8",
+#         "user_nick_name": "现代宠车帝",
+#         "avatar": "http://bm2-prod.oss-cn-beijing.aliyuncs.com/ugc/ios_F5135F51-356B-4C85-8EA9-0040640CD3DC_828.0_828.0.png",
+#         "user_signature": "给爱车百分百的宠爱",
+#         "is_car_owner": 0,
+#         "user_level": 0,
+#         "status_name": "",
+#         "status_icon": "",
+#         "medal_icon": "",
+#         "medal_info": null,
+#         "icon_position": 0
+#       },
+#       {
+#         "data_id": "15e4f43224314f95b5baee3487127124",
+#         "category": 4,
+#         "title": "凛冬将至送福利丨盘点冬季用车的那些「热」知识",
+#         "fine_level": 0,
+#         "thumbnail": "https://bm2-res.bluemembers.com.cn/ugc/admin_1733376032336-b664bbdd_690_346.jpg",
+#         "thumbnail_width": "",
+#         "thumbnail_height": "",
+#         "pic_list": [],
+#         "comment_num": 489,
+#         "hot_like": 1885,
+#         "have_like": false,
+#         "user_hid": "b2bee9b1c8e6476db5deee0cf69ccf1e",
+#         "topic": "冬季用车「热」知识",
+#         "topic_hid": "1273de02c9c94d0b8ac8adf1ad34ec69",
+#         "planet_hid": "",
+#         "planet": "",
+#         "raiders_hid": "",
+#         "hid": "15e4f43224314f95b5baee3487127124",
+#         "pub_chanel": 0,
+#         "activity_status": 0,
+#         "created_at": "2024-12-05 13:23:45",
+#         "topic_hot_list": null,
+#         "article_list": null,
+#         "ios_content": "",
+#         "planet_rec_status": 0,
+#         "retrieve_id": "",
+#         "log_id": "",
+#         "module_sort": 0,
+#         "exp_id": "",
+#         "strategy_id": "",
+#         "user_hidu": "b2bee9b1c8e6476db5deee0cf69ccf1e",
+#         "user_nick_name": "蓝小帅",
+#         "avatar": "http://bm2-prod.oss-cn-beijing.aliyuncs.com/ugc/ios_6FF1580A-DF28-4652-8F02-8EC23CD58802_828.0_828.0.png",
+#         "user_signature": "粉丝活动官方服务账号-你想要的 我都给你",
+#         "is_car_owner": 0,
+#         "user_level": 0,
+#         "status_name": "",
+#         "status_icon": "",
+#         "medal_icon": "",
+#         "medal_info": null,
+#         "icon_position": 0
+#       }
+#     ],
+#     "total_count": 1241,
+#     "page_no": 1,
+#     "page_size": 2
+#   },
+#   "msg": "",
+#   "title": ""
+# }

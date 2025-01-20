@@ -1,0 +1,43 @@
+### AI 腾讯混元大模型 chat 带 search
+# @name hunyuanChat
+POST https://api.hunyuan.cloud.tencent.com/v1/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{$dotenv HUNYUAN_API_KEY}}
+
+{
+    "model": "hunyuan-turbo",
+    "messages": [
+        {
+            "role": "user",
+            "content": "你是一个专业的北京现代汽车专家，请以 ABCD 的格式直接给出这个单选题的答案。\nQ：第五代 胜达尾门最大开启角度为？\nA. A、90.4°\nB. B、94.0°\nC. C、100.4°\nD. D、140"
+        }
+    ],
+    "enable_enhancement": true,
+    "force_search_enhancement": true,
+    "enable_instruction_search": true
+}
+
+# response
+# {
+#   "id": "37a21204511f43588792824af1d917d0",
+#   "object": "chat.completion",
+#   "created": 1733724474,
+#   "model": "hunyuan-turbo",
+#   "system_fingerprint": "",
+#   "choices": [
+#     {
+#       "index": 0,
+#       "message": {
+#         "role": "assistant",
+#         "content": "D"
+#       },
+#       "finish_reason": "stop"
+#     }
+#   ],
+#   "usage": {
+#     "prompt_tokens": 349,
+#     "completion_tokens": 2,
+#     "total_tokens": 351
+#   },
+#   "note": "以上内容为AI生成，不代表开发者立场，请勿删除或修改本标记"
+# }

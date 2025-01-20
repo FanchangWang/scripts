@@ -1,0 +1,95 @@
+### 获取文章列表
+# @name getArticleList
+GET {{$dotenv BASE_URL}}/v1/app/white/article/list2?page_no=1&page_size=1
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+### 获取文章详情
+# @name getArticleDetail
+@article_id = {{getArticleList.response.body.data.list[0].data_id}}
+GET {{$dotenv BASE_URL}}/v1/app/white/article/detail_app/{{article_id}}
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+# response
+# {
+#   "code": 0,
+#   "data": {
+#     "hid": "418a690699a6461fa7e638c08d017aa4",
+#     "created_at": "2024-12-06 14:54:52",
+#     "updated_at": "2024-12-06 14:54:52",
+#     "category": 4,
+#     "user_hid": "8c40f5a4e09341bbb8b037d3825874a8",
+#     "bg_user_id": "231",
+#     "thumbnail": "https://bm2-res.bluemembers.com.cn/ugc/admin_1733468000789-67619918_660_440.jpg",
+#     "fine_level": 0,
+#     "title": "问答集锦（第九十四期）--用车零部件 更换周期大盘点2",
+#     "front_author": "现代宠车帝",
+#     "bg_author": "合伙人运营_唐莎莎",
+#     "content": "\u003cp\u003e\u003cimg src=\"https://bm2-res.bluemembers.com.cn/ugc/admin_ReCGEpSahEYXJE5ds8dd.jpg\" style=\"width: auto; max-width:100%;\" alt=\"\"\u003e\u003cbr\u003e\u003c/p\u003e",
+#     "topic_hid": "",
+#     "planet_hid": "",
+#     "raiders_hid": "",
+#     "status": 1,
+#     "pub_chanel": 7,
+#     "hot_comment": 4,
+#     "hot_share": 0,
+#     "hot_like": 154,
+#     "hot_view": 1047,
+#     "offline_at": "",
+#     "public_address": "",
+#     "offline_desc": "",
+#     "lng": 0,
+#     "lat": 0,
+#     "province": "",
+#     "city": "",
+#     "content_type_hid": "1436cb35af6f4dbaa6bf231e06a54a6b",
+#     "style": 0,
+#     "style_value": "",
+#     "login_type": 0,
+#     "ios_content": "",
+#     "examine_status": 2,
+#     "planet_rec_status": 0,
+#     "is_oneself_show": 1,
+#     "recommend_time": "0001-01-01 00:00:00",
+#     "is_recommend": 0,
+#     "participation": "",
+#     "planet": "",
+#     "raiders": "",
+#     "topic": "",
+#     "have_like": false,
+#     "is_join_planet": false,
+#     "pic_urls": [],
+#     "release_at": "2024.12.06",
+#     "user_hidu": "8c40f5a4e09341bbb8b037d3825874a8",
+#     "user_nick_name": "现代宠车帝",
+#     "avatar": "http://bm2-prod.oss-cn-beijing.aliyuncs.com/ugc/ios_F5135F51-356B-4C85-8EA9-0040640CD3DC_828.0_828.0.png",
+#     "user_signature": "给爱车百分百的宠爱",
+#     "is_car_owner": 0,
+#     "user_level": 3,
+#     "status_name": "官方账号",
+#     "status_icon": "https://bm2-res.bluemembers.com.cn/ugc/admin_1592194103337-1f3ecff8_256_256.jpg",
+#     "user_is_attend": false,
+#     "hot_comment_like": 0,
+#     "link_text": "",
+#     "content_h5": "https://bm2-wx.bluemembers.com.cn/app/article-detail?hid=418a690699a6461fa7e638c08d017aa4",
+#     "medal_icon": "",
+#     "medal_info": {
+#       "icon": "",
+#       "name": "",
+#       "date": "",
+#       "desc": "",
+#       "is_gain": 0,
+#       "desc_item": null,
+#       "jump_type": 0,
+#       "tips": "",
+#       "is_wear": 0,
+#       "lv": 0,
+#       "type": 0
+#     }
+#   },
+#   "msg": "",
+#   "title": ""
+# }

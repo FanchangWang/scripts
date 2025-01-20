@@ -1,0 +1,40 @@
+### 获取每日问题信息
+# @name getQuestionInfo
+GET {{$dotenv BASE_URL}}/v1/app/special/daily/ask_info?date={{$datetime 'YYYYMMDD'}} HTTP/1.1
+Content-Type: application/json
+token: {{$dotenv BJXD}}
+device: mp
+
+# response
+# {
+#   "code": 0,
+#   "data": {
+#     "state": 3,
+#     "question_info": {
+#       "questions_hid": "5bb35c9cf89645889b79b1b15f685e43",
+#       "content": "Q：全新伊兰特智能网联系统没有包含哪个娱乐功能",
+#       "option": [
+#         {
+#           "option": "A",
+#           "option_content": "QQ音乐"
+#         },
+#         {
+#           "option": "B",
+#           "option_content": "腾讯视频"
+#         },
+#         {
+#           "option": "C",
+#           "option_content": "爱奇艺视频"
+#         },
+#         {
+#           "option": "D",
+#           "option_content": "有声读物"
+#         }
+#       ]
+#     },
+#     "answer": "",
+#     "answer_score": ""
+#   },
+#   "msg": "",
+#   "title": ""
+# }
