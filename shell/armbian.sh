@@ -49,6 +49,8 @@ function show_menu() {
     echo "501. 安装 allinone_format:dev"
     echo "502. 安装 xiaoya"
     echo "503. 安装 doube-itv"
+    echo "== 容器-家庭自动化 =="
+    echo "600. 安装 homeassistant"
     echo -e "\\n"
 }
 
@@ -74,6 +76,7 @@ function handle_choice() {
         501) install_allinone_format_dev ;;
         502) install_xiaoya ;;
         503) install_doube_itv ;;
+        600) install_homeassistant ;;
         *) echo "无效的选项" ;;
     esac
 }
@@ -85,11 +88,9 @@ function download_from_github() {
 
     # 国内 GitHub 加速源
     local github_proxies=(
-        "https://github.moeyy.xyz/"
         "https://gh-proxy.com/"
-        "https://mirror.ghproxy.com/"
+        "https://ghfast.top/"
         "https://slink.ltd/"
-        "https://ghproxy.cc/"
     )
 
     echo "准备下载文件: $output"
@@ -522,6 +523,20 @@ function install_doube_itv() {
     echo "doube-itv 访问地址: http://${internal_ip}:5000/help"
 }
 
+# 安装 homeassistant
+function install_homeassistant() {
+    if docker ps -a | grep -q homeassistant/home-assistant; then
+        echo "homeassistant/home-assistant 容器已存在，跳过安装"
+    else
+        echo "安装 homeassistant/home-assistant 容器..."
+        local homeassistant_dir="$software_dir/homeassistant"
+        mkdir -p "$homeassistant_dir"
+        docker pull homeassistant/home-assistant:latest
+        docker run -e TZ=Asia/Shanghai --privileged -d --restart=unless-stopped -v "$homeassistant_dir:/config" --name homeassistant --network=host homeassistant/home-assistant:latest
+        echo "homeassistant/home-assistant 容器安装完成"
+    fi
+    echo "homeassistant/home-assistant 访问地址: http://${internal_ip}:8123"
+}
 
 while true; do
     show_menu
