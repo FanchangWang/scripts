@@ -304,7 +304,7 @@ function install_docker() {
         cat <<EOL > /etc/docker/daemon.json
 {
   "registry-mirrors": [
-    "https://docker.allproxy.us.kg",
+    "https://docker.guyuexuan.ggff.net",
     "https://docker.1panel.top",
     "https://proxy.1panel.live"
   ]

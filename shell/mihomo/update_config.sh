@@ -10,7 +10,7 @@ BACKUP_CONFIG_FILE="$SCRIPT_DIR/config.yaml.bak"
 # 仓库信息
 OWNER="FanchangWang"
 REPO="clash_config"
-GITHUB_PROXY="https://github.allproxy.us.kg"
+GITHUB_PROXY="https://github.guyuexuan.ggff.net"
 API_URL="$GITHUB_PROXY/https://api.github.com/repos/$OWNER/$REPO/contents/config.yaml"
 HEADERS=("Accept: application/vnd.github.v3+json")
 
