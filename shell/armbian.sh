@@ -307,7 +307,7 @@ function install_docker() {
     "https://docker.1ms.run",
     "https://proxy.1panel.live",
     "https://docker.ketches.cn",
-    "https://docker.guyuexuan.ggff.net"
+    "https://docker.guyuexuan.ip-ddns.com"
   ]
 }
 EOL
