@@ -77,3 +77,20 @@ python3 binmt_cc.py
 ## 青龙面板单文件导入方式
 ql raw https://raw.githubusercontent.com/FanchangWang/scripts/refs/heads/main/qinglong/binmt_cc.py
 ```
+- [oshwhub 嘉立创开源硬件平台 自动任务](./qinglong/oshwhub.py)
+```shell
+# 使用教程
+
+## 安装依赖
+pip3 install requests
+
+## 设置环境变量
+export oshwhub1="xxxxx" # oshwhub 登录 Cookie oshwhub_session 的值
+export oshwhub2="xxxxx" # oshwhub 登录 Cookie oshwhub_session 的值
+
+## 本地运行方式
+python3 oshwhub.py
+
+## 青龙面板单文件导入方式
+ql raw https://raw.githubusercontent.com/FanchangWang/scripts/refs/heads/main/qinglong/oshwhub.py
+```
