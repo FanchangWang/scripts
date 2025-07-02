@@ -541,6 +541,8 @@ class BeiJingHyundai:
 
         if not self.users:
             self.log("❌ 未获取到有效用户")
+            # 最后推送通知
+            self.push_notification()
             return
 
         # 设置分享用户ID
