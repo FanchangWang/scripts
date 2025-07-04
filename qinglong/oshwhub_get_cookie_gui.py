@@ -29,7 +29,7 @@ class CookieViewer(QMainWindow):
         self.move(x, y)
 
         self.cookies = {}
-        self.required_cookie_names = ["acw_tc", "oshwhub_session", "oshwhub_csrf"]
+        self.required_cookie_names = ["oshwhub_session", "oshwhub_csrf"]
 
         # 创建界面组件
         self.copy_button = QPushButton("先在下面登录后，再点我获取并复制 Cookie")
