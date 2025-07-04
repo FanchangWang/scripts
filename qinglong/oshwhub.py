@@ -15,6 +15,8 @@ import datetime
 from datetime import timezone, timedelta, datetime
 from typing import List, Dict, Any
 import requests
+
+
 from urllib3.exceptions import InsecureRequestWarning, InsecurePlatformWarning
 
 # 禁用 SSL 警告
@@ -36,6 +38,7 @@ class Oshwhub:
 
     def __init__(self):
         """初始化实例变量"""
+        self.session = None  # 每个 user 都需要一个新的 session
         self.cookie: str = ""  # 当前用户 Cookie
         self.user: Dict[str, Any] = {}  # 当前用户信息
         self.users: List[Dict[str, Any]] = []  # 所有用户信息列表
@@ -65,13 +68,8 @@ class Oshwhub:
             Dict[str, Any]: API响应数据
         """
         url = f"{self.BASE_URL}{endpoint}"
-        headers = {"Cookie": f"oshwhub_session={self.cookie}"}
-        if "headers" not in kwargs:
-            kwargs["headers"] = headers
-        else:
-            kwargs["headers"].update(headers)
         try:
-            response = requests.request(method, url, **kwargs)
+            response = self.session.request(method, url, **kwargs)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -84,7 +82,10 @@ class Oshwhub:
         Returns:
             Dict[str, Any]: 用户信息字典，获取失败返回空字典
         """
-        response = self.make_request("GET", self.API_USER_INFO)
+        # 每个 user 都需要一个新的 session
+        self.session = requests.Session()
+        headers = {"Cookie": f"oshwhub_session={self.cookie}"}
+        response = self.make_request("GET", self.API_USER_INFO, headers=headers)
         print(f"get_user_info API response ——> {response}")
 
         if response["code"] == 0:
@@ -129,9 +130,8 @@ class Oshwhub:
 
     def run(self) -> None:
         """运行主程序"""
-        # 使用列表保持顺序，使用集合实现去重
-        cookies = []
-        cookies_set = set()
+        # 使用字典保持插入顺序并实现去重（Python 3.7+ 字典有序）
+        cookies_dict = {}
 
         # 从 oshwhub1/oshwhub2/oshwhub3 环境变量获取
         i = 1
@@ -143,72 +143,54 @@ class Oshwhub:
             else:
                 cookie = cookie.strip()
                 if (
-                    cookie and cookie not in cookies_set
+                    cookie and cookie not in cookies_dict
                 ):  # 确保cookie不是空字符串且未重复
                     empty_count = 0  # 重置连续空值计数
-                    cookies.append(cookie)
-                    cookies_set.add(cookie)
+                    cookies_dict[cookie] = None
             i += 1
 
-        if not cookies:
+        if not cookies_dict:
             self.log(
                 "⛔️ 未获取到 cookies, 请检查环境变量 oshwhub1/oshwhub2/oshwhub3 是否填写"
             )
             self.push_notification()
             return
 
-        cookies_set.clear()
+        self.log(f"👻 共获取到用户 cookie {len(cookies_dict)} 个")
 
-        self.log(f"👻 共获取到用户 cookie {len(cookies)} 个")
-
-        # 获取所有用户信息
-        for cookie in cookies:
-            self.cookie = cookie
-            user = self.get_user_info()
-            if user:
-                self.users.append(user)
-
-        if not self.users:
-            self.log("❌ 未获取到有效用户")
-            # 最后推送通知
-            self.push_notification()
-            return
-
-        # 执行任务
-        self.log("\n============ 执行任务 ============")
-        for i, user in enumerate(self.users, 1):
-            # 更新当前用户信息
-            self.cookie = user["cookie"]
-            self.user = user
-
+        i = 0
+        # 获取所有用户信息 # 遍历字典的键（即去重后的cookie值）
+        # Python支持通过items()方法同时获取键和值: for key, value in cookies_dict.items()
+        for cookie in cookies_dict:
+            i += 1
             # 随机延迟
             if i > 1:
                 print("\n进行下一个账号, 等待 5-10 秒...")
                 time.sleep(random.randint(5, 10))
-
             self.log(f"\n======== ▷ 第 {i} 个账号 ◁ ========")
-
-            # 打印用户信息
-            self.log(
-                f"👻 用户: {self.user['nickname']} 💰 积分: {self.user['points']}\n"
-                f"🆔 uuid: {self.user['uuid']}"
-            )
-
-            # 检查签到信息
-            sign_profile = self.get_sign_profile()
-            if sign_profile:
-                if not sign_profile["isTodaySignIn"]:
-                    self.log("准备执行签到, 等待 3-6 秒...")
-                    time.sleep(random.randint(3, 6))
-                    if self.sign_in():
-                        time.sleep(random.randint(3, 6))
-                        sign_profile = self.get_sign_profile()
+            self.cookie = cookie
+            self.user = self.get_user_info()
+            if self.user:
+                # 打印用户信息
+                self.log(
+                    f"👻 用户: {self.user['nickname']} 💰 积分: {self.user['points']}\n"
+                    f"🆔 uuid: {self.user['uuid']}"
+                )
+                # 检查签到信息
+                sign_profile = self.get_sign_profile()
                 if sign_profile:
-                    self.log(
-                        f"🎉 总积分: {sign_profile['total_point']} | 今日: {sign_profile['isTodaySignIn']} | "
-                        f"本周天数: {sign_profile['week_signIn_days']} | 本月天数: {sign_profile['month_signIn_days']} | "
-                        f"周奖励: {sign_profile['sevenGoodGiftRecord']} | 月奖励: {sign_profile['monthGoodGiftRecord']}"
-                    )
+                    if not sign_profile["isTodaySignIn"]:
+                        self.log("准备执行签到, 等待 3-6 秒...")
+                        time.sleep(random.randint(3, 6))
+                        if self.sign_in():  # 执行签到
+                            time.sleep(random.randint(3, 6))
+                            sign_profile = self.get_sign_profile()
+                    if sign_profile:
+                        self.log(
+                            f"🎉 总积分: {sign_profile['total_point']} | 今日: {sign_profile['isTodaySignIn']} | "
+                            f"本周天数: {sign_profile['week_signIn_days']} | 本月天数: {sign_profile['month_signIn_days']} | "
+                            f"周奖励: {sign_profile['sevenGoodGiftRecord']} | 月奖励: {sign_profile['monthGoodGiftRecord']}"
+                        )
         # 最后推送通知
         self.push_notification()
 
