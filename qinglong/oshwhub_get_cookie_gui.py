@@ -1,5 +1,5 @@
 import sys
-from PyQt5.QtCore import QUrl
+from PyQt5.QtCore import QUrl, QCoreApplication, Qt
 from PyQt5.QtGui import QGuiApplication
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile, QWebEnginePage
 from PyQt5.QtWidgets import (
@@ -95,6 +95,10 @@ class CookieViewer(QMainWindow):
 
 
 if __name__ == "__main__":
+    # 适应高DPI设备
+    QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+    # 适应Windows缩放
+    QGuiApplication.setAttribute(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     window = CookieViewer()
     window.show()
