@@ -3,7 +3,7 @@
 功能: 自动完成签到、领取7天好礼、月度好礼
 
 环境变量：
-    oshwhub1/oshwhub2/oshwhub3: str - 嘉立创EDA oshwhub_session Cookie (每个账号一个变量)
+    oshwhub1/oshwhub2/oshwhub3: str - 嘉立创EDA Cookie "oshwhub_csrf=xxx; oshwhub_session=xxx; acw_tc=xxx" (每个账号一个变量)
 
 cron: 10 5 * * *
 """
@@ -84,7 +84,7 @@ class Oshwhub:
         """
         # 每个 user 都需要一个新的 session
         self.session = requests.Session()
-        headers = {"Cookie": f"oshwhub_session={self.cookie}"}
+        headers = {"Cookie": self.cookie}
         response = self.make_request("GET", self.API_USER_INFO, headers=headers)
         print(f"get_user_info API response ——> {response}")
 
