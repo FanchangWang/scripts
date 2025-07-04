@@ -3,7 +3,7 @@
 功能: 自动完成签到、领取7天好礼、月度好礼
 
 环境变量：
-    oshwhub1/oshwhub2/oshwhub3: str - 嘉立创EDA Cookie "oshwhub_csrf=xxx; oshwhub_session=xxx; acw_tc=xxx" (每个账号一个变量)
+    oshwhub1/oshwhub2/oshwhub3: str - 嘉立创EDA Cookie "oshwhub_csrf=xxx; oshwhub_session=xxx" (每个账号一个变量)
 
 cron: 10 5 * * *
 """
@@ -38,7 +38,6 @@ class Oshwhub:
 
     def __init__(self):
         """初始化实例变量"""
-        self.session = None  # 每个 user 都需要一个新的 session
         self.cookie: str = ""  # 当前用户 Cookie
         self.user: Dict[str, Any] = {}  # 当前用户信息
         self.users: List[Dict[str, Any]] = []  # 所有用户信息列表
@@ -68,8 +67,19 @@ class Oshwhub:
             Dict[str, Any]: API响应数据
         """
         url = f"{self.BASE_URL}{endpoint}"
+        headers = {
+            "Content-Type": "application/json",
+            "Origin": "https://oshwhub.com",
+            "Referer": "https://oshwhub.com/sign_in",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36 Edg/138.0.0.0",
+            "Cookie": self.cookie,
+        }
+        if "headers" not in kwargs:
+            kwargs["headers"] = headers
+        else:
+            kwargs["headers"].update(headers)
         try:
-            response = self.session.request(method, url, **kwargs)
+            response = requests.request(method, url, **kwargs)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -82,10 +92,7 @@ class Oshwhub:
         Returns:
             Dict[str, Any]: 用户信息字典，获取失败返回空字典
         """
-        # 每个 user 都需要一个新的 session
-        self.session = requests.Session()
-        headers = {"Cookie": self.cookie}
-        response = self.make_request("GET", self.API_USER_INFO, headers=headers)
+        response = self.make_request("GET", self.API_USER_INFO)
         print(f"get_user_info API response ——> {response}")
 
         if response["code"] == 0:
@@ -101,7 +108,12 @@ class Oshwhub:
         return {}
 
     def get_sign_profile(self) -> Dict[str, Any]:
-        """获取签到信息"""
+        """
+        获取签到信息
+        Returns:
+            Dict[str, Any]: 签到信息字典，获取失败返回空字典
+        """
+
         response = self.make_request("GET", self.API_SIGN_IN_PROFILE)
         print(f"get_sign_profile API response ——> {response}")
         # {"success":true,"code":0,"result":{"total_point":140,"expiring_info":null,"isTodaySignIn":true,"latestSignInDate":"2025-07-02T17:13:17.638Z","week_signIn_days":2,"month_signIn_days":2,"userProjectCount":0,"validProjectCount":0,"task":{"project":0,"article":0,"invite":0,"activity":0,"post":0},"goodGiftStatus":{"sevenGoodGiftRecord":0,"monthGoodGiftRecord":0}}}
@@ -119,7 +131,11 @@ class Oshwhub:
         return {}
 
     def sign_in(self) -> bool:
-        """签到"""
+        """
+        签到
+        Returns:
+            bool: 签到成功返回 True, 失败返回 False
+        """
         response = self.make_request("POST", self.API_SIGN_In)
         print(f"sign_in API response ——> {response}")
         if response["code"] == 0 and response["success"] and response["result"]:
