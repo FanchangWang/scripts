@@ -307,7 +307,7 @@ function install_docker() {
     "https://docker.1ms.run",
     "https://proxy.1panel.live",
     "https://docker.ketches.cn",
-    "https://docker.guyuexuan.ip-ddns.com"
+    "https://docker.allproxy.dpdns.org"
   ]
 }
 EOL
@@ -337,7 +337,7 @@ function install_dpanel() {
         local dpanel_dir="$software_dir/dpanel"
         mkdir -p "$dpanel_dir"
         docker pull dpanel/dpanel:lite
-        docker run -e TZ=Asia/Shanghai -v "$dpanel_dir:/dpanel" -v /var/run/docker.sock:/var/run/docker.sock -d --restart=unless-stopped -p 8807:8080 --name dpanel dpanel/dpanel:lite 
+        docker run -e TZ=Asia/Shanghai -v "$dpanel_dir:/dpanel" -v /var/run/docker.sock:/var/run/docker.sock -d --restart=unless-stopped -p 8807:8080 --name dpanel dpanel/dpanel:lite
         echo "dpanel:lite 容器安装完成"
     fi
     echo "dpanel:lite 访问地址: http://${internal_ip}:8807"

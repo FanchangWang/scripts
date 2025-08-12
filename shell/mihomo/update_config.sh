@@ -10,7 +10,7 @@ BACKUP_CONFIG_FILE="$SCRIPT_DIR/config.yaml.bak"
 # 仓库信息
 OWNER="FanchangWang"
 REPO="clash_config"
-GITHUB_PROXY="https://github.guyuexuan.ip-ddns.com"
+GITHUB_PROXY="https://github.allproxy.dpdns.org"
 API_URL="$GITHUB_PROXY/https://api.github.com/repos/$OWNER/$REPO/contents/config.yaml"
 HEADERS=("Accept: application/vnd.github.v3+json")
 
@@ -18,11 +18,11 @@ HEADERS=("Accept: application/vnd.github.v3+json")
 crontab_check() {
     # 获取当前的 crontab 内容
     current_crontab=$(crontab -l 2>/dev/null)
-    
+
     # 定义需要添加的两个 crontab 条目
     update_cron="40 * * * * bash $SCRIPT_DIR/update_config.sh >> $SCRIPT_DIR/update_config.log 2>&1"
     cleanup_cron="10 3 */7 * * truncate -s 0 $SCRIPT_DIR/update_config.log 2>&1"
-    
+
     # 检查是否已存在这些条目
     update_exists=$(echo "$current_crontab" | grep -F "$update_cron")
     cleanup_exists=$(echo "$current_crontab" | grep -F "$cleanup_cron")
