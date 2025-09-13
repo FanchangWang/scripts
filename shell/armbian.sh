@@ -90,7 +90,8 @@ function download_from_github() {
     local github_proxies=(
         "https://gh-proxy.com/"
         "https://ghfast.top/"
-        "https://slink.ltd/"
+        "https://github.allproxy.dpdns.org/",
+        "https://github.guyuexuan.ip-ddns.com/"
     )
 
     echo "准备下载文件: $output"
@@ -305,9 +306,10 @@ function install_docker() {
 {
   "registry-mirrors": [
     "https://docker.1ms.run",
-    "https://proxy.1panel.live",
+    "https://docker.1panel.live",
     "https://docker.ketches.cn",
-    "https://docker.allproxy.dpdns.org"
+    "https://docker.allproxy.dpdns.org",
+    "https://docker.guyuexuan.ip-ddns.com"
   ]
 }
 EOL
