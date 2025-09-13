@@ -554,12 +554,14 @@ class BeiJingHyundai:
                 self.preset_answer = ""
                 self.log("❌ 预设答案格式错误，仅支持 A/B/C/D")
 
+        self.log("获取用户信息")
         # 获取所有用户信息
         for token in tokens:
             self.token = token
             user = self.get_user_info()
             if user:
                 self.users.append(user)
+            time.sleep(random.randint(3, 5))
 
         if not self.users:
             self.log("❌ 未获取到有效用户")
