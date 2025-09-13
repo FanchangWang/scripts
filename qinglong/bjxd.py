@@ -92,7 +92,7 @@ class BeiJingHyundai:
         else:
             kwargs["headers"].update(headers)
         try:
-            response = requests.request(method, url, **kwargs)
+            response = requests.request(method, url, timeout=30, **kwargs)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -108,16 +108,16 @@ class BeiJingHyundai:
         response = self.make_request("GET", self.API_USER_INFO)
         print(f"get_user_info API response ——> {response}")
 
-        if response["code"] == 0:
-            data = response["data"]
+        if response.get("code") == 0:
+            data = response.get("data", {})
             # 直接生成掩码后的手机号
-            masked_phone = f"{data['phone'][:3]}******{data['phone'][-2:]}"
+            masked_phone = f"{data.get('phone', '')[:3]}******{data.get('phone', '')[-2:]}"
             return {
                 "token": self.token,
-                "hid": data["hid"],
-                "nickname": data["nickname"],
+                "hid": data.get("hid", ""),
+                "nickname": data.get("nickname", ""),
                 "phone": masked_phone,  # 直接存储掩码后的手机号
-                "score_value": data["score_value"],
+                "score_value": data.get("score_value", 0),
                 "share_user_hid": "",
                 "task": {"sign": False, "view": False, "question": False},
             }
@@ -131,29 +131,30 @@ class BeiJingHyundai:
         response = self.make_request("GET", self.API_MY_SCORE, params=params)
         print(f"get_score_details API response ——> {response}")
 
-        if response["code"] == 0:
-            data = response["data"]
+        if response.get("code") == 0:
+            data = response.get("data", {})
             # 先获取今日记录
             today = datetime.now().strftime("%Y-%m-%d")
+            points_record = data.get("points_record", {})
             today_records = [
                 record
-                for record in data["points_record"]["list"]
-                if record["created_at"].startswith(today)
+                for record in points_record.get("list", [])
+                if record.get("created_at", "").startswith(today)
             ]
 
             # 计算今日积分变化
             today_score = sum(
-                int(record["score_str"].strip("+")) for record in today_records
+                int(record.get("score_str", "0").strip("+")) for record in today_records
             )
             today_score_str = f"+{today_score}" if today_score > 0 else str(today_score)
-            self.log(f"🎉 总积分: {data['score']} | 今日积分变动: {today_score_str}")
+            self.log(f"🎉 总积分: {data.get('score', 0)} | 今日积分变动: {today_score_str}")
 
             # 输出今日积分记录
             if today_records:
                 self.log("今日积分记录：")
                 for record in today_records:
                     self.log(
-                        f"{record['created_at']} {record['desc']} {record['score_str']}"
+                        f"{record.get('created_at', '')} {record.get('desc', '')} {record.get('score_str', '')}"
                     )
             else:
                 self.log("今日暂无积分变动")
@@ -164,8 +165,8 @@ class BeiJingHyundai:
         response = self.make_request("GET", self.API_TASK_LIST)
         print(f"get_task_status API response ——> {response}")
 
-        if response["code"] != 0:
-            self.log(f'❌ 获取任务列表失败: {response["msg"]}')
+        if response.get("code") != 0:
+            self.log(f'❌ 获取任务列表失败: {response.get("msg", "未知错误")}')
             return
 
         actions = response.get("data", {})
@@ -199,17 +200,17 @@ class BeiJingHyundai:
             response = self.make_request("GET", self.API_SIGN_LIST)
             print(f"get_sign_info (attempt {attempt + 1}) API response ——> {response}")
 
-            if response["code"] != 0:
-                self.log(f'❌ 获取签到列表失败: {response["msg"]}')
+            if response.get("code") != 0:
+                self.log(f'❌ 获取签到列表失败: {response.get("msg", "未知错误")}')
                 break
 
-            data = response["data"]
-            hid = data["hid"]
-            reward_hash = data["rewardHash"]
+            data = response.get("data", {})
+            hid = data.get("hid", "")
+            reward_hash = data.get("rewardHash", "")
 
-            for item in data["list"]:
-                if item["hid"] == hid:
-                    current_score = item["score"]
+            for item in data.get("list", []):
+                if item.get("hid") == hid:
+                    current_score = item.get("score", 0)
                     print(
                         f"第{attempt + 1}次获取签到列表: score={current_score} hid={hid} rewardHash={reward_hash}"
                     )
@@ -243,10 +244,10 @@ class BeiJingHyundai:
         response = self.make_request("POST", self.API_SIGN_SUBMIT, json=json_data)
         print(f"submit_sign API response ——> {response}")
 
-        if response["code"] == 0:
+        if response.get("code") == 0:
             self.log(f"✅ 签到成功 | 积分 +{score}")
         else:
-            self.log(f'❌ 签到失败: {response["msg"]}')
+            self.log(f'❌ 签到失败: {response.get("msg", "未知错误")}')
 
     # 文章浏览相关
     def get_article_list(self) -> List[str]:
@@ -259,19 +260,30 @@ class BeiJingHyundai:
         response = self.make_request("GET", self.API_ARTICLE_LIST, params=params)
         print(f"get_article_list API response ——> {response}")
 
-        if response["code"] == 0:
+        if response.get("code") == 0:
             # 从文章列表中随机选择3个ID
-            article_list = [item["data_id"] for item in response["data"]["list"]]
+            data = response.get("data", {})
+            article_list = [item.get("data_id", "") for item in data.get("list", []) if item.get("data_id")]
             return random.sample(article_list, min(3, len(article_list)))
 
-        self.log(f'❌ 获取文章列表失败: {response["msg"]}')
+        self.log(f'❌ 获取文章列表失败: {response.get("msg", "未知错误")}')
         return []
 
     def get_article_detail(self, article_id: str) -> None:
         """浏览文章"""
         self.log(f"浏览文章 article_id: {article_id}")
         endpoint = self.API_ARTICLE_DETAIL.format(article_id)
-        self.make_request("GET", endpoint)
+        try:
+            # 调用make_request访问文章详情
+            response = self.make_request("GET", endpoint)
+            # 记录响应状态，便于调试
+            if response.get("code") == -1:
+                self.log(f"⚠️ 文章浏览异常: {response.get('msg', '未知错误')}")
+            else:
+                self.log(f"✅ 文章浏览成功")
+        except Exception as e:
+            # 捕获所有可能的异常，确保脚本不会在此处中断
+            self.log(f"❌ 文章浏览过程中发生异常: {str(e)}")
 
     def submit_article_score(self) -> None:
         """提交文章积分"""
@@ -284,11 +296,12 @@ class BeiJingHyundai:
         )
         print(f"submit_article_score API response ——> {response}")
 
-        if response["code"] == 0:
-            score = response["data"]["score"]
+        if response.get("code") == 0:
+            data = response.get("data", {})
+            score = data.get("score", 0)
             self.log(f"✅ 浏览文章成功 | 积分 +{score}")
         else:
-            self.log(f'❌ 浏览文章失败: {response["msg"]}')
+            self.log(f'❌ 浏览文章失败: {response.get("msg", "未知错误")}')
 
     # 答题相关
     def get_question_info(self, share_user_hid: str) -> None:
@@ -296,16 +309,18 @@ class BeiJingHyundai:
         params = {"date": datetime.now().strftime("%Y%m%d")}
         response = self.make_request("GET", self.API_QUESTION_INFO, params=params)
         print(f"get_question_info API response ——> {response}")
-        if response["code"] != 0:
-            self.log(f'❌ 获取问题失败: {response["msg"]}')
+        if response.get("code") != 0:
+            self.log(f'❌ 获取问题失败: {response.get("msg", "未知错误")}')
             return
-        # response['data']['state'] 1=表示未答题 2=已答题且正确 3=答错且未有人帮忙答题 4=答错但有人帮忙答题
-        if response["data"].get("state") == 3:
+
+        data = response.get("data", {})
+        # data['state'] 1=表示未答题 2=已答题且正确 3=答错且未有人帮忙答题 4=答错但有人帮忙答题
+        if data.get("state") == 3:
             self.log("今日已答题但回答错误，当前无人帮助答题，跳过")
             return
-        if response["data"].get("state") != 1:
-            if response["data"].get("answer"):
-                answer = response["data"]["answer"][0]
+        if data.get("state") != 1:
+            if data.get("answer"):
+                answer = data.get("answer", [""])[0]
                 if answer in ["A", "B", "C", "D"]:
                     self.correct_answer = answer
                     self.log(f"今日已答题，跳过，答案：{answer}")
@@ -313,18 +328,18 @@ class BeiJingHyundai:
             self.log("今日已答题，但未获取到答案，跳过")
             return
 
-        question_info = response["data"]["question_info"]
-        questions_hid = question_info["questions_hid"]
+        question_info = data.get("question_info", {})
+        questions_hid = question_info.get("questions_hid", "")
 
         # 构建问题字符串，只包含未被标记为错误的选项
-        question_str = f"{question_info['content']}\n"
+        question_str = f"{question_info.get('content', '')}\n"
         valid_options = []
-        for option in question_info["option"]:
-            if option["option"] not in self.wrong_answers:
+        for option in question_info.get("option", []):
+            if option.get("option") not in self.wrong_answers:
                 valid_options.append(option)
-                question_str += f'{option["option"]}. {option["option_content"]}\n'
+                question_str += f'{option.get("option", "")}. {option.get("option_content", "")}\n'
             else:
-                print(f"跳过错误选项 {option['option']}. {option['option_content']}")
+                print(f"跳过错误选项 {option.get('option', '')}. {option.get('option_content', '')}")
 
         print(f"\n问题详情:\n{question_str}")
 
@@ -368,7 +383,12 @@ class BeiJingHyundai:
             print(f"腾讯混元AI API response ——> {response_json}")
 
             # 获取AI回答内容并转大写
-            ai_response = response_json["choices"][0]["message"]["content"].upper()
+            choices = response_json.get("choices", [])
+            if choices and len(choices) > 0:
+                message = choices[0].get("message", {})
+                ai_response = message.get("content", "").upper()
+            else:
+                ai_response = ""
 
             # 使用集合操作找出有效答案
             valid_answers = set("ABCD") - self.wrong_answers
@@ -423,12 +443,14 @@ class BeiJingHyundai:
         params = {"date": datetime.now().strftime("%Y%m%d")}
         response = self.make_request("GET", self.API_QUESTION_INFO, params=params)
         print(f"get_answered_question API response ——> {response}")
-        if response["code"] != 0:
-            self.log(f'❌ 从已答题账号获取问题失败: {response["msg"]}')
+        if response.get("code") != 0:
+            self.log(f'❌ 从已答题账号获取问题失败: {response.get("msg", "未知错误")}')
             return
-        # response['data']['state'] 1=表示未答题 2=已答题且正确 4=已答题但错误
-        if response["code"] == 0 and response["data"].get("answer"):
-            answer = response["data"]["answer"][0]
+
+        data = response.get("data", {})
+        # data['state'] 1=表示未答题 2=已答题且正确 4=已答题但错误
+        if response.get("code") == 0 and data.get("answer"):
+            answer = data.get("answer", [""])[0]
             if answer in ["A", "B", "C", "D"]:
                 self.correct_answer = answer
                 self.log(f"从已答题账号获取到答案：{answer}")
@@ -451,9 +473,9 @@ class BeiJingHyundai:
         response = self.make_request("POST", self.API_QUESTION_SUBMIT, json=json_data)
         print(f"submit_question_answer API response ——> {response}")
 
-        if response["code"] == 0:
-            data = response["data"]
-            if data["state"] == 3:  # 答错
+        if response.get("code") == 0:
+            data = response.get("data", {})
+            if data.get("state") == 3:  # 答错
                 # 记录错误答案
                 self.wrong_answers.add(answer)
                 # 如果是正确答案，清除它
@@ -463,13 +485,13 @@ class BeiJingHyundai:
                 if self.preset_answer == answer:
                     self.preset_answer = ""
                 self.log("❌ 答题错误")
-            elif data["state"] == 2:  # 答对了
+            elif data.get("state") == 2:  # 答对了
                 if self.correct_answer != answer:
                     self.correct_answer = answer
-                score = data["answer_score"]
+                score = data.get("answer_score", 0)
                 self.log(f"✅ 答题正确 | 积分 +{score}")
         else:
-            self.log(f'❌ 答题失败: {response["msg"]}')
+            self.log(f'❌ 答题失败: {response.get("msg", "未知错误")}')
 
     def get_backup_share_hid(self, user_hid: str) -> str:
         """从备用 hid 列表中获取一个不同于用户自身的 hid"""
@@ -549,11 +571,11 @@ class BeiJingHyundai:
         for i, user in enumerate(self.users):
             prev_index = (i - 1) if i > 0 else len(self.users) - 1
             # 如果有多个用户且上一个用户不是自己，使用上一个用户的 hid
-            if len(self.users) > 1 and self.users[prev_index]["hid"] != user["hid"]:
-                user["share_user_hid"] = self.users[prev_index]["hid"]
+            if len(self.users) > 1 and self.users[prev_index].get("hid") != user.get("hid"):
+                user["share_user_hid"] = self.users[prev_index].get("hid", "")
             else:
                 # 否则从备用 hid 列表中选择一个
-                user["share_user_hid"] = self.get_backup_share_hid(user["hid"])
+                user["share_user_hid"] = self.get_backup_share_hid(user.get("hid", ""))
 
         # 执行任务
         self.log("\n============ 执行任务 ============")
@@ -571,11 +593,11 @@ class BeiJingHyundai:
 
             # 打印用户信息
             self.log(
-                f"👻 用户名: {self.user['nickname']} | "
-                f"手机号: {self.user['phone']} | "
-                f"积分: {self.user['score_value']}\n"
-                f"🆔 用户hid: {self.user['hid']}\n"
-                f"🆔 分享hid: {self.user['share_user_hid']}"
+                f"👻 用户名: {self.user.get('nickname', '未知')} | "
+                f"手机号: {self.user.get('phone', '未知')} | "
+                f"积分: {self.user.get('score_value', 0)}\n"
+                f"🆔 用户hid: {self.user.get('hid', '')}\n"
+                f"🆔 分享hid: {self.user.get('share_user_hid', '')}"
             )
 
             # 检查任务状态
@@ -588,26 +610,36 @@ class BeiJingHyundai:
             # self.user["task"]["question"] = False
 
             # 签到
-            if not self.user["task"]["sign"]:
+            user_task = self.user.get("task", {})
+            if not user_task.get("sign"):
                 self.get_sign_info()
                 time.sleep(random.randint(5, 10))
             else:
                 self.log("✅ 签到任务 已完成，跳过")
 
             # 阅读文章
-            if not self.user["task"]["view"]:
+            if not user_task.get("view"):
                 article_ids = self.get_article_list()
                 if article_ids:
-                    for article_id in article_ids:  # 已经只有3篇了
-                        self.get_article_detail(article_id)
+                    for index, article_id in enumerate(article_ids):  # 已经只有3篇了
+                        self.log(f"🔄 开始处理第 {index + 1}/{len(article_ids)} 篇文章")
+                        try:
+                            self.get_article_detail(article_id)
+                        except Exception as e:
+                            self.log(f"❌ 第 {index + 1} 篇文章处理失败: {str(e)}")
+                        # 每篇文章之间的延迟
                         time.sleep(random.randint(10, 15))
-                    self.submit_article_score()
+                    # 所有文章处理完成后提交积分
+                    try:
+                        self.submit_article_score()
+                    except Exception as e:
+                        self.log(f"❌ 提交文章积分失败: {str(e)}")
             else:
                 self.log("✅ 浏览文章任务 已完成，跳过")
 
             # 答题
-            if not self.user["task"]["question"]:
-                self.get_question_info(self.user["share_user_hid"])
+            if not user_task.get("question"):
+                self.get_question_info(self.user.get("share_user_hid", ""))
             else:
                 self.log("✅ 答题任务 已完成，跳过")
                 if not self.correct_answer:
@@ -627,7 +659,7 @@ class BeiJingHyundai:
 
             # 打印用户信息
             self.log(
-                f"👻 用户名: {self.user['nickname']} | 手机号: {self.user['phone']}"
+                f"👻 用户名: {self.user.get('nickname', '未知')} | 手机号: {self.user.get('phone', '未知')}"
             )
 
             # 显示积分详情
