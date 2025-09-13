@@ -55,8 +55,7 @@ calculate_git_sha() {
 # 函数：从 API 获取 SHA 和内容
 fetch_from_api() {
     echo "从 GitHub API 获取 SHA 和内容..."
-    response=$(curl -s -H "${HEADERS[@]}" "$API_URL")
-    if [[ $? -ne 0 ]]; then
+    if ! response=$(curl -s -H "${HEADERS[@]}" "$API_URL"); then
         echo "错误：无法从 GitHub API 获取数据。"
         exit 1
     fi
@@ -71,7 +70,7 @@ fetch_from_api() {
     fi
 
     echo "API SHA: $api_sha"
-    echo "API content length: $(echo "$content" | wc -c)"
+    echo "API content length: ${#content}"
 }
 
 # 函数：读取本地文件的 SHA 值
@@ -95,7 +94,8 @@ backup_and_update() {
 
 # 函数：验证更新后的文件 SHA
 validate_updated_file() {
-    local updated_sha=$(get_local_sha)
+    local updated_sha
+    updated_sha=$(get_local_sha)
     if [[ "$updated_sha" != "$api_sha" ]]; then
         echo "错误：新配置文件 SHA 不匹配 ( 新配置文件值：$updated_sha, API 值：$api_sha )。"
         echo "恢复备份..."

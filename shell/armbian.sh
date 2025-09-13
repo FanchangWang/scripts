@@ -90,13 +90,14 @@ function download_from_github() {
     local github_proxies=(
         "https://gh-proxy.com/"
         "https://ghfast.top/"
-        "https://github.allproxy.dpdns.org/",
+        "https://github.allproxy.dpdns.org/"
         "https://github.guyuexuan.ip-ddns.com/"
     )
 
     echo "准备下载文件: $output"
     # 随机打乱加速源
-    local shuffled_proxies=($(shuf -e "${github_proxies[@]}"))
+    local shuffled_proxies
+    IFS=$'\n' read -d '' -r -a shuffled_proxies < <(shuf -e "${github_proxies[@]}")
 
     for proxy in "${shuffled_proxies[@]}"; do
         echo "尝试从 $proxy 下载..."
@@ -121,7 +122,7 @@ function download_from_github() {
 
 # 修改软件存放目录
 function modify_software_directory() {
-    read -p "请输入软件存放目录 (默认为 /opt): " new_software_dir
+    read -r -p "请输入软件存放目录 (默认为 /opt): " new_software_dir
     software_dir=${new_software_dir:-/opt}
     # 判断如果开头不是 / 则报错
     if [[ "$software_dir" != /* ]]; then
@@ -133,8 +134,7 @@ function modify_software_directory() {
         software_dir=${software_dir%/}
     fi
     # 创建软件存放目录, 判断是否创建成功
-    mkdir -p "$software_dir"
-    if [ $? -ne 0 ]; then
+    if ! mkdir -p "$software_dir"; then
         echo "创建软件存放目录失败"
         exit 1
     fi
@@ -149,7 +149,7 @@ function set_software_source() {
     echo "1. Ubuntu 原站"
     echo "2. 阿里云容器站"
     echo "0. 返回首层菜单"
-    read -p "请输入选项 (0-2): " mirror_choice
+    read -r -p "请输入选项 (0-2): " mirror_choice
 
     if [[ "$mirror_choice" -eq 0 ]]; then
         return
@@ -186,23 +186,22 @@ function set_software_source() {
 function install_mihomo() {
     local mihomo_dir="$software_dir/mihomo"
     mkdir -p "$mihomo_dir"
-    cd "$mihomo_dir"
+    cd "$mihomo_dir" || exit
 
     if [[ ! -f "./mihomo-linux-${arch}" ]]; then
         echo "下载 mihomo..."
         # 获取 version
         download_from_github "version.txt" "https://github.com/MetaCubeX/mihomo/releases/latest/download/version.txt"
-        local version=$(cat version.txt | tr -d ' ')
+        local version
+        version=$(cat version.txt | tr -d ' ')
         rm -f version.txt
         # 下载 mihomo-linux-${arch}-${version}.gz 文件
         download_from_github "mihomo-linux-${arch}-${version}.gz" "https://github.com/MetaCubeX/mihomo/releases/download/${version}/mihomo-linux-${arch}-${version}.gz"
-        gzip -dN "mihomo-linux-${arch}-${version}.gz"
-        if [ $? -ne 0 ]; then
+        if ! gzip -dN "mihomo-linux-${arch}-${version}.gz"; then
             echo "解压失败"
             exit 1
         fi
-        chmod +x "./mihomo-linux-${arch}"
-        if [ $? -ne 0 ]; then
+        if ! chmod +x "./mihomo-linux-${arch}"; then
             echo "设置执行权限失败"
             exit 1
         fi
@@ -210,8 +209,7 @@ function install_mihomo() {
 
     # 检查配置文件夹
     local config_dir="$mihomo_dir/config"
-    mkdir -p "$config_dir"
-    if [ $? -ne 0 ]; then
+    if ! mkdir -p "$config_dir"; then
         echo "创建配置文件夹失败"
         exit 1
     fi
@@ -221,15 +219,14 @@ function install_mihomo() {
         echo "下载 UI 文件..."
         mkdir -p "$config_dir/ui"
         download_from_github "ui.tgz" "https://github.com/MetaCubeX/metacubexd/releases/latest/download/compressed-dist.tgz"
-        tar -xzf ui.tgz -C "$config_dir/ui"
-        if [ $? -ne 0 ]; then
+        if ! tar -xzf ui.tgz -C "$config_dir/ui"; then
             echo "解压 UI 文件失败"
             exit 1
         fi
         rm -f ui.tgz
     fi
 
-    cd "$config_dir"
+    cd "$config_dir" || exit
 
     # 下载 geo 文件
     local files=("GeoIP.dat" "GeoSite.dat" "GeoIP.metadb" "GeoLite2-ASN.mmdb")
@@ -440,7 +437,7 @@ function install_qinglong() {
     else
         echo "安装 qinglong 容器..."
         echo "请选择安装镜像版本 latest 或 develop"
-        read -p "请输入选项 (1: latest[默认] 或 2: develop): " qinglong_version
+        read -r -p "请输入选项 (1: latest[默认] 或 2: develop): " qinglong_version
         if [[ "$qinglong_version" == "2" ]]; then
             qinglong_version="develop"
         else
@@ -476,7 +473,7 @@ function install_allinone_and_allinone_format() {
         local allinone_format_dir="$software_dir/allinone_format"
         mkdir -p "$allinone_format_dir"
         docker pull yuexuangu/allinone_format:latest
-        docker run -e TZ=Asia/Shanghai -v $allinone_format_dir:/app/config -d --restart=unless-stopped -p 35456:35456 --name allinone_format yuexuangu/allinone_format:latest
+        docker run -e TZ=Asia/Shanghai -v "$allinone_format_dir:/app/config" -d --restart=unless-stopped -p 35456:35456 --name allinone_format yuexuangu/allinone_format:latest
         echo "allinone_format:latest 容器安装完成"
     fi
     echo "allinone 访问地址: http://${internal_ip}:35455/tv.m3u"
@@ -492,7 +489,7 @@ function install_allinone_format_dev() {
         local allinone_format_dir="$software_dir/allinone_format_dev"
         mkdir -p "$allinone_format_dir"
         docker pull yuexuangu/allinone_format:dev
-        docker run -e TZ=Asia/Shanghai -v $allinone_format_dir:/app/config -d --restart=unless-stopped -p 35457:35456 --name allinone_format_dev yuexuangu/allinone_format:dev
+        docker run -e TZ=Asia/Shanghai -v "$allinone_format_dir:/app/config" -d --restart=unless-stopped -p 35457:35456 --name allinone_format_dev yuexuangu/allinone_format:dev
         echo "allinone_format:dev 容器安装完成"
     fi
     echo "allinone_format:dev 访问地址: http://${internal_ip}:35457"
@@ -543,8 +540,8 @@ function install_homeassistant() {
 
 while true; do
     show_menu
-    read -p "请选择要执行的功能 [0 退出脚本]: " choice
+    read -r -p "请选择要执行的功能 [0 退出脚本]: " choice
     handle_choice "$choice"
     echo "按任意键继续..."
-    read -s -n 1
+    read -r -s -n 1
 done
