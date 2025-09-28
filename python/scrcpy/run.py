@@ -1,16 +1,16 @@
 import sys
 import subprocess
-from PyQt5.QtWidgets import (QApplication, QDialog, QMessageBox,
-                             QListWidget, QVBoxLayout, QPushButton, QDesktopWidget)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt6.QtWidgets import (QApplication, QDialog, QMessageBox,
+                             QListWidget, QVBoxLayout, QPushButton, QWidget, QAbstractItemView)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 
 class DeviceSelector(QDialog):
     """设备选择对话框"""
     def __init__(self, devices, parent=None):
         super().__init__(parent)
         self.setWindowTitle("选择设备")
-        self.setGeometry(300, 300, 1300, 400)
+        self.setGeometry(300, 300, 1000, 400)
 
         # 设置中文字体
         font = QFont()
@@ -27,7 +27,8 @@ class DeviceSelector(QDialog):
         self.list_widget = QListWidget()
         for device in devices:
             self.list_widget.addItem(device)
-        self.list_widget.setSelectionMode(QListWidget.SingleSelection)
+        # 在PyQt6中，使用QAbstractItemView中的SelectionMode枚举
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         if devices:
             self.list_widget.setCurrentRow(0)
 
@@ -35,7 +36,7 @@ class DeviceSelector(QDialog):
 
         select_btn = QPushButton("选择")
         # 加大按钮尺寸
-        select_btn.setMinimumHeight(60)
+        select_btn.setMinimumHeight(40)
         select_btn.clicked.connect(self.on_select)
         layout.addWidget(select_btn)
 
@@ -44,9 +45,12 @@ class DeviceSelector(QDialog):
     def center(self):
         """将窗口居中显示"""
         qr = self.frameGeometry()
-        cp = QDesktopWidget().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
+        # 在PyQt6中，QDesktopWidget被移除，使用QWidget的screen()方法
+        screen = self.screen()
+        if screen:
+            cp = screen.availableGeometry().center()
+            qr.moveCenter(cp)
+            self.move(qr.topLeft())
 
     def on_select(self):
         if self.list_widget.selectedItems():
@@ -105,6 +109,8 @@ def start_scrcpy(device_id=None, extra_args=None):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
             creationflags=subprocess.CREATE_NO_WINDOW  # Windows特定：不创建窗口
         )
         return True
@@ -134,7 +140,7 @@ def main():
     elif len(devices) > 1:
         # 多台设备，显示选择对话框
         selector = DeviceSelector(devices)
-        if selector.exec_() == QDialog.Accepted and selector.selected_device:
+        if selector.exec() == QDialog.DialogCode.Accepted and selector.selected_device:
             start_scrcpy(selector.selected_device, extra_args)
     else:
         # 无设备，询问是否连接指定IP
@@ -142,10 +148,10 @@ def main():
             None,
             "无设备已连接",
             "是否尝试连接 192.168.31.60:5555 ?",
-            QMessageBox.Yes | QMessageBox.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             if connect_to_device("192.168.31.60:5555"):
                 # 连接成功，再次检查设备并启动scrcpy
                 new_devices = get_connected_devices()
