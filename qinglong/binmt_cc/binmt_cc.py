@@ -25,13 +25,15 @@ class Binmt:
     """bbs.binmt.cc 签到任务类"""
 
     # 基础配置
-    NAME = "bbs.binmt.cc MT论坛签到任务"
+    NAME = "MT论坛签到"
 
     def __init__(self):
         self.session = requests.Session()
         self.base_url = "https://bbs.binmt.cc"
         self.logout_url = None
         self.log_content: str = ""  # 日志内容
+        self.initial_gold = 0  # 初始金币数量
+        self.initial_points = 0  # 初始积分数量
 
     def log(self, content: str, print_to_console: bool = True) -> None:
         """添加日志"""
@@ -151,28 +153,74 @@ class Binmt:
         except Exception as e:
             self.log(f"❌ 签到失败！{e}")
 
-    def get_score_info(self, check_reply: bool = False) -> bool:
-        """获取积分信息"""
-        has_reply = False
-        message = ""
+    def check_score_info(self):
+        """检查并记录初始金币和积分信息"""
         try:
             score_info_response = self.session.get(
                 f"{self.base_url}/home.php?mod=spacecp&ac=credit&op=base"
             )
             soup = BeautifulSoup(score_info_response.text, "html.parser")
             self.get_logout_url(soup)
-            score_info = soup.find("ul", {"class": "creditl"}).find_all("li")
-            message += f"积分信息:\n"
-            for score_info_li in score_info:
-                # 如果 li 中存在 span,移除 li 中的 span
-                score_info_li_text = score_info_li.text
-                if score_info_li.find("span"):
-                    score_info_li_text = score_info_li_text.replace(
-                        score_info_li.find("span").text, ""
-                    )
-                message += f"{score_info_li_text.strip()} "
 
-            message += f"\n\n积分记录:\n"
+            # 解析初始金币和积分
+            score_info = soup.find("ul", {"class": "creditl"}).find_all("li")
+            for score_info_li in score_info:
+                li_text = score_info_li.text.strip()
+                if "金币:" in li_text:
+                    # 提取金币数量，例如："金币: 1160" -> 1160
+                    self.initial_gold = int(li_text.split(":")[1].strip().split()[0])
+                elif "积分:" in li_text:
+                    # 提取积分数量，例如："积分: 867" -> 867
+                    points_part = li_text.split(":")[1].strip()
+                    if "(" in points_part:
+                        points_part = points_part.split("(")[0].strip()
+                    self.initial_points = int(points_part)
+
+            self.log(f"✅ 记录初始积分信息：金币 {self.initial_gold}，积分 {self.initial_points}")
+        except Exception as e:
+            self.log(f"❌ 检查初始积分信息失败！{e}")
+
+    def get_score_info(self):
+        """获取积分信息并计算变化"""
+        current_gold = 0
+        current_points = 0
+        try:
+            score_info_response = self.session.get(
+                f"{self.base_url}/home.php?mod=spacecp&ac=credit&op=base"
+            )
+            soup = BeautifulSoup(score_info_response.text, "html.parser")
+            self.get_logout_url(soup)
+
+            # 解析当前金币和积分
+            score_info = soup.find("ul", {"class": "creditl"}).find_all("li")
+            message = "积分信息:\n"
+            for score_info_li in score_info:
+                li_text = score_info_li.text
+                if score_info_li.find("span"):
+                    li_text = li_text.replace(score_info_li.find("span").text, "")
+                li_text = li_text.strip()
+
+                # 提取当前金币和积分数量
+                if "金币:" in li_text:
+                    current_gold = int(li_text.split(":")[1].strip().split()[0])
+                elif "积分:" in li_text:
+                    points_part = li_text.split(":")[1].strip()
+                    if "(" in points_part:
+                        points_part = points_part.split("(")[0].strip()
+                    current_points = int(points_part)
+
+            # 计算新增数量
+            gold_increase = current_gold - self.initial_gold
+            points_increase = current_points - self.initial_points
+
+            # 更新NAME
+            self.NAME = f"{self.NAME} 金币(+{gold_increase}) 积分(+{points_increase})"
+
+            # 打印包含新增值的积分信息
+            message = f"金币：{current_gold} (+{gold_increase}) 积分：{current_points} (+{points_increase})\n"
+
+            # 添加积分记录
+            message += f"\n积分记录:\n"
             table_list = soup.find("table", {"class": "mtm"}).find_all("tr")
             n = 0
             for table_tr in table_list:
@@ -187,7 +235,6 @@ class Binmt:
             self.log(message)
         except Exception as e:
             self.log(f"❌ 获取积分信息失败！{e}")
-        return has_reply
 
     def run(self):
         """运行主程序"""
@@ -198,8 +245,9 @@ class Binmt:
             self.push_notification()
             return
         if self.login(username, password):
-            self.sign()
-            self.get_score_info()
+            self.check_score_info()  # 记录初始积分信息
+            self.sign()  # 签到
+            self.get_score_info()  # 获取并计算积分变化
             self.logout()
 
         # 最后推送通知
