@@ -36,6 +36,7 @@ class IPTV:
         self.initial_tv_coins = 0
         self.initial_points = 0
         self.has_replied = False
+        self.is_website_being_renovated = False  # 网站是否正在整改
 
     def log(self, content: str, print_to_console: bool = True) -> None:
         """添加日志"""
@@ -255,6 +256,13 @@ class IPTV:
                 f"{self.base_url}/home.php?mod=spacecp&ac=credit&op=base"
             )
             soup = BeautifulSoup(score_info_response.text, "html.parser")
+            # 检测网站整改
+            message_div = soup.find("div", id="messagetext", class_="alert_error")
+            if message_div:
+                first_p = message_div.find("p")
+                if first_p and "网站整改" in first_p.text:
+                    self.is_website_being_renovated = True
+                    return
             score_info = soup.find("ul", {"class": "creditl"}).find_all("li")
 
             # 记录当前 TV币 和 积分数量
@@ -347,17 +355,17 @@ class IPTV:
             self.push_notification()
             return
         if self.login(username, password):
-            # 1. 检查并记录初始积分信息
             self.check_score_info()
-            # 2. 签到
-            self.sign()
-            # 3. 判断是否已回复过帖子
-            if not self.has_replied:
-                self.view_thread()
+            if not self.is_website_being_renovated:
+                self.sign()
+                if not self.has_replied:
+                    self.view_thread()
+                else:
+                    self.log("✅ 今天已回复过帖子")
+                self.get_score_info()
             else:
-                self.log("✅ 今天已回复过帖子")
-            # 4. 获取并计算积分变化
-            self.get_score_info()
+                self.NAME = f"{self.NAME} (网站整改中)"
+                self.log("⚠️ 网站正在整改中, 跳过")
             self.logout()
 
         # 最后推送通知
