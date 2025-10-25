@@ -1,0 +1,65 @@
+### 智谱 AI chat
+# @name glmChat
+POST https://open.bigmodel.cn/api/paas/v4/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{$dotenv GLM_API_KEY}}
+
+{
+  "model": "glm-4-flash-250414",
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是一位北京现代汽车品牌的专家，对于北京现代的汽车型号以及配置参数非常熟悉。"
+    },
+    {
+      "role": "user",
+      "content": "请帮我查看下面这个北京现代汽车相关的问题并给出答案。\n要求1：答案只能以英文 ABCD 的形式给出。\n要求2：这是一个单选题，所以只能给出一个英文字符回答。"
+    },
+    {
+      "role": "user",
+      "content": "Q：第五代 胜达的外观设计语言是？\nA. 光影式造型\nB. 中国专属方盒子造型\nC. 全球 One Model 方盒子造型\nD. 大方盒子造型"
+    }
+  ],
+  "max_tokens": 16384,
+  "stream": false,
+  "do_sample": false
+}
+
+# 正确答案 C
+# Q：第五代 胜达的外观设计语言是？\nA. 光影式造型\nB. 中国专属方盒子造型\nC. 全球 One Model 方盒子造型\nD. 大方盒子造型
+
+# 正确答案 A
+# Q: 第五代 胜达尾门最大开启角度为？\nA. A、90.4°\nB. B、94.0°\nC. C、100.4°\nD. D、140.0°
+
+# response
+# HTTP/1.1 200 OK
+# Date: Sat, 25 Oct 2025 16:53:49 GMT
+# Content-Type: application/json; charset=UTF-8
+# Transfer-Encoding: chunked
+# Connection: close
+# Vary: Accept-Encoding, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Origin, Access-Control-Request-Method, Access-Control-Request-Headers
+# X-LOG-ID: 20251026005348d288cc0ae2874109
+# Strict-Transport-Security: max-age=31536000; includeSubDomains
+# Content-Encoding: gzip
+
+# {
+#   "choices": [
+#     {
+#       "finish_reason": "stop",
+#       "index": 0,
+#       "message": {
+#         "content": "B",
+#         "role": "assistant"
+#       }
+#     }
+#   ],
+#   "created": 1761411229,
+#   "id": "20251026005348d288cc0ae2874109",
+#   "model": "glm-4-flash-250414",
+#   "request_id": "20251026005348d288cc0ae2874109",
+#   "usage": {
+#     "completion_tokens": 3,
+#     "prompt_tokens": 123,
+#     "total_tokens": 126
+#   }
+# }

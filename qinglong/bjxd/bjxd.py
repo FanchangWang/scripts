@@ -58,7 +58,8 @@ class BeiJingHyundai:
         self.users: List[Dict[str, Any]] = []  # 所有用户信息列表
         self.correct_answer: str = ""  # 正确答案
         self.preset_answer: str = ""  # 预设答案
-        self.ai_api_key: str = ""  # 腾讯混元AI APIKey
+        self.ai_hunyuan_api_key: str = ""  # 腾讯混元AI APIKey
+        self.ai_glm_api_key: str = ""  # 智谱 GLM AI APIKey
         self.wrong_answers: set = set()  # 错误答案集合
         self.log_content: str = ""  # 日志内容
 
@@ -357,10 +358,10 @@ class BeiJingHyundai:
         time.sleep(random.randint(3, 5))
         self.submit_question_answer(questions_hid, answer, share_user_hid)
 
-    def get_ai_answer(self, question: str) -> str:
+    def get_ai_hunyuan_answer(self, question: str) -> str:
         """获取AI答案"""
         headers = {
-            "Authorization": f"Bearer {self.ai_api_key}",
+            "Authorization": f"Bearer {self.ai_hunyuan_api_key}",
             "Content-Type": "application/json",
         }
         prompt = f"你是一个专业的北京现代汽车专家，请直接给出这个单选题的答案，并且不要带'答案'等其他内容。\n{question}"
@@ -406,6 +407,58 @@ class BeiJingHyundai:
 
         return ""
 
+    def get_ai_glm_answer(self, question: str) -> str:
+        """获取AI答案"""
+        headers = {
+            "Authorization": f"Bearer {self.ai_glm_api_key}",
+            "Content-Type": "application/json",
+        }
+        json_data = {
+            "model": "glm-4-flash-250414",
+            "messages": [
+                {"role": "system", "content": "你是一位北京现代汽车品牌的专家，对于北京现代的汽车型号以及配置参数非常熟悉。"},
+                {"role": "user", "content": "请帮我查看下面这个北京现代汽车相关的问题并给出答案。\n要求1：答案只能以英文 ABCD 的形式给出。\n要求2：这是一个单选题，所以只能给出一个英文字符回答。"},
+                {"role": "user", "content": f"{question}"}
+            ],
+            "max_tokens": 16384,
+            "stream": False,
+            "do_sample": False
+        }
+
+        try:
+            response = requests.post(
+                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                headers=headers,
+                json=json_data,
+            )
+            response.raise_for_status()
+            response_json = response.json()
+            print(f"智谱 GLM AI API response ——> {response_json}")
+
+            # 获取AI回答内容并转大写
+            choices = response_json.get("choices", [])
+            if choices and len(choices) > 0:
+                message = choices[0].get("message", {})
+                ai_response = message.get("content", "").upper()
+            else:
+                ai_response = ""
+
+            # 使用集合操作找出有效答案
+            valid_answers = set("ABCD") - self.wrong_answers
+            found_answers = set(ai_response) & valid_answers
+
+            # 如果找到答案则返回其中一个
+            if found_answers:
+                return found_answers.pop()
+            else:
+                print(f"❌ 没有找到符合的 AI 答案")
+                return ""
+
+        except Exception as e:
+            print(f"智谱 GLM AI API 请求失败: {str(e)}")
+
+        return ""
+
     def get_question_answer(self, question: str) -> str:
         """获取答题答案"""
         # 1. 存在正确答案时，使用正确答案
@@ -419,10 +472,15 @@ class BeiJingHyundai:
             return self.preset_answer
 
         # 3. 存在AI APIKey时，使用AI答案
-        if self.ai_api_key:
-            ai_answer = self.get_ai_answer(question)
+        if self.ai_hunyuan_api_key:
+            ai_answer = self.get_ai_hunyuan_answer(question)
             if ai_answer:
                 self.log(f"使用AI答案: {ai_answer}")
+                return ai_answer
+        elif self.ai_glm_api_key:
+            ai_answer = self.get_ai_glm_answer(question)
+            if ai_answer:
+                self.log(f"使用智谱 GLM AI 答案: {ai_answer}")
                 return ai_answer
 
         # 4. 随机选择答案（排除错误答案）
@@ -538,11 +596,18 @@ class BeiJingHyundai:
 
         self.log(f"👻 共获取到用户 token {len(tokens)} 个")
 
-        self.ai_api_key = os.getenv("HUNYUAN_API_KEY", "")
+        self.ai_hunyuan_api_key = os.getenv("HUNYUAN_API_KEY", "")
         self.log(
             "💯 已获取到腾讯混元 AI APIKey, 使用腾讯混元 AI 答题"
-            if self.ai_api_key
-            else "😭 未设置腾讯混元 AI HUNYUAN_API_KEY 环境变量，使用随机答题"
+            if self.ai_hunyuan_api_key
+            else "😭 未设置腾讯混元 AI HUNYUAN_API_KEY 环境变量"
+        )
+
+        self.ai_glm_api_key = os.getenv("GLM_API_KEY", "")
+        self.log(
+            "💯 已获取到智谱 GLM AI APIKey, 使用智谱 GLM AI 答题"
+            if self.ai_glm_api_key
+            else "😭 未设置智谱 GLM AI GLM_API_KEY 环境变量"
         )
 
         # 获取预设答案
