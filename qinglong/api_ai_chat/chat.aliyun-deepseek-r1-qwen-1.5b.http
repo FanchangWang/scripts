@@ -1,0 +1,49 @@
+### 阿里云百炼 deepseek-r1-distill-qwen-1.5b 模型
+# @name aliyunDeepseekR1Qwen1.5BChat
+POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{$dotenv ALIYUN_API_KEY}}
+
+{
+  "model": "deepseek-r1-distill-qwen-1.5b",
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是一位北京现代汽车品牌的专家，对车型配置非常熟悉。\n以下是一道单选题，请只从题目实际列出的选项里选择正确答案。\n注意：题目可能只给出 2 个或 3 个选项，并非永远 4 个。\n请仅输出对应选项的那个英文字母，不要输出任何其他字符。"
+    },
+    {
+      "role": "user",
+      "content": "Q：第五代 胜达的环抱式“H”型LED氛围灯有多种颜色可选？\nC. 32色\nD. 64色"
+    }
+  ]
+}
+
+# 正确答案 C
+# Q：第五代 胜达的外观设计语言是？\nA. 光影式造型\nB. 中国专属方盒子造型\nC. 全球 One Model 方盒子造型\nD. 大方盒子造型
+
+# 正确答案 A
+# Q: 第五代 胜达尾门最大开启角度为？\nA. A、90.4°\nB. B、94.0°\nC. C、100.4°\nD. D、140.0°
+
+# 正确答案 D
+# Q：第五代 胜达的环抱式“H”型LED氛围灯有多种颜色可选？\nC. 32色\nD. 64色
+
+# response
+{
+  "code": 0,
+  "message": "Success",
+  "sid": "cha000bfd4a@dx19a25018f159a4b532",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "C. 32色"
+      },
+      "index": 0
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 146,
+    "completion_tokens": 6,
+    "total_tokens": 152
+  }
+}

@@ -7,6 +7,7 @@
     BJXD1/BJXD2/BJXD3: str - 北京现代 APP api token (每个账号一个变量)
     BJXD_ANSWER: str - 预设答案 (可选, ABCD 中的一个)
     HUNYUAN_API_KEY: str - 腾讯混元AI APIKey (可选)
+    GLM_API_KEY: str - 智谱 GLM AI APIKey (可选)
 
 cron: 25 6 * * *
 """
@@ -416,11 +417,9 @@ class BeiJingHyundai:
         json_data = {
             "model": "glm-4-flash-250414",
             "messages": [
-                {"role": "system", "content": "你是一位北京现代汽车品牌的专家，对于北京现代的汽车型号以及配置参数非常熟悉。"},
-                {"role": "user", "content": "请帮我查看下面这个北京现代汽车相关的问题并给出答案。\n要求1：答案只能以英文 ABCD 的形式给出。\n要求2：这是一个单选题，所以只能给出一个英文字符回答。"},
+                {"role": "system", "content": "你是一位北京现代汽车品牌的专家，对车型配置非常熟悉。\n以下是一道单选题，请只从题目实际列出的选项里选择正确答案。\n注意：题目可能只给出 2 个或 3 个选项，并非永远 4 个。\n请仅输出对应选项的那个英文字母，不要输出任何其他字符。"},
                 {"role": "user", "content": f"{question}"}
             ],
-            "max_tokens": 16384,
             "stream": False,
             "do_sample": False
         }
