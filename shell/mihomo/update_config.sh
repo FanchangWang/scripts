@@ -14,6 +14,12 @@ GITHUB_PROXY="https://github.allproxy.dpdns.org"
 API_URL="$GITHUB_PROXY/https://api.github.com/repos/$OWNER/$REPO/contents/config.yaml"
 HEADERS=("Accept: application/vnd.github.v3+json")
 
+# 检查是否存在 GITHUB_TOKEN 环境变量
+if [ -n "$GITHUB_TOKEN" ]; then
+    HEADERS+=("Authorization: token $GITHUB_TOKEN")
+    echo "已添加 GitHub Token 认证头"
+fi
+
 # 函数：打印 crontab 信息
 crontab_check() {
     # 获取当前的 crontab 内容
