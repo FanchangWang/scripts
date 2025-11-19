@@ -363,6 +363,8 @@ function install_sun_panel() {
         echo "sun-panel:1.3.0 容器安装完成"
     fi
     echo "sun-panel:1.3.0 访问地址: http://${internal_ip}:3002"
+    echo "默认账号: admin@sun.cc"
+    echo "默认密码: 12345678"
 }
 
 # 安装 webssh
