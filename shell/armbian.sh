@@ -148,8 +148,9 @@ function set_software_source() {
     echo "请选择要设置的软件源:"
     echo "1. Ubuntu 原站"
     echo "2. 阿里云容器站"
+    echo "3. 清华大学容器站"
     echo "0. 返回首层菜单"
-    read -r -p "请输入选项 (0-2): " mirror_choice
+    read -r -p "请输入选项 (0-3): " mirror_choice
 
     if [[ "$mirror_choice" -eq 0 ]]; then
         return
