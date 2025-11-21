@@ -30,7 +30,7 @@ crontab_check() {
     cleanup_cron="10 3 */7 * * truncate -s 0 $SCRIPT_DIR/update_config.log 2>&1"
 
     # 检查是否已存在这些条目
-    update_exists=$(echo "$current_crontab" | grep -F "$update_cron")
+    update_exists=$(echo "$current_crontab" | grep -F "update_config.sh")
     cleanup_exists=$(echo "$current_crontab" | grep -F "$cleanup_cron")
 
     if [ -n "$update_exists" ]; then
