@@ -415,7 +415,7 @@ class BeiJingHyundai:
             "Content-Type": "application/json",
         }
         json_data = {
-            "model": "glm-4-flash-250414",
+            "model": "glm-4.5-flash",
             "messages": [
                 {"role": "system", "content": "你是一位北京现代汽车品牌的专家，对车型配置非常熟悉。\n以下是一道单选题，请只从题目实际列出的选项里选择正确答案。\n注意：题目可能只给出 2 个或 3 个选项，并非永远 4 个。\n请仅输出对应选项的那个英文字母，不要输出任何其他字符。"},
                 {"role": "user", "content": f"{question}"}

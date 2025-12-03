@@ -1,11 +1,11 @@
-### 智谱 AI glm-4-flash-250414 模型
-# @name glm4FlashChat
+### 智谱 AI glm-4.5-flash 模型
+# @name glm45FlashChat
 POST https://open.bigmodel.cn/api/paas/v4/chat/completions
 Content-Type: application/json
 Authorization: Bearer {{$dotenv GLM_API_KEY}}
 
 {
-  "model": "glm-4-flash-250414",
+  "model": "glm-4.5-flash",
   "messages": [
     {
       "role": "system",
@@ -36,14 +36,16 @@ Authorization: Bearer {{$dotenv GLM_API_KEY}}
 # 正确答案 C
 # Q：第五代 胜达的F-OTA是指哪项技术？\nA. 云管端一体化整车硬件升级系统\nB. 智能网联架构\nC. 整车全域升级系统\nD. 智能物联网架构
 
+
+
 # response
 # HTTP/1.1 200 OK
-# Date: Sat, 25 Oct 2025 16:53:49 GMT
+# Date: Wed, 03 Dec 2025 23:11:10 GMT
 # Content-Type: application/json; charset=UTF-8
 # Transfer-Encoding: chunked
 # Connection: close
 # Vary: Accept-Encoding, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Origin, Access-Control-Request-Method, Access-Control-Request-Headers
-# X-LOG-ID: 20251026005348d288cc0ae2874109
+# X-LOG-ID: 202512040711042e8fbb5a89124457
 # Strict-Transport-Security: max-age=31536000; includeSubDomains
 # Content-Encoding: gzip
 
@@ -53,18 +55,22 @@ Authorization: Bearer {{$dotenv GLM_API_KEY}}
 #       "finish_reason": "stop",
 #       "index": 0,
 #       "message": {
-#         "content": "B",
+#         "content": "C",
+#         "reasoning_content": "\n我需要从题目列出的选项中选择第五代胜达的F-OTA所指的技术。\n\n题目问的是第五代胜达的F-OTA是指哪项技术，选项有：\nA. 云管端一体化整车硬件升级系统\nB. 智能网联架构\nC. 整车全域升级系统\nD. 智能物联网架构\n\nF-OTA通常指的是Firmware Over-The-Air，即通过无线方式对车辆的固件进行远程升级技术。这是现代汽车中常见的一种技术，用于远程更新车辆软件系统。\n\n对于北京现代第五代胜达的F-OTA技术，我需要确定它具体指的是什么。\n\n根据我的知识，北京现代第五代胜达的F-OTA技术是指\"整车全域升级系统\"，即通过OTA技术对车辆的多个系统和模块进行软件更新，包括但不限于动力系统、驾驶辅助系统、信息娱乐系统等。\n\n因此，正确答案应该是选项C：整车全域升级系统。",
 #         "role": "assistant"
 #       }
 #     }
 #   ],
-#   "created": 1761411229,
-#   "id": "20251026005348d288cc0ae2874109",
-#   "model": "glm-4-flash-250414",
-#   "request_id": "20251026005348d288cc0ae2874109",
+#   "created": 1764803470,
+#   "id": "202512040711042e8fbb5a89124457",
+#   "model": "glm-4.5-flash",
+#   "request_id": "202512040711042e8fbb5a89124457",
 #   "usage": {
-#     "completion_tokens": 3,
-#     "prompt_tokens": 123,
-#     "total_tokens": 126
+#     "completion_tokens": 206,
+#     "prompt_tokens": 131,
+#     "prompt_tokens_details": {
+#       "cached_tokens": 6
+#     },
+#     "total_tokens": 337
 #   }
 # }
