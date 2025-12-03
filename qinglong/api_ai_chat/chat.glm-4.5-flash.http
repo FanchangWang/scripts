@@ -13,7 +13,7 @@ Authorization: Bearer {{$dotenv GLM_API_KEY}}
     },
     {
       "role": "user",
-      "content": "Q：第五代 胜达的F-OTA是指哪项技术？\nA. 云管端一体化整车硬件升级系统\nB. 智能网联架构\nC. 整车全域升级系统\nD. 智能物联网架构"
+      "content": "Q：第五代 胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离为？\nA. 4.5米\nB. 5米\nC. 6米\nD. 7米"
     }
   ]
 }
@@ -36,7 +36,8 @@ Authorization: Bearer {{$dotenv GLM_API_KEY}}
 # 正确答案 C
 # Q：第五代 胜达的F-OTA是指哪项技术？\nA. 云管端一体化整车硬件升级系统\nB. 智能网联架构\nC. 整车全域升级系统\nD. 智能物联网架构
 
-
+# 正确答案 D
+# Q：第五代 胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离为？\nA. 4.5米\nB. 5米\nC. 6米\nD. 7米
 
 # response
 # HTTP/1.1 200 OK
