@@ -325,12 +325,12 @@ EOL
 
 # 安装 watchtower
 function install_watchtower() {
-    if docker ps -a | grep -q containrrr/watchtower; then
+    if docker ps -a | grep -q nickfedor/watchtower; then
         echo "watchtower 容器已存在，跳过安装"
     else
         echo "安装 watchtower 容器..."
-        docker pull containrrr/watchtower:latest
-        docker run -e TZ=Asia/Shanghai -v /var/run/docker.sock:/var/run/docker.sock -d --restart=unless-stopped --name watchtower containrrr/watchtower:latest --cleanup --interval=1800
+        docker pull nickfedor/watchtower:latest
+        docker run -e TZ=Asia/Shanghai -v /var/run/docker.sock:/var/run/docker.sock -d --restart=unless-stopped --name watchtower nickfedor/watchtower:latest --cleanup --interval=1800
         echo "watchtower 容器安装完成"
     fi
 }
