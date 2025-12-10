@@ -1,0 +1,241 @@
+### quote
+# @name quote
+GET https://stock.xueqiu.com/v5/stock/quote.json?symbol=SH603533&extend=detail HTTP/1.1
+Accept: application/json
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+Accept-Language: zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6
+Cookie: {{$dotenv XUEQIU}}
+
+# {
+#   "data": {
+#     "market": {
+#       "status_id": 1, // 股票状态ID：1=未开盘/5=交易中/7=已收盘
+#       "region": "CN",
+#       "status": "未开盘", // 股票状态：1=未开盘/5=交易中/7=已收盘
+#       "time_zone": "Asia/Shanghai",
+#       "time_zone_desc": null,
+#       "delay_tag": 0,
+#       "downgrade_night_session": false,
+#       "daylight_savings": false
+#     },
+#     "quote": {
+#       "current": 19.98, // 当前价格
+#       "percent": 0.81, // 今日涨跌幅
+
+#       "high": 20.19, // 今日最高价
+#       "low": 19.85, // 今日最低价
+#       "open": 19.95 // 今日开盘价
+#       "amplitude": 1.72, // 今日振幅
+
+#       "name": "掌阅科技", // 股票名称
+#       "time": 1765177200000,
+#     },
+#   },
+#   "error_code": 0,
+#   "error_description": ""
+# }
+
+# HTTP/1.1 200 OK
+# Server: openresty
+# Date: Mon, 08 Dec 2025 19:16:35 GMT
+# Content-Type: application/json;charset=UTF-8
+# Transfer-Encoding: chunked
+# Connection: close
+# Vary: Accept-Encoding
+# Trace-Id: 4717da7fdd5958ed
+# P3P: CP="IDC DSP COR ADM DEVi TAIi PSA PSD IVAi IVDi CONi HIS OUR IND CNT"
+# Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0
+# Access-Control-Allow-Origin: https://xueqiu.com
+# Access-Control-Allow-Credentials: true
+# Access-Control-ALLow-Methods: GET, POST, OPTIONS, DELETE
+# Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept
+# Content-Encoding: gzip
+
+# {
+#   "data": {
+#     "market": {
+#       "status_id": 1, // 股票状态ID：1=未开盘/5=交易中/7=已收盘
+#       "region": "CN",
+#       "status": "未开盘", // 股票状态：1=未开盘/5=交易中/7=已收盘
+#       "time_zone": "Asia/Shanghai",
+#       "time_zone_desc": null,
+#       "delay_tag": 0,
+#       "downgrade_night_session": false,
+#       "daylight_savings": false
+#     },
+#     "quote": {
+#       "current_ext": null,
+#       "symbol": "SH603533",
+#       "volume_ext": null,
+#       "high52w": 31.1753,
+#       "delayed": 0,
+#       "type": 11,
+#       "tick_size": 0.01,
+#       "float_shares": 438896835,
+#       "limit_down": 17.84,
+#       "no_profit": null,
+#       "high": 20.19, // 今日最高价
+#       "float_market_capital": 8.769158763E9,
+#       "timestamp_ext": null,
+#       "lot_size": 100,
+#       "lock_set": null,
+#       "weighted_voting_rights": null,
+#       "chg": 0.16,
+#       "eps": -0.3,
+#       "last_close": 19.82,
+#       "profit_four": -1.30537034E8,
+#       "volume": 16240848,
+#       "volume_ratio": 0.81,
+#       "profit_forecast": -2.88878665E8,
+#       "turnover_rate": 3.7,
+#       "low52w": 15.105,
+#       "name": "掌阅科技", // 股票名称
+#       "exchange": "SH",
+#       "pe_forecast": -30.356,
+#       "total_shares": 438896835,
+#       "status": 1,
+#       "is_vie_desc": null,
+#       "security_status": null,
+#       "code": "603533",
+#       "goodwill_in_net_assets": null,
+#       "avg_price": 20.03,
+#       "percent": 0.81, // 今日涨跌幅
+#       "weighted_voting_rights_desc": null,
+#       "amplitude": 1.72, // 今日振幅
+#       "current": 19.98, // 当前价格
+#       "is_vie": null,
+#       "current_year_percent": -1.14,
+#       "issue_date": 1505923200000,
+#       "sub_type": "ASH",
+#       "low": 19.85, // 今日最低价
+#       "is_registration_desc": "否",
+#       "no_profit_desc": null,
+#       "market_capital": 8.769158763E9,
+#       "dividend": 0.1,
+#       "dividend_yield": 0.501,
+#       "currency": "CNY",
+#       "navps": 5.2673,
+#       "profit": 4.929168429E7,
+#       "timestamp": 1765177200000,
+#       "pe_lyr": 177.903,
+#       "amount": 3.2530591E8,
+#       "pledge_ratio": null,
+#       "traded_amount_ext": null,
+#       "is_registration": "N",
+#       "pb": 3.793,
+#       "limit_up": 21.8,
+#       "pe_ttm": -67.178,
+#       "time": 1765177200000,
+#       "open": 19.95 // 今日开盘价
+#     },
+#     "others": {
+#       "pankou_ratio": 33.17,
+#       "cyb_switch": true
+#     },
+#     "tags": [
+#       {
+#         "description": "沪股通",
+#         "value": 1
+#       }
+#     ]
+#   },
+#   "error_code": 0,
+#   "error_description": ""
+# }
+
+
+# {
+#     "data": {
+#         "market": {
+#             "status_id": 5,
+#             "region": "US",
+#             "status": "交易中",
+#             "time_zone": "America/New_York",
+#             "time_zone_desc": null,
+#             "delay_tag": 0,
+#             "downgrade_night_session": false,
+#             "daylight_savings": false
+#         },
+#         "quote": {
+#             "current_ext": 484.28,
+#             "symbol": "MSFT",
+#             "high52w": 555.45,
+#             "percent_ext": 0.231807,
+#             "delayed": 0,
+#             "type": 0,
+#             "tick_size": 0.01,
+#             "float_shares": null,
+#             "high": 492.3,
+#             "float_market_capital": null,
+#             "percent_night_session": 0.0704,
+#             "timestamp_ext": 1765204201221,
+#             "lot_size": 1,
+#             "timestamp_night_session": 1765184286078,
+#             "lock_set": 0,
+#             "chg": 7.26,
+#             "eps": 14.115536759548583,
+#             "last_close": 483.16,
+#             "profit_four": 1.04912E11,
+#             "volume": 10928072,
+#             "volume_ratio": 0.59,
+#             "profit_forecast": 1.10988E11,
+#             "turnover_rate": 0.15,
+#             "low52w": 344.79,
+#             "name": "微软",
+#             "exchange": "NASDAQ",
+#             "pe_forecast": 32.841,
+#             "total_shares": 7432377655,
+#             "status": 1,
+#             "code": "MSFT",
+#             "goodwill_in_net_assets": 32.91239299760932,
+#             "avg_price": 489.720747,
+#             "percent": 1.5026,
+#             "psr": 12.22,
+#             "amplitude": 1.64,
+#             "current": 490.42,
+#             "current_year_percent": 17.21,
+#             "issue_date": 511027200000,
+#             "sub_type": "257",
+#             "low": 484.38,
+#             "market_capital": 3.644986649565E12,
+#             "shareholder_funds": 3.63076E11,
+#             "dividend": 3.4,
+#             "dividend_yield": 0.704,
+#             "currency": "USD",
+#             "chg_ext": 1.12,
+#             "navps": 48.8399,
+#             "profit": 1.01832E11,
+#             "beta": null,
+#             "timestamp": 1765221968705,
+#             "pe_lyr": 35.7941,
+#             "amount": 5.348728544E9,
+#             "pledge_ratio": null,
+#             "current_night_session": 483.5,
+#             "short_ratio": null,
+#             "inst_hld": null,
+#             "pb": 10.0392,
+#             "pe_ttm": 34.743,
+#             "contract_size": 40,
+#             "variable_tick_size": "0.0001 1 0.01",
+#             "time": 1765221968705,
+#             "chg_night_session": 0.34,
+#             "open": 484.885
+#         },
+#         "others": {
+#             "pankou_ratio": 0.0,
+#             "cyb_switch": true
+#         },
+#         "tags": [
+#             {
+#                 "description": "融",
+#                 "value": 6
+#             },
+#             {
+#                 "description": "空",
+#                 "value": 7
+#             }
+#         ]
+#     },
+#     "error_code": 0,
+#     "error_description": ""
+# }

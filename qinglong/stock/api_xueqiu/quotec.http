@@ -1,0 +1,111 @@
+### quotec 获取股票实时报价(免登录)
+# @name quotec
+GET https://stock.xueqiu.com/v5/stock/realtime/quotec.json?symbol=SH603533 HTTP/1.1
+Accept: application/json
+
+
+# HTTP/1.1 200 OK
+# Server: openresty
+# Date: Wed, 10 Dec 2025 11:32:48 GMT
+# Content-Type: application/json; charset=UTF-8
+# Transfer-Encoding: chunked
+# Connection: close
+# Content-Encoding: gzip
+# Access-Control-Allow-Origin: https://xueqiu.com
+# Access-Control-Allow-Credentials: true
+# Access-Control-ALLow-Methods: GET, POST, OPTIONS, DELETE
+# Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept
+
+# {
+#   "data": [
+#     {
+#       "symbol": "SH603533",
+#       "current": 20.2,  // 当前价格
+#       "percent": 3.17, // 涨跌幅
+#       "chg": 0.62, // 今日涨跌额
+#       "timestamp": 1765350000000,
+#       "volume": 27699211,
+#       "amount": 5.5901077274E8,
+#       "market_capital": 8.865716067E9,
+#       "float_market_capital": 8.865716067E9,
+#       "turnover_rate": 6.31,
+#       "amplitude": 6.79, // 今日振幅
+#       "open": 19.41, // 今日开盘价
+#       "last_close": 19.58, // 昨日收盘价
+#       "high": 20.68, // 今日最高价
+#       "low": 19.35, // 今日最低价
+#       "avg_price": 20.181469166757132, // 今日均价
+#       "trade_volume": null,
+#       "side": null,
+#       "is_trade": false, // 是否交易中
+#       "level": 2,
+#       "trade_session": null,
+#       "trade_type": null,
+#       "current_year_percent": -0.05,
+#       "trade_unique_id": null,
+#       "type": 11,
+#       "bid_appl_seq_num": null,
+#       "offer_appl_seq_num": null,
+#       "volume_ext": null,
+#       "traded_amount_ext": null,
+#       "trade_type_v2": null,
+#       "yield_to_maturity": null
+#     }
+#   ],
+#   "error_code": 0,
+#   "error_description": null
+# }
+
+
+
+# HTTP/1.1 200 OK
+# Server: openresty
+# Date: Mon, 08 Dec 2025 19:55:45 GMT
+# Content-Type: application/json; charset=UTF-8
+# Transfer-Encoding: chunked
+# Connection: close
+# Content-Encoding: gzip
+# Access-Control-Allow-Origin: https://xueqiu.com
+# Access-Control-Allow-Credentials: true
+# Access-Control-ALLow-Methods: GET, POST, OPTIONS, DELETE
+# Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept
+
+# {
+#   "data": [
+#     {
+#       "symbol": "SH603533",
+#       "current": 19.98, // 当前价格
+#       "percent": 0.81, // 涨跌幅
+#       "chg": 0.16, // 今日涨跌额
+#       "timestamp": 1765177200000, // 时间戳
+#       "volume": 16240848,
+#       "amount": 3.2530590984E8,
+#       "market_capital": 8.769158763E9,
+#       "float_market_capital": 8.769158763E9,
+#       "turnover_rate": 3.7,
+#       "amplitude": 1.72, // 今日振幅
+#       "open": 19.95, // 今日开盘价
+#       "last_close": 19.82, // 昨日收盘价
+#       "high": 20.19, // 今日最高价
+#       "low": 19.85, // 今日最低价
+#       "avg_price": 20.030106176721805,
+#       "trade_volume": null,
+#       "side": null,
+#       "is_trade": false, // 是否交易中
+#       "level": 2,
+#       "trade_session": null,
+#       "trade_type": null,
+#       "current_year_percent": -1.14,
+#       "trade_unique_id": null,
+#       "type": 11,
+#       "bid_appl_seq_num": null,
+#       "offer_appl_seq_num": null,
+#       "volume_ext": null,
+#       "traded_amount_ext": null,
+#       "trade_type_v2": null,
+#       "yield_to_maturity": null
+#     }
+#   ],
+#   "error_code": 0, // 错误码
+#   "error_description": null // 错误描述
+# }
