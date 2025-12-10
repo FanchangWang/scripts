@@ -158,13 +158,11 @@ class AutoRunManager:
         """
         logging.info(f"启动 exe: {desc} -> {path} {args}")
         try:
-            full_cmd = [
-                path,
-                args
-            ]
+            full_cmd = f'"{path}" {args}'
             # 以管理员权限启动进程
             subprocess.Popen(
                 full_cmd,
+                shell=True,
                 cwd=os.path.dirname(path),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
@@ -212,7 +210,7 @@ class AutoRunManager:
         """创建一次性计划任务"""
         logging.info(f"创建一次性计划任务: {self._task_name}")
         try:
-            task_run_cmd = f'python.exe "{os.path.abspath(__file__)}"'
+            task_run_cmd = f'pythonw.exe "{os.path.abspath(__file__)}"'
             # 1、创建任务计划
             create_cmd = [
                 "schtasks", "/create",
@@ -270,6 +268,7 @@ class AutoRunManager:
             self.run_as_normal_user_task()
         else:
             logging.info("当前以普通用户权限运行")
+            self.start_exe('Twinkle Tray', r'C:\Users\guyue\AppData\Local\Programs\twinkle-tray\Twinkle Tray.exe')
             self.start_exe('EcoPaste 剪贴板', r'C:\Users\guyue\AppData\Local\Programs\EcoPaste\EcoPaste.exe', '--auto-launch')
             self.start_exe('pot 翻译工具', r'C:\Program Files\pot\pot.exe')
             self.start_exe('Maye Lite 启动器', r'C:\Users\guyue\AppData\Local\Programs\MayeLite\Maye Lite.exe', '--autoruns')
@@ -278,6 +277,9 @@ class AutoRunManager:
             self.start_exe("JetBrains Toolbox", r'C:\Users\guyue\AppData\Local\JetBrains\Toolbox\bin\jetbrains-toolbox.exe', '--minimize')
             self.start_exe("FDM 下载器", r'C:\Users\guyue\AppData\Local\Softdeluxe\Free Download Manager\fdm.exe', '--hidden')
             self.start_exe("UniGetUI", r'C:\Program Files\UniGetUI\UniGetUI.exe', '--daemon')
+            self.start_exe("Epson Event Manager", r'C:\Program Files (x86)\Epson Software\Event Manager\EEventManager.exe')
+            self.start_exe("Epson Status", r'C:\WINDOWS\system32\spool\DRIVERS\x64\3\E_YATIYOE.EXE', r'/EPT "EPLTarget\P0000000000000001" /M "L4260 Series"')
+
             self.start_exe("微信", r'C:\Program Files\Tencent\Weixin\Weixin.exe', '-autorun')
 
         logging.info("=== 自动运行管理器执行完成 ===")

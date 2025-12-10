@@ -28,7 +28,7 @@ def create_task():
     # 任务计划命令
     script_name = "auto_run_manager.py"
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    task_run_cmd = f'python.exe "{script_dir}\\{script_name}"'
+    task_run_cmd = f'pythonw.exe "{script_dir}\\{script_name}"'
     try:
         # 获取当前Windows登录的用户（兼容域账户）
         # 优先使用域\用户名格式，不存在域则使用本地用户名
