@@ -7,7 +7,7 @@
     STOCK_BUY_PRICE: float - 购买股票价格, 默认0
     STOCK_BUY_COUNT: int - 购买股票数量, 默认0
 
-cron: 0,30 9-11,13-15 * * *
+cron: 0/5 9-11,13-15 * * *
 """
 import os
 from datetime import datetime
@@ -51,51 +51,71 @@ class StockMonitor:
             response = requests.get(self.api_url, headers=headers, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
+            print(f"API 获取股票数据: {data}")
             return data['data'][0] if data['data'] else None
         except Exception as e:
             self.log(f"获取股票数据失败: {str(e)}")
             return None
 
     def check_event_type(self, stock_data):
-        """检查事件类型"""
-        if not stock_data:
-            return None
+        """
+        检查股票数据事件：竞价、开盘、交易、休市、收盘
 
+        参数:
+            stock_data (dict): 股票实时数据
+
+        返回:
+            str: 事件类型 ('竞价', '开盘', '交易', '休市', '收盘')
+        """
         # 获取当前时间
-        now = datetime.now()
-        current_time = now.strftime('%H:%M')
-
-        # 检查开盘事件
-        if current_time == '09:30' and stock_data.get('is_trade', False):
-            return '开盘'
-
-        # 检查收盘事件
-        if current_time == '15:00' and not stock_data.get('is_trade', True):
-            # 计算当天15:00的13位时间戳
-            close_time = datetime(now.year, now.month, now.day, 15, 0, 0)
-            close_timestamp = int(close_time.timestamp() * 1000)
-            if stock_data.get('timestamp') == close_timestamp:
-                return '收盘'
-
-        # 检查交易事件
         api_timestamp = stock_data.get('timestamp')
-        if api_timestamp:
-            # 将API时间戳转换为datetime对象
-            api_dt = datetime.fromtimestamp(api_timestamp / 1000)
-            # 比较年月日时分是否匹配当前时间
-            if api_dt.strftime('%Y-%m-%d %H:%M') == now.strftime('%Y-%m-%d %H:%M'):
-                return '交易'
+        api_dt = datetime.fromtimestamp(api_timestamp / 1000)
+        api_time = api_dt.strftime('%H:%M')
+        # 交易状态
+        is_trade = stock_data.get('is_trade', False)
 
-        return None
+        if is_trade:
+            if api_dt.hour == 9 and api_dt.minute < 30:
+                return '竞价'
+            if api_time == '09:30':
+                return '开盘'
+            if (api_dt.hour == 11 and api_dt.minute > 30) or api_dt.hour == 12:
+                return '休市'
+            return '交易'
+        return '收盘'
 
     def run(self):
         """主运行方法"""
-        self.log(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]")
+        # 获取当前时间
+        now_dt = datetime.now()
+        # 判断是否处于股票交易时间 9:15-11:30, 13:00-15:00
+        if not (
+            (now_dt.hour == 9 and now_dt.minute >= 15) or
+            (now_dt.hour == 10) or
+            (now_dt.hour == 11 and now_dt.minute <= 30) or
+            (now_dt.hour == 13) or
+            (now_dt.hour == 14) or
+            (now_dt.hour == 15 and now_dt.minute == 0)
+        ):
+            self.log(f"时间: {now_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            self.log("当前时间不在股票交易时间，脚本结束")
+            return
 
         # 获取股票数据
         stock_data = self.get_stock_data()
         if not stock_data:
+            self.log(f"时间: {now_dt.strftime('%Y-%m-%d %H:%M:%S')}")
             self.log("未能获取股票数据，脚本结束")
+            return
+
+        # 转换API时间戳为datetime对象
+        api_timestamp = stock_data.get('timestamp')
+        api_dt = datetime.fromtimestamp(api_timestamp / 1000)
+
+        # 判断 now_dt 与 api_dt 是否在同一天
+        if now_dt.date() != api_dt.date():
+            self.log(f"时间: {now_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            self.log("今天非交易日期，脚本结束")
             return
 
         # 检查事件类型
@@ -106,7 +126,8 @@ class StockMonitor:
         chg = stock_data.get('chg', 0)
 
         # 输出股票当前信息
-        self.log(f"股票 {self.stock_symbol} {event_type if event_type else '休市'}")
+        self.log(f"时间: {api_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.log(f"股票 {self.stock_symbol} {event_type}")
 
         # 计算持仓盈亏
         if self.stock_buy_price > 0 and self.stock_buy_count > 0:
@@ -119,10 +140,9 @@ class StockMonitor:
             self.log(f"今日盈亏: {today_profit:.2f} 元")
             api_timestamp = stock_data.get('timestamp')
             # 转换为datetime对象
-            api_dt = datetime.fromtimestamp(api_timestamp / 1000) if api_timestamp else datetime.now()
-            self.NAME = f"股票{event_type} {api_dt.strftime('%H:%M')} ¥:{current_price} 今:{today_profit:.2f} 总:{profit:.2f}"
+            self.NAME = f"股票:{event_type} {api_dt.strftime('%H:%M')} 价:{current_price} 今:{today_profit:.2f} 总:{profit:.2f}"
 
-        self.log(f"{'收盘价' if event_type == '收盘' else '当前价格'}: {current_price}")
+        self.log(f"{'当前价' if stock_data.get('is_trade', False) else '收盘价'}: {current_price}")
         self.log(f"涨跌幅: {stock_data.get('percent', 0)}%")
         self.log(f"涨跌额: {chg}")
         self.log(f"开盘价: {stock_data.get('open', 0)}")
@@ -131,8 +151,7 @@ class StockMonitor:
         self.log(f"今日最低价: {stock_data.get('low', 0)}")
 
         # 推送通知
-        if event_type:
-            self.push_notification()
+        self.push_notification()
 
 if __name__ == '__main__':
     StockMonitor().run()
