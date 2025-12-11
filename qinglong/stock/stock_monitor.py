@@ -7,7 +7,7 @@
     STOCK_BUY_PRICE: float - 购买股票价格, 默认0
     STOCK_BUY_COUNT: int - 购买股票数量, 默认0
 
-cron: 0/5 9-11,13-15 * * *
+cron: */5 9-11,13-15 * * *
 """
 import os
 from datetime import datetime
@@ -71,18 +71,16 @@ class StockMonitor:
         api_timestamp = stock_data.get('timestamp')
         api_dt = datetime.fromtimestamp(api_timestamp / 1000)
         api_time = api_dt.strftime('%H:%M')
-        # 交易状态
-        is_trade = stock_data.get('is_trade', False)
 
-        if is_trade:
-            if api_dt.hour == 9 and api_dt.minute < 30:
-                return '竞价'
-            if api_time == '09:30':
-                return '开盘'
-            if (api_dt.hour == 11 and api_dt.minute > 30) or api_dt.hour == 12:
-                return '休市'
-            return '交易'
-        return '收盘'
+        if api_dt.hour == 9 and api_dt.minute < 30:
+            return '竞价'
+        if api_time == '09:30':
+            return '开盘'
+        if api_time == '15:00':
+            return '收盘'
+        if (api_dt.hour == 11 and api_dt.minute > 30) or api_dt.hour == 12:
+            return '休市'
+        return '交易'
 
     def run(self):
         """主运行方法"""
@@ -142,9 +140,8 @@ class StockMonitor:
             # 转换为datetime对象
             self.NAME = f"股票:{event_type} {api_dt.strftime('%H:%M')} 价:{current_price} 今:{today_profit:.2f} 总:{profit:.2f}"
 
-        self.log(f"{'当前价' if stock_data.get('is_trade', False) else '收盘价'}: {current_price}")
-        self.log(f"涨跌幅: {stock_data.get('percent', 0)}%")
-        self.log(f"涨跌额: {chg}")
+        self.log(f"{'收盘价' if event_type == '收盘' else '当前价'}: {current_price}")
+        self.log(f"涨跌额: {chg} 元 {stock_data.get('percent', 0)}%")
         self.log(f"开盘价: {stock_data.get('open', 0)}")
         self.log(f"昨日收盘价: {stock_data.get('last_close', 0)}")
         self.log(f"今日最高价: {stock_data.get('high', 0)}")
