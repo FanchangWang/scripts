@@ -5,6 +5,7 @@ import time
 import ctypes
 import sys
 import os
+import shlex
 
 # 配置日志，使用覆盖模式
 logging.basicConfig(
@@ -149,7 +150,7 @@ class AutoRunManager:
         return None
 
     def start_exe(self, desc, path, args=""):
-        """以管理员权限启动EXE程序
+        """启动EXE程序
 
         Args:
             desc: 程序描述
@@ -158,14 +159,21 @@ class AutoRunManager:
         """
         logging.info(f"启动 exe: {desc} -> {path} {args}")
         try:
-            full_cmd = f'"{path}" {args}'
-            # 以管理员权限启动进程
+            is_shell = False
+            split_args = shlex.split(args) if args.strip() else []
+            if len(split_args) > 1: # 多个参数时必须 shell=True 防止解析错误
+                full_cmd = f'"{path}" {args}'
+                is_shell = True
+            else:
+                full_cmd = [path] + split_args
             subprocess.Popen(
                 full_cmd,
-                shell=True,
+                shell=is_shell,
                 cwd=os.path.dirname(path),
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             time.sleep(2) # 等待程序启动完成
             return True
@@ -174,7 +182,7 @@ class AutoRunManager:
             return False
 
     def start_uwp(self, desc, package_name, app_id=""):
-        """以管理员权限启动UWP应用
+        """启动UWP应用
 
         Args:
             desc: 应用描述
@@ -197,8 +205,11 @@ class AutoRunManager:
             ]
             subprocess.Popen(
                 full_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                shell=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             time.sleep(2)  # 等待程序启动完成
             return True
