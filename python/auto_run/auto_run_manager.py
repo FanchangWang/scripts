@@ -3,6 +3,7 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 import time
 import ctypes
+import winreg
 import sys
 import os
 import shlex
@@ -263,6 +264,107 @@ class AutoRunManager:
             logging.error(f"创建任务失败 ErrMsg: {str(e)}")
             return False
 
+    def _get_environment_variable(self, is_system=False):
+        """读取系统或用户环境变量"""
+        try:
+            if is_system:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, winreg.KEY_READ)
+            else:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Environment', 0, winreg.KEY_READ)
+            value, _ = winreg.QueryValueEx(key, 'Path')
+            winreg.CloseKey(key)
+            return value
+        except Exception as e:
+            logging.error(f"读取环境变量失败: {str(e)}")
+            return ""
+
+    def _set_environment_variable(self, value, is_system=False):
+        """设置系统或用户环境变量"""
+        try:
+            if is_system and not self.is_admin:
+                logging.error("修改系统环境变量需要管理员权限")
+                return False
+
+            access = winreg.KEY_WRITE | (winreg.KEY_WOW64_64KEY if is_system else 0)
+            if is_system:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment', 0, access)
+            else:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Environment', 0, winreg.KEY_WRITE)
+
+            # 写入环境变量，使用REG_EXPAND_SZ类型
+            winreg.SetValueEx(key, 'Path', 0, winreg.REG_EXPAND_SZ, value)
+            winreg.CloseKey(key)
+            return True
+        except Exception as e:
+            logging.error(f"写入环境变量失败: {str(e)}")
+            return False
+
+    def _broadcast_environment_change(self):
+        """通知系统环境变量已更改"""
+        HWND_BROADCAST = 0xFFFF
+        WM_SETTINGCHANGE = 0x001A
+        SMTO_ABORTIFHUNG = 0x0002
+
+        ctypes.windll.user32.SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            "Environment",
+            SMTO_ABORTIFHUNG,
+            5000,
+            None
+        )
+
+    def _process_path(self, path_str):
+        """处理Path字符串：去重并排序"""
+        # 分割路径，处理空字符串
+        paths = [p for p in path_str.split(';') if p.strip()]
+        # 去重，保留顺序
+        seen = set()
+        unique_paths = []
+        for p in paths:
+            p = os.path.expandvars(p)
+            normalized = os.path.normpath(p)
+            if not os.path.exists(normalized): # 去除不存在的目录
+                continue
+            if normalized not in seen:
+                seen.add(normalized)
+                unique_paths.append(normalized)
+        # 排序
+        unique_paths.sort()
+        # 重新拼接
+        return ';'.join(unique_paths)
+
+    def clean_and_sort_path(self):
+        """读取系统和用户Path，去重排序后写回"""
+        logging.info("开始清理和排序环境变量Path")
+
+        # 读取系统Path和用户Path
+        system_path = self._get_environment_variable(is_system=True)
+        if system_path:
+            logging.info(f"原始系统Path: {system_path}")
+            processed_system_path = self._process_path(system_path)
+            logging.info(f"处理后的系统Path: {processed_system_path}")
+            system_result = self._set_environment_variable(processed_system_path, is_system=True)
+            if system_result:
+                logging.info(f"系统Path已清理排序: {processed_system_path}")
+            else:
+                logging.error("写入系统Path失败")
+
+        user_path = self._get_environment_variable(is_system=False)
+        if user_path:
+            logging.info(f"原始用户Path: {user_path}")
+            processed_user_path = self._process_path(user_path)
+            logging.info(f"处理后的用户Path: {processed_user_path}")
+            user_result = self._set_environment_variable(processed_user_path, is_system=False)
+            if user_result:
+                logging.info(f"用户Path已清理排序: {processed_user_path}")
+            else:
+                logging.error("写入用户Path失败")
+
+        # 通知系统环境变量已更改
+        self._broadcast_environment_change()
+
     def run(self):
         """运行自动启动管理器"""
         logging.info("=== 自动运行管理器开始执行 ===")
@@ -270,6 +372,7 @@ class AutoRunManager:
         # 检查是否以管理员权限运行
         if self.is_admin:
             logging.info("当前以管理员权限运行")
+            self.clean_and_sort_path() # 清理和排序环境变量Path
             self.load_uwp_apps() # 加载UWP应用列表
             self.start_uwp('SnipDo 复制工具', r'JohannesTscholl.Pantherbar')
             self.start_exe('Snow Shot 截图工具', r'C:\Program Files\Snow Shot\snowshot.exe', '--auto_start')
