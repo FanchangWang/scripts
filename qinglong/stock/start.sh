@@ -17,7 +17,7 @@ mkdir -p /app/data
 
 # 5. 配置 cron 定时任务（每天 16 点执行脚本，日志重定向到 log 目录）
 # 语法：分 时 日 月 周 命令 → 0 16 * * * 表示每天16:00执行
-echo "0 16 * * * python /app/stock_save_minute.py >> /app/log/stock_save.log 2>&1" > /etc/crontabs/root
+echo "0 16 * * * python /app/stock_save_minute.py" > /etc/crontabs/root
 
 # 6. 赋予 cron 任务文件正确权限（cronie 要求 0600 权限，更安全）
 chmod 0600 /etc/crontabs/root
