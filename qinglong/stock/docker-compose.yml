@@ -1,0 +1,20 @@
+services:
+  stock-saver:
+    container_name: stock-saver
+    image: python:3.12-alpine
+    # 将容器重启策略设置为 always，确保 cron 进程意外退出时能自动重启
+    restart: always
+    # 卷挂载
+    volumes:
+      # 挂载启动脚本
+      - ./start.sh:/app/start.sh:ro
+      - ./.env:/app/.env:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+      - ./stock_save_minute.py:/app/stock_save_minute.py:ro
+      - ./data:/app/data
+      - ./log:/app/log
+    # 环境变量设置
+    environment:
+      - TZ=Asia/Shanghai
+    # 容器启动命令，执行脚本
+    command: ["sh", "/app/start.sh"]

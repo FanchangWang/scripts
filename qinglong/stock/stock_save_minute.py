@@ -167,8 +167,8 @@ class StockDataSaver:
         # 获取数据
         data = self.get_minute_data()
         if not data:
-            self.logger.error("获取股票分钟线数据失败")
-            self.push_notification("获取股票分钟线数据失败")
+            self.logger.error("股票分钟线数据获取失败")
+            self.push_notification("股票分钟线数据获取失败", f"股票 {self.stock_symbol} 的分钟线数据获取失败")
             return
 
         # 保存数据
