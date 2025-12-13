@@ -1,4 +1,4 @@
-### quotec 获取股票实时报价(免登录)
+### quotec 获取股票实时数据（免登录）
 # @name quotec
 GET https://stock.xueqiu.com/v5/stock/realtime/quotec.json?symbol=SH603533 HTTP/1.1
 Accept: application/json

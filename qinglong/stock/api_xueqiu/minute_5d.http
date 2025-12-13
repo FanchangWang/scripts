@@ -1,0 +1,2886 @@
+### minute_5d 获取股票分钟线数据(5天)
+# @name minute_5d
+GET https://stock.xueqiu.com/v5/stock/chart/minute.json?symbol=SH603533&period=5d HTTP/1.1
+Accept: application/json
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+Accept-Language: zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6
+Cookie: {{$dotenv XUEQIU}}
+
+
+# HTTP/1.1 200 OK
+# Server: openresty
+# Date: Sat, 13 Dec 2025 15:00:49 GMT
+# Content-Type: application/json;charset=UTF-8
+# Transfer-Encoding: chunked
+# Connection: close
+# Vary: Accept-Encoding
+# Trace-Id: e2fc0815e45c5ebc
+# P3P: CP="IDC DSP COR ADM DEVi TAIi PSA PSD IVAi IVDi CONi HIS OUR IND CNT"
+# Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0
+# Access-Control-Allow-Origin: https://xueqiu.com
+# Access-Control-Allow-Credentials: true
+# Access-Control-ALLow-Methods: GET, POST, OPTIONS, DELETE
+# Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept
+# Content-Encoding: gzip
+
+# {
+#   "data": {
+#     "last_close": 19.82,
+#     "after": [],
+#     "items": [
+#       {
+#         "current": 20.08,
+#         "volume": 697900,
+#         "avg_price": 19.981,
+#         "chg": 0.26,
+#         "percent": 1.31,
+#         "timestamp": 1765157400000,
+#         "amount": 1.3944488E7,
+#         "high": 20.08,
+#         "low": 19.93,
+#         "amount_total": 1.3944488E7,
+#         "volume_total": 697900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 697900,
+#           "volume_sum_last": 412700
+#         }
+#       },
+#       {
+#         "current": 20.1,
+#         "volume": 2232848,
+#         "avg_price": 20.059,
+#         "chg": 0.28,
+#         "percent": 1.41,
+#         "timestamp": 1765158000000,
+#         "amount": 2618758.0,
+#         "high": 20.15,
+#         "low": 20.1,
+#         "amount_total": 6.1396918E7,
+#         "volume_total": 3060848,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 2930748,
+#           "volume_sum_last": 3574300
+#         }
+#       },
+#       {
+#         "current": 20.04,
+#         "volume": 1103500,
+#         "avg_price": 20.057,
+#         "chg": 0.22,
+#         "percent": 1.11,
+#         "timestamp": 1765158600000,
+#         "amount": 1928365.0,
+#         "high": 20.04,
+#         "low": 20.02,
+#         "amount_total": 8.5455301E7,
+#         "volume_total": 4260648,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 4034248,
+#           "volume_sum_last": 6261200
+#         }
+#       },
+#       {
+#         "current": 20.05,
+#         "volume": 658300,
+#         "avg_price": 20.052,
+#         "chg": 0.23,
+#         "percent": 1.16,
+#         "timestamp": 1765159200000,
+#         "amount": 1874345.0,
+#         "high": 20.08,
+#         "low": 20.05,
+#         "amount_total": 1.0050932E8,
+#         "volume_total": 5012348,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 4692548,
+#           "volume_sum_last": 9103100
+#         }
+#       },
+#       {
+#         "current": 20.13,
+#         "volume": 381300,
+#         "avg_price": 20.054,
+#         "chg": 0.31,
+#         "percent": 1.56,
+#         "timestamp": 1765159800000,
+#         "amount": 2711673.0,
+#         "high": 20.13,
+#         "low": 20.09,
+#         "amount_total": 1.10868489E8,
+#         "volume_total": 5528448,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 5073848,
+#           "volume_sum_last": 10583800
+#         }
+#       },
+#       {
+#         "current": 20.14,
+#         "volume": 465200,
+#         "avg_price": 20.06,
+#         "chg": 0.32,
+#         "percent": 1.61,
+#         "timestamp": 1765160400000,
+#         "amount": 328209.0,
+#         "high": 20.14,
+#         "low": 20.13,
+#         "amount_total": 1.2055984E8,
+#         "volume_total": 6009948,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 5539048,
+#           "volume_sum_last": 11390500
+#         }
+#       },
+#       {
+#         "current": 20.07,
+#         "volume": 367500,
+#         "avg_price": 20.063,
+#         "chg": 0.25,
+#         "percent": 1.26,
+#         "timestamp": 1765161000000,
+#         "amount": 557821.0,
+#         "high": 20.08,
+#         "low": 20.06,
+#         "amount_total": 1.28506025E8,
+#         "volume_total": 6405248,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 5906548,
+#           "volume_sum_last": 12119200
+#         }
+#       },
+#       {
+#         "current": 20.11,
+#         "volume": 246400,
+#         "avg_price": 20.063,
+#         "chg": 0.29,
+#         "percent": 1.46,
+#         "timestamp": 1765161600000,
+#         "amount": 961633.0,
+#         "high": 20.13,
+#         "low": 20.1,
+#         "amount_total": 1.34411731E8,
+#         "volume_total": 6699448,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 6152948,
+#           "volume_sum_last": 12804900
+#         }
+#       },
+#       {
+#         "current": 20.09,
+#         "volume": 399100,
+#         "avg_price": 20.067,
+#         "chg": 0.27,
+#         "percent": 1.36,
+#         "timestamp": 1765162200000,
+#         "amount": 1137266.0,
+#         "high": 20.1,
+#         "low": 20.08,
+#         "amount_total": 1.43579349E8,
+#         "volume_total": 7155148,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 6552048,
+#           "volume_sum_last": 13182700
+#         }
+#       },
+#       {
+#         "current": 20.1,
+#         "volume": 300300,
+#         "avg_price": 20.068,
+#         "chg": 0.28,
+#         "percent": 1.41,
+#         "timestamp": 1765162800000,
+#         "amount": 335519.0,
+#         "high": 20.1,
+#         "low": 20.09,
+#         "amount_total": 1.49949246E8,
+#         "volume_total": 7472148,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 6852348,
+#           "volume_sum_last": 13648000
+#         }
+#       },
+#       {
+#         "current": 20.08,
+#         "volume": 446600,
+#         "avg_price": 20.069,
+#         "chg": 0.26,
+#         "percent": 1.31,
+#         "timestamp": 1765163400000,
+#         "amount": 884164.0,
+#         "high": 20.1,
+#         "low": 20.08,
+#         "amount_total": 1.59806666E8,
+#         "volume_total": 7962748,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 7298948,
+#           "volume_sum_last": 14104600
+#         }
+#       },
+#       {
+#         "current": 20.07,
+#         "volume": 471800,
+#         "avg_price": 20.069,
+#         "chg": 0.25,
+#         "percent": 1.26,
+#         "timestamp": 1765164000000,
+#         "amount": 453473.0,
+#         "high": 20.07,
+#         "low": 20.06,
+#         "amount_total": 1.69725716E8,
+#         "volume_total": 8457148,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 7770748,
+#           "volume_sum_last": 14810600
+#         }
+#       },
+#       {
+#         "current": 20.07,
+#         "volume": 200700,
+#         "avg_price": 20.069,
+#         "chg": 0.25,
+#         "percent": 1.26,
+#         "timestamp": 1765164600000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 7971448,
+#           "volume_sum_last": 14960900
+#         }
+#       },
+#       {
+#         "current": 20.04,
+#         "volume": 197600,
+#         "avg_price": 20.069,
+#         "chg": 0.22,
+#         "percent": 1.11,
+#         "timestamp": 1765170000000,
+#         "amount": 3964739.0,
+#         "high": 20.09,
+#         "low": 20.04,
+#         "amount_total": 1.7771847E8,
+#         "volume_total": 8855448,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 8169048,
+#           "volume_sum_last": 15591300
+#         }
+#       },
+#       {
+#         "current": 20.06,
+#         "volume": 362200,
+#         "avg_price": 20.068,
+#         "chg": 0.24,
+#         "percent": 1.21,
+#         "timestamp": 1765170600000,
+#         "amount": 866630.0,
+#         "high": 20.08,
+#         "low": 20.05,
+#         "amount_total": 1.8584698E8,
+#         "volume_total": 9260848,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 8531248,
+#           "volume_sum_last": 16032100
+#         }
+#       },
+#       {
+#         "current": 20.0,
+#         "volume": 719400,
+#         "avg_price": 20.064,
+#         "chg": 0.18,
+#         "percent": 0.91,
+#         "timestamp": 1765171200000,
+#         "amount": 900060.0,
+#         "high": 20.01,
+#         "low": 19.99,
+#         "amount_total": 2.01144845E8,
+#         "volume_total": 10025248,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 9250648,
+#           "volume_sum_last": 16453800
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 344000,
+#         "avg_price": 20.062,
+#         "chg": 0.2,
+#         "percent": 1.01,
+#         "timestamp": 1765171800000,
+#         "amount": 294198.0,
+#         "high": 20.02,
+#         "low": 20.01,
+#         "amount_total": 2.08322374E8,
+#         "volume_total": 10383948,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 9594648,
+#           "volume_sum_last": 16840000
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 377900,
+#         "avg_price": 20.061,
+#         "chg": 0.2,
+#         "percent": 1.01,
+#         "timestamp": 1765172400000,
+#         "amount": 432527.0,
+#         "high": 20.03,
+#         "low": 20.02,
+#         "amount_total": 2.16324328E8,
+#         "volume_total": 10783448,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 9972548,
+#           "volume_sum_last": 17300768
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 504300,
+#         "avg_price": 20.06,
+#         "chg": 0.2,
+#         "percent": 1.01,
+#         "timestamp": 1765173000000,
+#         "amount": 825313.0,
+#         "high": 20.05,
+#         "low": 20.02,
+#         "amount_total": 2.27261216E8,
+#         "volume_total": 11328948,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 10476848,
+#           "volume_sum_last": 17625468
+#         }
+#       },
+#       {
+#         "current": 19.94,
+#         "volume": 758700,
+#         "avg_price": 20.055,
+#         "chg": 0.12,
+#         "percent": 0.61,
+#         "timestamp": 1765173600000,
+#         "amount": 1569667.0,
+#         "high": 19.96,
+#         "low": 19.93,
+#         "amount_total": 2.43997276E8,
+#         "volume_total": 12166348,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 11235548,
+#           "volume_sum_last": 17886468
+#         }
+#       },
+#       {
+#         "current": 19.95,
+#         "volume": 526100,
+#         "avg_price": 20.051,
+#         "chg": 0.13,
+#         "percent": 0.66,
+#         "timestamp": 1765174200000,
+#         "amount": 1120957.0,
+#         "high": 19.95,
+#         "low": 19.94,
+#         "amount_total": 2.55617416E8,
+#         "volume_total": 12748648,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 11761648,
+#           "volume_sum_last": 18102668
+#         }
+#       },
+#       {
+#         "current": 19.92,
+#         "volume": 458200,
+#         "avg_price": 20.046,
+#         "chg": 0.1,
+#         "percent": 0.5,
+#         "timestamp": 1765174800000,
+#         "amount": 282897.0,
+#         "high": 19.93,
+#         "low": 19.92,
+#         "amount_total": 2.65030742E8,
+#         "volume_total": 13221048,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 12219848,
+#           "volume_sum_last": 18517968
+#         }
+#       },
+#       {
+#         "current": 19.97,
+#         "volume": 396400,
+#         "avg_price": 20.043,
+#         "chg": 0.15,
+#         "percent": 0.76,
+#         "timestamp": 1765175400000,
+#         "amount": 461211.0,
+#         "high": 19.97,
+#         "low": 19.96,
+#         "amount_total": 2.73396962E8,
+#         "volume_total": 13640548,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 12616248,
+#           "volume_sum_last": 18925200
+#         }
+#       },
+#       {
+#         "current": 19.94,
+#         "volume": 507400,
+#         "avg_price": 20.039,
+#         "chg": 0.12,
+#         "percent": 0.61,
+#         "timestamp": 1765176000000,
+#         "amount": 1589124.0,
+#         "high": 19.95,
+#         "low": 19.93,
+#         "amount_total": 2.85112857E8,
+#         "volume_total": 14227648,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 13123648,
+#           "volume_sum_last": 19374600
+#         }
+#       },
+#       {
+#         "current": 19.96,
+#         "volume": 667300,
+#         "avg_price": 20.035,
+#         "chg": 0.14,
+#         "percent": 0.71,
+#         "timestamp": 1765176600000,
+#         "amount": 2278973.0,
+#         "high": 19.97,
+#         "low": 19.95,
+#         "amount_total": 3.00702654E8,
+#         "volume_total": 15009148,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 13790948,
+#           "volume_sum_last": 20362000
+#         }
+#       },
+#       {
+#         "current": 19.98,
+#         "volume": 908800,
+#         "avg_price": 20.03,
+#         "chg": 0.16,
+#         "percent": 0.81,
+#         "timestamp": 1765177200000,
+#         "amount": 6451542.0,
+#         "high": 19.98,
+#         "low": 19.98,
+#         "amount_total": 3.2530591E8,
+#         "volume_total": 16240848,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 14699748,
+#           "volume_sum_last": 21323300
+#         }
+#       },
+#       {
+#         "current": 19.86,
+#         "volume": 295500,
+#         "avg_price": 19.913,
+#         "chg": -0.12,
+#         "percent": -0.6,
+#         "timestamp": 1765243800000,
+#         "amount": 5884338.0,
+#         "high": 19.97,
+#         "low": 19.85,
+#         "amount_total": 5884338.0,
+#         "volume_total": 295500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 14995248,
+#           "volume_sum_last": 412700
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 1778300,
+#         "avg_price": 20.03,
+#         "chg": 0.04,
+#         "percent": 0.2,
+#         "timestamp": 1765244400000,
+#         "amount": 1345287.0,
+#         "high": 20.03,
+#         "low": 20.01,
+#         "amount_total": 4.2884204E7,
+#         "volume_total": 2141000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 16773548,
+#           "volume_sum_last": 3574300
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 700200,
+#         "avg_price": 20.034,
+#         "chg": 0.04,
+#         "percent": 0.2,
+#         "timestamp": 1765245000000,
+#         "amount": 2325310.0,
+#         "high": 20.03,
+#         "low": 20.02,
+#         "amount_total": 5.9247599E7,
+#         "volume_total": 2957300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 17473748,
+#           "volume_sum_last": 6261200
+#         }
+#       },
+#       {
+#         "current": 20.09,
+#         "volume": 1042600,
+#         "avg_price": 20.052,
+#         "chg": 0.11,
+#         "percent": 0.55,
+#         "timestamp": 1765245600000,
+#         "amount": 1190141.0,
+#         "high": 20.11,
+#         "low": 20.09,
+#         "amount_total": 8.1392535E7,
+#         "volume_total": 4059100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 18516348,
+#           "volume_sum_last": 9103100
+#         }
+#       },
+#       {
+#         "current": 19.95,
+#         "volume": 913400,
+#         "avg_price": 20.05,
+#         "chg": -0.03,
+#         "percent": -0.15,
+#         "timestamp": 1765246200000,
+#         "amount": 1359210.0,
+#         "high": 19.98,
+#         "low": 19.95,
+#         "amount_total": 1.01062759E8,
+#         "volume_total": 5040600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 19429748,
+#           "volume_sum_last": 10583800
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 807300,
+#         "avg_price": 20.027,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765246800000,
+#         "amount": 2010808.0,
+#         "high": 19.86,
+#         "low": 19.84,
+#         "amount_total": 1.1914333E8,
+#         "volume_total": 5949200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 20237048,
+#           "volume_sum_last": 11390500
+#         }
+#       },
+#       {
+#         "current": 19.81,
+#         "volume": 860000,
+#         "avg_price": 19.997,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765247400000,
+#         "amount": 1547940.0,
+#         "high": 19.81,
+#         "low": 19.78,
+#         "amount_total": 1.37727981E8,
+#         "volume_total": 6887400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 21097048,
+#           "volume_sum_last": 12119200
+#         }
+#       },
+#       {
+#         "current": 19.82,
+#         "volume": 275100,
+#         "avg_price": 19.989,
+#         "chg": -0.16,
+#         "percent": -0.8,
+#         "timestamp": 1765248000000,
+#         "amount": 1849385.0,
+#         "high": 19.84,
+#         "low": 19.81,
+#         "amount_total": 1.45034866E8,
+#         "volume_total": 7255800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 21372148,
+#           "volume_sum_last": 12804900
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 307100,
+#         "avg_price": 19.98,
+#         "chg": -0.2,
+#         "percent": -1.0,
+#         "timestamp": 1765248600000,
+#         "amount": 573785.0,
+#         "high": 19.8,
+#         "low": 19.78,
+#         "amount_total": 1.51689807E8,
+#         "volume_total": 7591900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 21679248,
+#           "volume_sum_last": 13182700
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 368500,
+#         "avg_price": 19.97,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765249200000,
+#         "amount": 693872.0,
+#         "high": 19.78,
+#         "low": 19.76,
+#         "amount_total": 1.59671628E8,
+#         "volume_total": 7995500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 22047748,
+#           "volume_sum_last": 13648000
+#         }
+#       },
+#       {
+#         "current": 19.77,
+#         "volume": 162500,
+#         "avg_price": 19.964,
+#         "chg": -0.21,
+#         "percent": -1.05,
+#         "timestamp": 1765249800000,
+#         "amount": 2319645.0,
+#         "high": 19.78,
+#         "low": 19.77,
+#         "amount_total": 1.65206393E8,
+#         "volume_total": 8275300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 22210248,
+#           "volume_sum_last": 14104600
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 537600,
+#         "avg_price": 19.95,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765250400000,
+#         "amount": 132349.0,
+#         "high": 19.76,
+#         "low": 19.75,
+#         "amount_total": 1.7595354E8,
+#         "volume_total": 8819600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 22747848,
+#           "volume_sum_last": 14810600
+#         }
+#       },
+#       {
+#         "current": 19.73,
+#         "volume": 334000,
+#         "avg_price": 19.943,
+#         "chg": -0.25,
+#         "percent": -1.25,
+#         "timestamp": 1765251000000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 23081848,
+#           "volume_sum_last": 14960900
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 154600,
+#         "avg_price": 19.939,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765256400000,
+#         "amount": 3049800.0,
+#         "high": 19.75,
+#         "low": 19.71,
+#         "amount_total": 1.85599061E8,
+#         "volume_total": 9308200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 23236448,
+#           "volume_sum_last": 15591300
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 394200,
+#         "avg_price": 19.927,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765257000000,
+#         "amount": 2240854.0,
+#         "high": 19.7,
+#         "low": 19.68,
+#         "amount_total": 1.95607438E8,
+#         "volume_total": 9816200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 23630648,
+#           "volume_sum_last": 16032100
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 228000,
+#         "avg_price": 19.915,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765257600000,
+#         "amount": 5277722.0,
+#         "high": 19.68,
+#         "low": 19.65,
+#         "amount_total": 2.05374325E8,
+#         "volume_total": 10312600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 23858648,
+#           "volume_sum_last": 16453800
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 416400,
+#         "avg_price": 19.904,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765258200000,
+#         "amount": 412705.0,
+#         "high": 19.67,
+#         "low": 19.64,
+#         "amount_total": 2.13972965E8,
+#         "volume_total": 10750000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 24275048,
+#           "volume_sum_last": 16840000
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 414300,
+#         "avg_price": 19.894,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765258800000,
+#         "amount": 485311.0,
+#         "high": 19.66,
+#         "low": 19.64,
+#         "amount_total": 2.22597296E8,
+#         "volume_total": 11189000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 24689348,
+#           "volume_sum_last": 17300768
+#         }
+#       },
+#       {
+#         "current": 19.61,
+#         "volume": 414300,
+#         "avg_price": 19.883,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765259400000,
+#         "amount": 1583394.0,
+#         "high": 19.63,
+#         "low": 19.61,
+#         "amount_total": 2.32311312E8,
+#         "volume_total": 11684000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 25103648,
+#           "volume_sum_last": 17625468
+#         }
+#       },
+#       {
+#         "current": 19.6,
+#         "volume": 484000,
+#         "avg_price": 19.871,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765260000000,
+#         "amount": 896365.0,
+#         "high": 19.63,
+#         "low": 19.6,
+#         "amount_total": 2.42701664E8,
+#         "volume_total": 12213700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 25587648,
+#           "volume_sum_last": 17886468
+#         }
+#       },
+#       {
+#         "current": 19.58,
+#         "volume": 663700,
+#         "avg_price": 19.856,
+#         "chg": -0.4,
+#         "percent": -2.0,
+#         "timestamp": 1765260600000,
+#         "amount": 493563.0,
+#         "high": 19.6,
+#         "low": 19.58,
+#         "amount_total": 2.56188231E8,
+#         "volume_total": 12902600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 26251348,
+#           "volume_sum_last": 18102668
+#         }
+#       },
+#       {
+#         "current": 19.54,
+#         "volume": 454400,
+#         "avg_price": 19.844,
+#         "chg": -0.44,
+#         "percent": -2.2,
+#         "timestamp": 1765261200000,
+#         "amount": 766119.0,
+#         "high": 19.55,
+#         "low": 19.54,
+#         "amount_total": 2.65837351E8,
+#         "volume_total": 13396200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 26705748,
+#           "volume_sum_last": 18517968
+#         }
+#       },
+#       {
+#         "current": 19.58,
+#         "volume": 402500,
+#         "avg_price": 19.835,
+#         "chg": -0.4,
+#         "percent": -2.0,
+#         "timestamp": 1765261800000,
+#         "amount": 1102204.0,
+#         "high": 19.59,
+#         "low": 19.57,
+#         "amount_total": 2.74812977E8,
+#         "volume_total": 13855000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 27108248,
+#           "volume_sum_last": 18925200
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 450800,
+#         "avg_price": 19.823,
+#         "chg": -0.47,
+#         "percent": -2.35,
+#         "timestamp": 1765262400000,
+#         "amount": 2759109.0,
+#         "high": 19.52,
+#         "low": 19.51,
+#         "amount_total": 2.8638346E8,
+#         "volume_total": 14447200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 27559048,
+#           "volume_sum_last": 19374600
+#         }
+#       },
+#       {
+#         "current": 19.52,
+#         "volume": 614300,
+#         "avg_price": 19.809,
+#         "chg": -0.46,
+#         "percent": -2.3,
+#         "timestamp": 1765263000000,
+#         "amount": 1635121.0,
+#         "high": 19.52,
+#         "low": 19.51,
+#         "amount_total": 3.00006113E8,
+#         "volume_total": 15145300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 28173348,
+#           "volume_sum_last": 20362000
+#         }
+#       },
+#       {
+#         "current": 19.58,
+#         "volume": 722000,
+#         "avg_price": 19.793,
+#         "chg": -0.4,
+#         "percent": -2.0,
+#         "timestamp": 1765263600000,
+#         "amount": 3099514.0,
+#         "high": 19.58,
+#         "low": 19.58,
+#         "amount_total": 3.17194598E8,
+#         "volume_total": 16025600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 28895348,
+#           "volume_sum_last": 21323300
+#         }
+#       },
+#       {
+#         "current": 19.39,
+#         "volume": 414100,
+#         "avg_price": 19.394,
+#         "chg": -0.19,
+#         "percent": -0.97,
+#         "timestamp": 1765330200000,
+#         "amount": 8031120.0,
+#         "high": 19.41,
+#         "low": 19.37,
+#         "amount_total": 8031120.0,
+#         "volume_total": 414100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 29309448,
+#           "volume_sum_last": 412700
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 3008700,
+#         "avg_price": 19.731,
+#         "chg": 0.29,
+#         "percent": 1.48,
+#         "timestamp": 1765330800000,
+#         "amount": 3218595.0,
+#         "high": 19.88,
+#         "low": 19.73,
+#         "amount_total": 7.0740187E7,
+#         "volume_total": 3585300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 32318148,
+#           "volume_sum_last": 3574300
+#         }
+#       },
+#       {
+#         "current": 20.21,
+#         "volume": 3031000,
+#         "avg_price": 19.9,
+#         "chg": 0.63,
+#         "percent": 3.22,
+#         "timestamp": 1765331400000,
+#         "amount": 1.5715718E7,
+#         "high": 20.32,
+#         "low": 20.19,
+#         "amount_total": 1.47093835E8,
+#         "volume_total": 7391700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 35349148,
+#           "volume_sum_last": 6261200
+#         }
+#       },
+#       {
+#         "current": 20.04,
+#         "volume": 3184500,
+#         "avg_price": 20.009,
+#         "chg": 0.46,
+#         "percent": 2.35,
+#         "timestamp": 1765332000000,
+#         "amount": 3778440.0,
+#         "high": 20.1,
+#         "low": 20.04,
+#         "amount_total": 2.15389381E8,
+#         "volume_total": 10764500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 38533648,
+#           "volume_sum_last": 9103100
+#         }
+#       },
+#       {
+#         "current": 20.07,
+#         "volume": 1259200,
+#         "avg_price": 20.018,
+#         "chg": 0.49,
+#         "percent": 2.5,
+#         "timestamp": 1765332600000,
+#         "amount": 1581054.0,
+#         "high": 20.13,
+#         "low": 20.06,
+#         "amount_total": 2.42264017E8,
+#         "volume_total": 12102400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 39792848,
+#           "volume_sum_last": 10583800
+#         }
+#       },
+#       {
+#         "current": 20.36,
+#         "volume": 3478411,
+#         "avg_price": 20.103,
+#         "chg": 0.78,
+#         "percent": 3.98,
+#         "timestamp": 1765333200000,
+#         "amount": 3386822.0,
+#         "high": 20.46,
+#         "low": 20.33,
+#         "amount_total": 3.16567785E8,
+#         "volume_total": 15746911,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 43271259,
+#           "volume_sum_last": 11390500
+#         }
+#       },
+#       {
+#         "current": 20.51,
+#         "volume": 1866200,
+#         "avg_price": 20.152,
+#         "chg": 0.93,
+#         "percent": 4.75,
+#         "timestamp": 1765333800000,
+#         "amount": 4767825.0,
+#         "high": 20.58,
+#         "low": 20.51,
+#         "amount_total": 3.59610998E8,
+#         "volume_total": 17845111,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 45137459,
+#           "volume_sum_last": 12119200
+#         }
+#       },
+#       {
+#         "current": 20.35,
+#         "volume": 839300,
+#         "avg_price": 20.168,
+#         "chg": 0.77,
+#         "percent": 3.93,
+#         "timestamp": 1765334400000,
+#         "amount": 2244942.0,
+#         "high": 20.36,
+#         "low": 20.35,
+#         "amount_total": 3.79049635E8,
+#         "volume_total": 18794711,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 45976759,
+#           "volume_sum_last": 12804900
+#         }
+#       },
+#       {
+#         "current": 20.29,
+#         "volume": 601900,
+#         "avg_price": 20.173,
+#         "chg": 0.71,
+#         "percent": 3.63,
+#         "timestamp": 1765335000000,
+#         "amount": 1358175.0,
+#         "high": 20.32,
+#         "low": 20.28,
+#         "amount_total": 3.92643105E8,
+#         "volume_total": 19463511,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 46578659,
+#           "volume_sum_last": 13182700
+#         }
+#       },
+#       {
+#         "current": 20.22,
+#         "volume": 411100,
+#         "avg_price": 20.176,
+#         "chg": 0.64,
+#         "percent": 3.27,
+#         "timestamp": 1765335600000,
+#         "amount": 1881574.0,
+#         "high": 20.26,
+#         "low": 20.22,
+#         "amount_total": 4.02858075E8,
+#         "volume_total": 19967511,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 46989759,
+#           "volume_sum_last": 13648000
+#         }
+#       },
+#       {
+#         "current": 20.33,
+#         "volume": 383900,
+#         "avg_price": 20.178,
+#         "chg": 0.75,
+#         "percent": 3.83,
+#         "timestamp": 1765336200000,
+#         "amount": 2865929.0,
+#         "high": 20.35,
+#         "low": 20.28,
+#         "amount_total": 4.13507589E8,
+#         "volume_total": 20492511,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 47373659,
+#           "volume_sum_last": 14104600
+#         }
+#       },
+#       {
+#         "current": 20.27,
+#         "volume": 256900,
+#         "avg_price": 20.18,
+#         "chg": 0.69,
+#         "percent": 3.52,
+#         "timestamp": 1765336800000,
+#         "amount": 182439.0,
+#         "high": 20.28,
+#         "low": 20.26,
+#         "amount_total": 4.18903744E8,
+#         "volume_total": 20758411,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 47630559,
+#           "volume_sum_last": 14810600
+#         }
+#       },
+#       {
+#         "current": 20.24,
+#         "volume": 361800,
+#         "avg_price": 20.182,
+#         "chg": 0.66,
+#         "percent": 3.37,
+#         "timestamp": 1765337400000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 47992359,
+#           "volume_sum_last": 14960900
+#         }
+#       },
+#       {
+#         "current": 20.23,
+#         "volume": 85100,
+#         "avg_price": 20.182,
+#         "chg": 0.65,
+#         "percent": 3.32,
+#         "timestamp": 1765342800000,
+#         "amount": 1722352.0,
+#         "high": 20.26,
+#         "low": 20.22,
+#         "amount_total": 4.27963913E8,
+#         "volume_total": 21205311,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 48077459,
+#           "volume_sum_last": 15591300
+#         }
+#       },
+#       {
+#         "current": 20.18,
+#         "volume": 503000,
+#         "avg_price": 20.183,
+#         "chg": 0.6,
+#         "percent": 3.06,
+#         "timestamp": 1765343400000,
+#         "amount": 2830678.0,
+#         "high": 20.18,
+#         "low": 20.16,
+#         "amount_total": 4.40961871E8,
+#         "volume_total": 21848611,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 48580459,
+#           "volume_sum_last": 16032100
+#         }
+#       },
+#       {
+#         "current": 20.2,
+#         "volume": 472900,
+#         "avg_price": 20.183,
+#         "chg": 0.62,
+#         "percent": 3.17,
+#         "timestamp": 1765344000000,
+#         "amount": 294908.0,
+#         "high": 20.2,
+#         "low": 20.19,
+#         "amount_total": 4.5080147E8,
+#         "volume_total": 22336111,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 49053359,
+#           "volume_sum_last": 16453800
+#         }
+#       },
+#       {
+#         "current": 20.21,
+#         "volume": 279500,
+#         "avg_price": 20.183,
+#         "chg": 0.63,
+#         "percent": 3.22,
+#         "timestamp": 1765344600000,
+#         "amount": 683103.0,
+#         "high": 20.22,
+#         "low": 20.21,
+#         "amount_total": 4.57123355E8,
+#         "volume_total": 22649411,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 49332859,
+#           "volume_sum_last": 16840000
+#         }
+#       },
+#       {
+#         "current": 20.14,
+#         "volume": 359700,
+#         "avg_price": 20.182,
+#         "chg": 0.56,
+#         "percent": 2.86,
+#         "timestamp": 1765345200000,
+#         "amount": 1694609.0,
+#         "high": 20.16,
+#         "low": 20.14,
+#         "amount_total": 4.6607848E8,
+#         "volume_total": 23093211,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 49692559,
+#           "volume_sum_last": 17300768
+#         }
+#       },
+#       {
+#         "current": 20.11,
+#         "volume": 281300,
+#         "avg_price": 20.182,
+#         "chg": 0.53,
+#         "percent": 2.71,
+#         "timestamp": 1765345800000,
+#         "amount": 1047882.0,
+#         "high": 20.12,
+#         "low": 20.11,
+#         "amount_total": 4.72795912E8,
+#         "volume_total": 23426611,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 49973859,
+#           "volume_sum_last": 17625468
+#         }
+#       },
+#       {
+#         "current": 20.07,
+#         "volume": 256400,
+#         "avg_price": 20.181,
+#         "chg": 0.49,
+#         "percent": 2.5,
+#         "timestamp": 1765346400000,
+#         "amount": 804868.0,
+#         "high": 20.08,
+#         "low": 20.06,
+#         "amount_total": 4.78752993E8,
+#         "volume_total": 23723111,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 50230259,
+#           "volume_sum_last": 17886468
+#         }
+#       },
+#       {
+#         "current": 20.15,
+#         "volume": 393100,
+#         "avg_price": 20.18,
+#         "chg": 0.57,
+#         "percent": 2.91,
+#         "timestamp": 1765347000000,
+#         "amount": 813579.0,
+#         "high": 20.15,
+#         "low": 20.12,
+#         "amount_total": 4.87478043E8,
+#         "volume_total": 24156611,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 50623359,
+#           "volume_sum_last": 18102668
+#         }
+#       },
+#       {
+#         "current": 20.17,
+#         "volume": 342800,
+#         "avg_price": 20.18,
+#         "chg": 0.59,
+#         "percent": 3.01,
+#         "timestamp": 1765347600000,
+#         "amount": 1189535.0,
+#         "high": 20.2,
+#         "low": 20.17,
+#         "amount_total": 4.95578402E8,
+#         "volume_total": 24558311,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 50966159,
+#           "volume_sum_last": 18517968
+#         }
+#       },
+#       {
+#         "current": 20.23,
+#         "volume": 485000,
+#         "avg_price": 20.18,
+#         "chg": 0.65,
+#         "percent": 3.32,
+#         "timestamp": 1765348200000,
+#         "amount": 349842.0,
+#         "high": 20.23,
+#         "low": 20.21,
+#         "amount_total": 5.05713595E8,
+#         "volume_total": 25060611,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 51451159,
+#           "volume_sum_last": 18925200
+#         }
+#       },
+#       {
+#         "current": 20.2,
+#         "volume": 357400,
+#         "avg_price": 20.18,
+#         "chg": 0.62,
+#         "percent": 3.17,
+#         "timestamp": 1765348800000,
+#         "amount": 1435884.0,
+#         "high": 20.21,
+#         "low": 20.19,
+#         "amount_total": 5.14373735E8,
+#         "volume_total": 25489111,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 51808559,
+#           "volume_sum_last": 19374600
+#         }
+#       },
+#       {
+#         "current": 20.18,
+#         "volume": 700100,
+#         "avg_price": 20.181,
+#         "chg": 0.6,
+#         "percent": 3.06,
+#         "timestamp": 1765349400000,
+#         "amount": 3889297.0,
+#         "high": 20.19,
+#         "low": 20.16,
+#         "amount_total": 5.32402253E8,
+#         "volume_total": 26382011,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 52508659,
+#           "volume_sum_last": 20362000
+#         }
+#       },
+#       {
+#         "current": 20.2,
+#         "volume": 979800,
+#         "avg_price": 20.181,
+#         "chg": 0.62,
+#         "percent": 3.17,
+#         "timestamp": 1765350000000,
+#         "amount": 6815480.0,
+#         "high": 20.2,
+#         "low": 20.2,
+#         "amount_total": 5.59010773E8,
+#         "volume_total": 27699211,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 53488459,
+#           "volume_sum_last": 21323300
+#         }
+#       },
+#       {
+#         "current": 20.08,
+#         "volume": 412700,
+#         "avg_price": 20.12,
+#         "chg": -0.12,
+#         "percent": -0.59,
+#         "timestamp": 1765416600000,
+#         "amount": 8303585.0,
+#         "high": 20.22,
+#         "low": 20.06,
+#         "amount_total": 8303585.0,
+#         "volume_total": 412700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 53901159,
+#           "volume_sum_last": 412700
+#         }
+#       },
+#       {
+#         "current": 20.44,
+#         "volume": 2912100,
+#         "avg_price": 20.275,
+#         "chg": 0.24,
+#         "percent": 1.19,
+#         "timestamp": 1765417200000,
+#         "amount": 5103262.0,
+#         "high": 20.48,
+#         "low": 20.36,
+#         "amount_total": 7.2470637E7,
+#         "volume_total": 3574300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 56813259,
+#           "volume_sum_last": 3574300
+#         }
+#       },
+#       {
+#         "current": 20.59,
+#         "volume": 2479400,
+#         "avg_price": 20.373,
+#         "chg": 0.39,
+#         "percent": 1.93,
+#         "timestamp": 1765417800000,
+#         "amount": 4263384.0,
+#         "high": 20.59,
+#         "low": 20.49,
+#         "amount_total": 1.27559593E8,
+#         "volume_total": 6261200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 59292659,
+#           "volume_sum_last": 6261200
+#         }
+#       },
+#       {
+#         "current": 20.57,
+#         "volume": 2729100,
+#         "avg_price": 20.461,
+#         "chg": 0.37,
+#         "percent": 1.83,
+#         "timestamp": 1765418400000,
+#         "amount": 2323668.0,
+#         "high": 20.68,
+#         "low": 20.57,
+#         "amount_total": 1.86256799E8,
+#         "volume_total": 9103100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 62021759,
+#           "volume_sum_last": 9103100
+#         }
+#       },
+#       {
+#         "current": 20.32,
+#         "volume": 1407100,
+#         "avg_price": 20.451,
+#         "chg": 0.12,
+#         "percent": 0.59,
+#         "timestamp": 1765419000000,
+#         "amount": 1493990.0,
+#         "high": 20.32,
+#         "low": 20.3,
+#         "amount_total": 2.16451931E8,
+#         "volume_total": 10583800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 63428859,
+#           "volume_sum_last": 10583800
+#         }
+#       },
+#       {
+#         "current": 20.26,
+#         "volume": 759100,
+#         "avg_price": 20.439,
+#         "chg": 0.06,
+#         "percent": 0.3,
+#         "timestamp": 1765419600000,
+#         "amount": 964451.0,
+#         "high": 20.27,
+#         "low": 20.25,
+#         "amount_total": 2.32807665E8,
+#         "volume_total": 11390500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 64187959,
+#           "volume_sum_last": 11390500
+#         }
+#       },
+#       {
+#         "current": 20.19,
+#         "volume": 692300,
+#         "avg_price": 20.424,
+#         "chg": -0.01,
+#         "percent": -0.05,
+#         "timestamp": 1765420200000,
+#         "amount": 735088.0,
+#         "high": 20.2,
+#         "low": 20.19,
+#         "amount_total": 2.47526188E8,
+#         "volume_total": 12119200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 64880259,
+#           "volume_sum_last": 12119200
+#         }
+#       },
+#       {
+#         "current": 20.05,
+#         "volume": 645700,
+#         "avg_price": 20.408,
+#         "chg": -0.15,
+#         "percent": -0.74,
+#         "timestamp": 1765420800000,
+#         "amount": 802088.0,
+#         "high": 20.07,
+#         "low": 20.05,
+#         "amount_total": 2.61322006E8,
+#         "volume_total": 12804900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 65525959,
+#           "volume_sum_last": 12804900
+#         }
+#       },
+#       {
+#         "current": 20.11,
+#         "volume": 348900,
+#         "avg_price": 20.399,
+#         "chg": -0.09,
+#         "percent": -0.45,
+#         "timestamp": 1765421400000,
+#         "amount": 581047.0,
+#         "high": 20.11,
+#         "low": 20.1,
+#         "amount_total": 2.68910267E8,
+#         "volume_total": 13182700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 65874859,
+#           "volume_sum_last": 13182700
+#         }
+#       },
+#       {
+#         "current": 20.03,
+#         "volume": 439900,
+#         "avg_price": 20.387,
+#         "chg": -0.17,
+#         "percent": -0.84,
+#         "timestamp": 1765422000000,
+#         "amount": 508609.0,
+#         "high": 20.04,
+#         "low": 20.02,
+#         "amount_total": 2.78245216E8,
+#         "volume_total": 13648000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 66314759,
+#           "volume_sum_last": 13648000
+#         }
+#       },
+#       {
+#         "current": 20.06,
+#         "volume": 402100,
+#         "avg_price": 20.375,
+#         "chg": -0.14,
+#         "percent": -0.69,
+#         "timestamp": 1765422600000,
+#         "amount": 1090993.0,
+#         "high": 20.06,
+#         "low": 20.0,
+#         "amount_total": 2.87384143E8,
+#         "volume_total": 14104600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 66716859,
+#           "volume_sum_last": 14104600
+#         }
+#       },
+#       {
+#         "current": 20.18,
+#         "volume": 695200,
+#         "avg_price": 20.368,
+#         "chg": -0.02,
+#         "percent": -0.1,
+#         "timestamp": 1765423200000,
+#         "amount": 218045.0,
+#         "high": 20.19,
+#         "low": 20.18,
+#         "amount_total": 3.01662526E8,
+#         "volume_total": 14810600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 67412059,
+#           "volume_sum_last": 14810600
+#         }
+#       },
+#       {
+#         "current": 20.19,
+#         "volume": 150300,
+#         "avg_price": 20.366,
+#         "chg": -0.01,
+#         "percent": -0.05,
+#         "timestamp": 1765423800000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 67562359,
+#           "volume_sum_last": 14960900
+#         }
+#       },
+#       {
+#         "current": 20.39,
+#         "volume": 630400,
+#         "avg_price": 20.372,
+#         "chg": 0.19,
+#         "percent": 0.94,
+#         "timestamp": 1765429200000,
+#         "amount": 1.2930164E7,
+#         "high": 20.67,
+#         "low": 20.19,
+#         "amount_total": 3.17625619E8,
+#         "volume_total": 15591300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 68192759,
+#           "volume_sum_last": 15591300
+#         }
+#       },
+#       {
+#         "current": 20.16,
+#         "volume": 400300,
+#         "avg_price": 20.369,
+#         "chg": -0.04,
+#         "percent": -0.2,
+#         "timestamp": 1765429800000,
+#         "amount": 817158.0,
+#         "high": 20.2,
+#         "low": 20.15,
+#         "amount_total": 3.2655153E8,
+#         "volume_total": 16032100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 68593059,
+#           "volume_sum_last": 16032100
+#         }
+#       },
+#       {
+#         "current": 20.07,
+#         "volume": 366200,
+#         "avg_price": 20.362,
+#         "chg": -0.13,
+#         "percent": -0.64,
+#         "timestamp": 1765430400000,
+#         "amount": 1114391.0,
+#         "high": 20.09,
+#         "low": 20.06,
+#         "amount_total": 3.35036242E8,
+#         "volume_total": 16453800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 68959259,
+#           "volume_sum_last": 16453800
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 359300,
+#         "avg_price": 20.355,
+#         "chg": -0.18,
+#         "percent": -0.89,
+#         "timestamp": 1765431000000,
+#         "amount": 538797.0,
+#         "high": 20.04,
+#         "low": 20.02,
+#         "amount_total": 3.42779159E8,
+#         "volume_total": 16840000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 69318559,
+#           "volume_sum_last": 16840000
+#         }
+#       },
+#       {
+#         "current": 20.11,
+#         "volume": 427468,
+#         "avg_price": 20.348,
+#         "chg": -0.09,
+#         "percent": -0.45,
+#         "timestamp": 1765431600000,
+#         "amount": 669371.0,
+#         "high": 20.12,
+#         "low": 20.09,
+#         "amount_total": 3.52037335E8,
+#         "volume_total": 17300768,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 69746027,
+#           "volume_sum_last": 17300768
+#         }
+#       },
+#       {
+#         "current": 20.12,
+#         "volume": 311200,
+#         "avg_price": 20.344,
+#         "chg": -0.08,
+#         "percent": -0.4,
+#         "timestamp": 1765432200000,
+#         "amount": 271599.0,
+#         "high": 20.13,
+#         "low": 20.11,
+#         "amount_total": 3.58566875E8,
+#         "volume_total": 17625468,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 70057227,
+#           "volume_sum_last": 17625468
+#         }
+#       },
+#       {
+#         "current": 20.08,
+#         "volume": 252600,
+#         "avg_price": 20.34,
+#         "chg": -0.12,
+#         "percent": -0.59,
+#         "timestamp": 1765432800000,
+#         "amount": 168592.0,
+#         "high": 20.08,
+#         "low": 20.06,
+#         "amount_total": 3.63812596E8,
+#         "volume_total": 17886468,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 70309827,
+#           "volume_sum_last": 17886468
+#         }
+#       },
+#       {
+#         "current": 20.13,
+#         "volume": 199700,
+#         "avg_price": 20.338,
+#         "chg": -0.07,
+#         "percent": -0.35,
+#         "timestamp": 1765433400000,
+#         "amount": 331946.0,
+#         "high": 20.13,
+#         "low": 20.1,
+#         "amount_total": 3.68165532E8,
+#         "volume_total": 18102668,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 70509527,
+#           "volume_sum_last": 18102668
+#         }
+#       },
+#       {
+#         "current": 20.03,
+#         "volume": 388700,
+#         "avg_price": 20.331,
+#         "chg": -0.17,
+#         "percent": -0.84,
+#         "timestamp": 1765434000000,
+#         "amount": 532556.0,
+#         "high": 20.03,
+#         "low": 20.02,
+#         "amount_total": 3.76494026E8,
+#         "volume_total": 18517968,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 70898227,
+#           "volume_sum_last": 18517968
+#         }
+#       },
+#       {
+#         "current": 20.04,
+#         "volume": 330432,
+#         "avg_price": 20.325,
+#         "chg": -0.16,
+#         "percent": -0.79,
+#         "timestamp": 1765434600000,
+#         "amount": 1539187.0,
+#         "high": 20.06,
+#         "low": 20.02,
+#         "amount_total": 3.84649896E8,
+#         "volume_total": 18925200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 71228659,
+#           "volume_sum_last": 18925200
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 382600,
+#         "avg_price": 20.318,
+#         "chg": -0.18,
+#         "percent": -0.89,
+#         "timestamp": 1765435200000,
+#         "amount": 1337389.0,
+#         "high": 20.04,
+#         "low": 20.02,
+#         "amount_total": 3.93654241E8,
+#         "volume_total": 19374600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 71611259,
+#           "volume_sum_last": 19374600
+#         }
+#       },
+#       {
+#         "current": 19.99,
+#         "volume": 877500,
+#         "avg_price": 20.303,
+#         "chg": -0.21,
+#         "percent": -1.04,
+#         "timestamp": 1765435800000,
+#         "amount": 2197108.0,
+#         "high": 20.0,
+#         "low": 19.99,
+#         "amount_total": 4.13407429E8,
+#         "volume_total": 20362000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 72488759,
+#           "volume_sum_last": 20362000
+#         }
+#       },
+#       {
+#         "current": 20.02,
+#         "volume": 761700,
+#         "avg_price": 20.289,
+#         "chg": -0.18,
+#         "percent": -0.89,
+#         "timestamp": 1765436400000,
+#         "amount": 3995992.0,
+#         "high": 20.02,
+#         "low": 20.02,
+#         "amount_total": 4.3263299E8,
+#         "volume_total": 21323300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 73250459,
+#           "volume_sum_last": 21323300
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 318500,
+#         "avg_price": 19.898,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765503000000,
+#         "amount": 6337577.0,
+#         "high": 19.94,
+#         "low": 19.85,
+#         "amount_total": 6337577.0,
+#         "volume_total": 318500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": -4.19,
+#           "medium": 2.04,
+#           "large": -4.35,
+#           "xlarge": 6.51
+#         },
+#         "volume_compare": {
+#           "volume_sum": 73568959,
+#           "volume_sum_last": 412700
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 2315300,
+#         "avg_price": 19.757,
+#         "chg": -0.36,
+#         "percent": -1.8,
+#         "timestamp": 1765503600000,
+#         "amount": 3869154.0,
+#         "high": 19.7,
+#         "low": 19.66,
+#         "amount_total": 5.5922882E7,
+#         "volume_total": 2830500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.22,
+#           "medium": 6.35,
+#           "large": -8.98,
+#           "xlarge": -8.58
+#         },
+#         "volume_compare": {
+#           "volume_sum": 75884259,
+#           "volume_sum_last": 3574300
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 799400,
+#         "avg_price": 19.759,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765504200000,
+#         "amount": 1459187.0,
+#         "high": 19.82,
+#         "low": 19.78,
+#         "amount_total": 7.3177808E7,
+#         "volume_total": 3703600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.32,
+#           "medium": 5.46,
+#           "large": -10.03,
+#           "xlarge": -7.75
+#         },
+#         "volume_compare": {
+#           "volume_sum": 76683659,
+#           "volume_sum_last": 6261200
+#         }
+#       },
+#       {
+#         "current": 19.93,
+#         "volume": 672200,
+#         "avg_price": 19.779,
+#         "chg": -0.09,
+#         "percent": -0.45,
+#         "timestamp": 1765504800000,
+#         "amount": 1375595.0,
+#         "high": 19.94,
+#         "low": 19.88,
+#         "amount_total": 8.7917004E7,
+#         "volume_total": 4444900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.62,
+#           "medium": 3.9,
+#           "large": -9.6,
+#           "xlarge": -5.93
+#         },
+#         "volume_compare": {
+#           "volume_sum": 77355859,
+#           "volume_sum_last": 9103100
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 390800,
+#         "avg_price": 19.79,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765505400000,
+#         "amount": 938550.0,
+#         "high": 19.9,
+#         "low": 19.87,
+#         "amount_total": 9.6632705E7,
+#         "volume_total": 4882900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.03,
+#           "medium": 3.33,
+#           "large": -10.1,
+#           "xlarge": -5.25
+#         },
+#         "volume_compare": {
+#           "volume_sum": 77746659,
+#           "volume_sum_last": 10583800
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 299500,
+#         "avg_price": 19.798,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765506000000,
+#         "amount": 1035587.0,
+#         "high": 19.89,
+#         "low": 19.87,
+#         "amount_total": 1.0363174E8,
+#         "volume_total": 5234500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.17,
+#           "medium": 3.34,
+#           "large": -9.94,
+#           "xlarge": -5.57
+#         },
+#         "volume_compare": {
+#           "volume_sum": 78046159,
+#           "volume_sum_last": 11390500
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 329400,
+#         "avg_price": 19.802,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765506600000,
+#         "amount": 587600.0,
+#         "high": 19.86,
+#         "low": 19.85,
+#         "amount_total": 1.10761436E8,
+#         "volume_total": 5593500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.92,
+#           "medium": 2.52,
+#           "large": -9.15,
+#           "xlarge": -5.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 78375559,
+#           "volume_sum_last": 12119200
+#         }
+#       },
+#       {
+#         "current": 19.82,
+#         "volume": 384800,
+#         "avg_price": 19.801,
+#         "chg": -0.2,
+#         "percent": -1.0,
+#         "timestamp": 1765507200000,
+#         "amount": 350937.0,
+#         "high": 19.84,
+#         "low": 19.82,
+#         "amount_total": 1.18729138E8,
+#         "volume_total": 5996000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.19,
+#           "medium": 1.95,
+#           "large": -9.47,
+#           "xlarge": -4.67
+#         },
+#         "volume_compare": {
+#           "volume_sum": 78760359,
+#           "volume_sum_last": 12804900
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 310300,
+#         "avg_price": 19.803,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765507800000,
+#         "amount": 462644.0,
+#         "high": 19.87,
+#         "low": 19.85,
+#         "amount_total": 1.25346914E8,
+#         "volume_total": 6329600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.11,
+#           "medium": 2.07,
+#           "large": -9.6,
+#           "xlarge": -4.58
+#         },
+#         "volume_compare": {
+#           "volume_sum": 79070659,
+#           "volume_sum_last": 13182700
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 188300,
+#         "avg_price": 19.805,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765508400000,
+#         "amount": 494283.0,
+#         "high": 19.86,
+#         "low": 19.84,
+#         "amount_total": 1.29582544E8,
+#         "volume_total": 6542800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.38,
+#           "medium": 1.48,
+#           "large": -9.47,
+#           "xlarge": -3.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 79258959,
+#           "volume_sum_last": 13648000
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 241200,
+#         "avg_price": 19.806,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765509000000,
+#         "amount": 532470.0,
+#         "high": 19.8,
+#         "low": 19.78,
+#         "amount_total": 1.34898086E8,
+#         "volume_total": 6810900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.02,
+#           "medium": 1.67,
+#           "large": -9.4,
+#           "xlarge": -3.29
+#         },
+#         "volume_compare": {
+#           "volume_sum": 79500159,
+#           "volume_sum_last": 14104600
+#         }
+#       },
+#       {
+#         "current": 19.77,
+#         "volume": 389800,
+#         "avg_price": 19.804,
+#         "chg": -0.25,
+#         "percent": -1.25,
+#         "timestamp": 1765509600000,
+#         "amount": 387456.0,
+#         "high": 19.77,
+#         "low": 19.76,
+#         "amount_total": 1.42992351E8,
+#         "volume_total": 7220300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.56,
+#           "medium": 1.93,
+#           "large": -9.3,
+#           "xlarge": -3.19
+#         },
+#         "volume_compare": {
+#           "volume_sum": 79889959,
+#           "volume_sum_last": 14810600
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 254700,
+#         "avg_price": 19.802,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765510200000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 80144659,
+#           "volume_sum_last": 14960900
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 75800,
+#         "avg_price": 19.802,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765515600000,
+#         "amount": 1495737.0,
+#         "high": 19.75,
+#         "low": 19.72,
+#         "amount_total": 1.49519267E8,
+#         "volume_total": 7550800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.9,
+#           "medium": 2.69,
+#           "large": -9.7,
+#           "xlarge": -3.89
+#         },
+#         "volume_compare": {
+#           "volume_sum": 80220459,
+#           "volume_sum_last": 15591300
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 312600,
+#         "avg_price": 19.798,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765516200000,
+#         "amount": 1001686.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.56683502E8,
+#         "volume_total": 7914200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.83,
+#           "medium": 3.31,
+#           "large": -10.08,
+#           "xlarge": -4.07
+#         },
+#         "volume_compare": {
+#           "volume_sum": 80533059,
+#           "volume_sum_last": 16032100
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 647300,
+#         "avg_price": 19.787,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765516800000,
+#         "amount": 916206.0,
+#         "high": 19.68,
+#         "low": 19.65,
+#         "amount_total": 1.70330205E8,
+#         "volume_total": 8608100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.45,
+#           "medium": 2.55,
+#           "large": -9.69,
+#           "xlarge": -4.31
+#         },
+#         "volume_compare": {
+#           "volume_sum": 81180359,
+#           "volume_sum_last": 16453800
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 363100,
+#         "avg_price": 19.781,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765517400000,
+#         "amount": 1120305.0,
+#         "high": 19.71,
+#         "low": 19.66,
+#         "amount_total": 1.78587802E8,
+#         "volume_total": 9028100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.79,
+#           "medium": 2.9,
+#           "large": -9.3,
+#           "xlarge": -4.4
+#         },
+#         "volume_compare": {
+#           "volume_sum": 81543459,
+#           "volume_sum_last": 16840000
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 258900,
+#         "avg_price": 19.779,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518000000,
+#         "amount": 362535.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.84048383E8,
+#         "volume_total": 9305400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.47,
+#           "medium": 2.82,
+#           "large": -9.06,
+#           "xlarge": -4.24
+#         },
+#         "volume_compare": {
+#           "volume_sum": 81802359,
+#           "volume_sum_last": 17300768
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 173700,
+#         "avg_price": 19.777,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518600000,
+#         "amount": 236495.0,
+#         "high": 19.71,
+#         "low": 19.7,
+#         "amount_total": 1.87707507E8,
+#         "volume_total": 9491100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.2,
+#           "medium": 2.85,
+#           "large": -8.9,
+#           "xlarge": -4.16
+#         },
+#         "volume_compare": {
+#           "volume_sum": 81976059,
+#           "volume_sum_last": 17625468
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 135900,
+#         "avg_price": 19.776,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765519200000,
+#         "amount": 359204.0,
+#         "high": 19.74,
+#         "low": 19.72,
+#         "amount_total": 1.9074674E8,
+#         "volume_total": 9645200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.02,
+#           "medium": 2.85,
+#           "large": -8.82,
+#           "xlarge": -4.06
+#         },
+#         "volume_compare": {
+#           "volume_sum": 82111959,
+#           "volume_sum_last": 17886468
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 328100,
+#         "avg_price": 19.774,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765519800000,
+#         "amount": 681231.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.9789274E8,
+#         "volume_total": 10007900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.39,
+#           "medium": 2.82,
+#           "large": -8.1,
+#           "xlarge": -4.11
+#         },
+#         "volume_compare": {
+#           "volume_sum": 82440059,
+#           "volume_sum_last": 18102668
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 265200,
+#         "avg_price": 19.771,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765520400000,
+#         "amount": 1322971.0,
+#         "high": 19.7,
+#         "low": 19.68,
+#         "amount_total": 2.04435802E8,
+#         "volume_total": 10340300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.69,
+#           "medium": 2.73,
+#           "large": -7.64,
+#           "xlarge": -3.77
+#         },
+#         "volume_compare": {
+#           "volume_sum": 82705259,
+#           "volume_sum_last": 18517968
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 956600,
+#         "avg_price": 19.762,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765521000000,
+#         "amount": 2987489.0,
+#         "high": 19.69,
+#         "low": 19.64,
+#         "amount_total": 2.26252891E8,
+#         "volume_total": 11448900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 7.77,
+#           "medium": 3.17,
+#           "large": -6.38,
+#           "xlarge": -4.57
+#         },
+#         "volume_compare": {
+#           "volume_sum": 83661859,
+#           "volume_sum_last": 18925200
+#         }
+#       },
+#       {
+#         "current": 19.49,
+#         "volume": 1764600,
+#         "avg_price": 19.731,
+#         "chg": -0.53,
+#         "percent": -2.65,
+#         "timestamp": 1765521600000,
+#         "amount": 3173422.0,
+#         "high": 19.54,
+#         "low": 19.49,
+#         "amount_total": 2.63922381E8,
+#         "volume_total": 13376200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.44,
+#           "medium": 4.75,
+#           "large": -5.58,
+#           "xlarge": -7.61
+#         },
+#         "volume_compare": {
+#           "volume_sum": 85426459,
+#           "volume_sum_last": 19374600
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 900200,
+#         "avg_price": 19.714,
+#         "chg": -0.51,
+#         "percent": -2.55,
+#         "timestamp": 1765522200000,
+#         "amount": 1601919.0,
+#         "high": 19.53,
+#         "low": 19.5,
+#         "amount_total": 2.8306368E8,
+#         "volume_total": 14358500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.22,
+#           "medium": 4.81,
+#           "large": -5.26,
+#           "xlarge": -7.77
+#         },
+#         "volume_compare": {
+#           "volume_sum": 86326659,
+#           "volume_sum_last": 20362000
+#         }
+#       },
+#       {
+#         "current": 19.6,
+#         "volume": 691100,
+#         "avg_price": 19.704,
+#         "chg": -0.42,
+#         "percent": -2.1,
+#         "timestamp": 1765522800000,
+#         "amount": 3087000.0,
+#         "high": 19.6,
+#         "low": 19.6,
+#         "amount_total": 2.9964254E8,
+#         "volume_total": 15207100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 87017759,
+#           "volume_sum_last": 21323300
+#         }
+#       }
+#     ],
+#     "items_size": 130
+#   },
+#   "error_code": 0,
+#   "error_description": ""
+# }

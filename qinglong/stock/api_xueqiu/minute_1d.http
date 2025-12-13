@@ -1,0 +1,6303 @@
+### minute_1d 获取股票分钟线数据(1天)
+# @name minute_1d
+GET https://stock.xueqiu.com/v5/stock/chart/minute.json?symbol=SH603533&period=1d HTTP/1.1
+Accept: application/json
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0
+Accept-Language: zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6
+Cookie: {{$dotenv XUEQIU}}
+
+
+# HTTP/1.1 200 OK
+# Server: openresty
+# Date: Sat, 13 Dec 2025 14:59:39 GMT
+# Content-Type: application/json;charset=UTF-8
+# Transfer-Encoding: chunked
+# Connection: close
+# Vary: Accept-Encoding
+# Trace-Id: d7754cee4044c54d
+# P3P: CP="IDC DSP COR ADM DEVi TAIi PSA PSD IVAi IVDi CONi HIS OUR IND CNT"
+# Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0
+# Access-Control-Allow-Origin: https://xueqiu.com
+# Access-Control-Allow-Credentials: true
+# Access-Control-ALLow-Methods: GET, POST, OPTIONS, DELETE
+# Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept
+# Content-Encoding: gzip
+
+# {
+#   "data": {
+#     "last_close": 20.02,
+#     "after": [],
+#     "items": [
+#       {
+#         "current": 19.85,
+#         "volume": 318500,
+#         "avg_price": 19.898,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765503000000,
+#         "amount": 6337577.0,
+#         "high": 19.94,
+#         "low": 19.85,
+#         "amount_total": 6337577.0,
+#         "volume_total": 318500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": -4.19,
+#           "medium": 2.04,
+#           "large": -4.35,
+#           "xlarge": 6.51
+#         },
+#         "volume_compare": {
+#           "volume_sum": 318500,
+#           "volume_sum_last": 412700
+#         }
+#       },
+#       {
+#         "current": 19.79,
+#         "volume": 285300,
+#         "avg_price": 19.862,
+#         "chg": -0.23,
+#         "percent": -1.15,
+#         "timestamp": 1765503060000,
+#         "amount": 5655275.0,
+#         "high": 19.88,
+#         "low": 19.79,
+#         "amount_total": 1.1992852E7,
+#         "volume_total": 603800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 5.47,
+#           "medium": 1.46,
+#           "large": -4.55,
+#           "xlarge": -2.39
+#         },
+#         "volume_compare": {
+#           "volume_sum": 603800,
+#           "volume_sum_last": 803500
+#         }
+#       },
+#       {
+#         "current": 19.86,
+#         "volume": 349800,
+#         "avg_price": 19.842,
+#         "chg": -0.16,
+#         "percent": -0.8,
+#         "timestamp": 1765503120000,
+#         "amount": 6928301.0,
+#         "high": 19.88,
+#         "low": 19.78,
+#         "amount_total": 1.8921153E7,
+#         "volume_total": 953600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.09,
+#           "medium": 2.13,
+#           "large": -4.22,
+#           "xlarge": -9.0
+#         },
+#         "volume_compare": {
+#           "volume_sum": 953600,
+#           "volume_sum_last": 1055900
+#         }
+#       },
+#       {
+#         "current": 19.75,
+#         "volume": 230900,
+#         "avg_price": 19.835,
+#         "chg": -0.27,
+#         "percent": -1.35,
+#         "timestamp": 1765503180000,
+#         "amount": 4572852.0,
+#         "high": 19.86,
+#         "low": 19.75,
+#         "amount_total": 2.3494005E7,
+#         "volume_total": 1184500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.74,
+#           "medium": 3.92,
+#           "large": -7.61,
+#           "xlarge": -9.05
+#         },
+#         "volume_compare": {
+#           "volume_sum": 1184500,
+#           "volume_sum_last": 1271900
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 334400,
+#         "avg_price": 19.809,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765503240000,
+#         "amount": 6593817.0,
+#         "high": 19.75,
+#         "low": 19.7,
+#         "amount_total": 3.0087822E7,
+#         "volume_total": 1518900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 13.31,
+#           "medium": 7.44,
+#           "large": -10.7,
+#           "xlarge": -10.05
+#         },
+#         "volume_compare": {
+#           "volume_sum": 1518900,
+#           "volume_sum_last": 1371800
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 241000,
+#         "avg_price": 19.798,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765503300000,
+#         "amount": 4754543.0,
+#         "high": 19.79,
+#         "low": 19.72,
+#         "amount_total": 3.4842365E7,
+#         "volume_total": 1759900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 13.18,
+#           "medium": 8.2,
+#           "large": -10.79,
+#           "xlarge": -10.59
+#         },
+#         "volume_compare": {
+#           "volume_sum": 1759900,
+#           "volume_sum_last": 1685900
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 212400,
+#         "avg_price": 19.788,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765503360000,
+#         "amount": 4185993.0,
+#         "high": 19.78,
+#         "low": 19.66,
+#         "amount_total": 3.9028358E7,
+#         "volume_total": 1972300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.64,
+#           "medium": 8.26,
+#           "large": -8.41,
+#           "xlarge": -11.5
+#         },
+#         "volume_compare": {
+#           "volume_sum": 1972300,
+#           "volume_sum_last": 2456200
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 266300,
+#         "avg_price": 19.776,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765503420000,
+#         "amount": 5241577.0,
+#         "high": 19.73,
+#         "low": 19.65,
+#         "amount_total": 4.4269935E7,
+#         "volume_total": 2238600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.64,
+#           "medium": 5.86,
+#           "large": -8.1,
+#           "xlarge": -9.39
+#         },
+#         "volume_compare": {
+#           "volume_sum": 2238600,
+#           "volume_sum_last": 2910900
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 204200,
+#         "avg_price": 19.769,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765503480000,
+#         "amount": 4020689.0,
+#         "high": 19.75,
+#         "low": 19.66,
+#         "amount_total": 4.8290624E7,
+#         "volume_total": 2442800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.59,
+#           "medium": 5.81,
+#           "large": -8.33,
+#           "xlarge": -8.07
+#         },
+#         "volume_compare": {
+#           "volume_sum": 2442800,
+#           "volume_sum_last": 3126000
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 191000,
+#         "avg_price": 19.764,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765503540000,
+#         "amount": 3763104.0,
+#         "high": 19.73,
+#         "low": 19.69,
+#         "amount_total": 5.2053728E7,
+#         "volume_total": 2633800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.62,
+#           "medium": 6.53,
+#           "large": -9.02,
+#           "xlarge": -8.13
+#         },
+#         "volume_compare": {
+#           "volume_sum": 2633800,
+#           "volume_sum_last": 3324800
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 196700,
+#         "avg_price": 19.757,
+#         "chg": -0.36,
+#         "percent": -1.8,
+#         "timestamp": 1765503600000,
+#         "amount": 3869154.0,
+#         "high": 19.7,
+#         "low": 19.66,
+#         "amount_total": 5.5922882E7,
+#         "volume_total": 2830500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.22,
+#           "medium": 6.35,
+#           "large": -8.98,
+#           "xlarge": -8.58
+#         },
+#         "volume_compare": {
+#           "volume_sum": 2830500,
+#           "volume_sum_last": 3574300
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 143300,
+#         "avg_price": 19.755,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765503660000,
+#         "amount": 2823332.0,
+#         "high": 19.75,
+#         "low": 19.66,
+#         "amount_total": 5.8746214E7,
+#         "volume_total": 2973800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.21,
+#           "medium": 5.97,
+#           "large": -9.63,
+#           "xlarge": -8.56
+#         },
+#         "volume_compare": {
+#           "volume_sum": 2973800,
+#           "volume_sum_last": 3791200
+#         }
+#       },
+#       {
+#         "current": 19.81,
+#         "volume": 101500,
+#         "avg_price": 19.756,
+#         "chg": -0.21,
+#         "percent": -1.05,
+#         "timestamp": 1765503720000,
+#         "amount": 2008793.0,
+#         "high": 19.85,
+#         "low": 19.74,
+#         "amount_total": 6.0755007E7,
+#         "volume_total": 3075300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.36,
+#           "medium": 5.54,
+#           "large": -9.65,
+#           "xlarge": -8.26
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3075300,
+#           "volume_sum_last": 3928500
+#         }
+#       },
+#       {
+#         "current": 19.79,
+#         "volume": 96900,
+#         "avg_price": 19.756,
+#         "chg": -0.23,
+#         "percent": -1.15,
+#         "timestamp": 1765503780000,
+#         "amount": 1916552.0,
+#         "high": 19.8,
+#         "low": 19.76,
+#         "amount_total": 6.2671559E7,
+#         "volume_total": 3172200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.58,
+#           "medium": 5.27,
+#           "large": -9.38,
+#           "xlarge": -8.47
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3172200,
+#           "volume_sum_last": 4122200
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 102800,
+#         "avg_price": 19.758,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765503840000,
+#         "amount": 2034904.0,
+#         "high": 19.84,
+#         "low": 19.76,
+#         "amount_total": 6.4706463E7,
+#         "volume_total": 3275000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.24,
+#           "medium": 5.07,
+#           "large": -9.49,
+#           "xlarge": -7.82
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3275000,
+#           "volume_sum_last": 4840900
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 88100,
+#         "avg_price": 19.759,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765503900000,
+#         "amount": 1745152.0,
+#         "high": 19.85,
+#         "low": 19.77,
+#         "amount_total": 6.6451615E7,
+#         "volume_total": 3363100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.45,
+#           "medium": 5.23,
+#           "large": -9.19,
+#           "xlarge": -8.49
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3363100,
+#           "volume_sum_last": 4962900
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 103400,
+#         "avg_price": 19.758,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765503960000,
+#         "amount": 2040857.0,
+#         "high": 19.76,
+#         "low": 19.72,
+#         "amount_total": 6.8492472E7,
+#         "volume_total": 3466500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.54,
+#           "medium": 5.52,
+#           "large": -9.81,
+#           "xlarge": -8.25
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3466500,
+#           "volume_sum_last": 5106400
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 59900,
+#         "avg_price": 19.758,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765504020000,
+#         "amount": 1181446.0,
+#         "high": 19.75,
+#         "low": 19.71,
+#         "amount_total": 6.9673918E7,
+#         "volume_total": 3526400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.52,
+#           "medium": 5.35,
+#           "large": -9.76,
+#           "xlarge": -8.1
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3526400,
+#           "volume_sum_last": 5722800
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 52900,
+#         "avg_price": 19.757,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765504080000,
+#         "amount": 1044016.0,
+#         "high": 19.76,
+#         "low": 19.72,
+#         "amount_total": 7.0717934E7,
+#         "volume_total": 3579300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.72,
+#           "medium": 5.0,
+#           "large": -9.75,
+#           "xlarge": -7.97
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3579300,
+#           "volume_sum_last": 5856500
+#         }
+#       },
+#       {
+#         "current": 19.8,
+#         "volume": 50600,
+#         "avg_price": 19.758,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765504140000,
+#         "amount": 1000687.0,
+#         "high": 19.8,
+#         "low": 19.75,
+#         "amount_total": 7.1718621E7,
+#         "volume_total": 3629900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.7,
+#           "medium": 4.98,
+#           "large": -9.81,
+#           "xlarge": -7.87
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3629900,
+#           "volume_sum_last": 6053700
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 73700,
+#         "avg_price": 19.759,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765504200000,
+#         "amount": 1459187.0,
+#         "high": 19.82,
+#         "low": 19.78,
+#         "amount_total": 7.3177808E7,
+#         "volume_total": 3703600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.32,
+#           "medium": 5.46,
+#           "large": -10.03,
+#           "xlarge": -7.75
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3703600,
+#           "volume_sum_last": 6261200
+#         }
+#       },
+#       {
+#         "current": 19.81,
+#         "volume": 39000,
+#         "avg_price": 19.759,
+#         "chg": -0.21,
+#         "percent": -1.05,
+#         "timestamp": 1765504260000,
+#         "amount": 771435.0,
+#         "high": 19.81,
+#         "low": 19.76,
+#         "amount_total": 7.3949243E7,
+#         "volume_total": 3742600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.36,
+#           "medium": 5.15,
+#           "large": -9.55,
+#           "xlarge": -7.97
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3742600,
+#           "volume_sum_last": 6360800
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 104500,
+#         "avg_price": 19.761,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765504320000,
+#         "amount": 2072808.0,
+#         "high": 19.9,
+#         "low": 19.78,
+#         "amount_total": 7.6022051E7,
+#         "volume_total": 3847100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.38,
+#           "medium": 5.0,
+#           "large": -9.34,
+#           "xlarge": -8.04
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3847100,
+#           "volume_sum_last": 6794100
+#         }
+#       },
+#       {
+#         "current": 19.93,
+#         "volume": 75100,
+#         "avg_price": 19.764,
+#         "chg": -0.09,
+#         "percent": -0.45,
+#         "timestamp": 1765504380000,
+#         "amount": 1495387.0,
+#         "high": 19.94,
+#         "low": 19.88,
+#         "amount_total": 7.7517438E7,
+#         "volume_total": 3922200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.13,
+#           "medium": 4.81,
+#           "large": -9.03,
+#           "xlarge": -7.91
+#         },
+#         "volume_compare": {
+#           "volume_sum": 3922200,
+#           "volume_sum_last": 7316600
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 111200,
+#         "avg_price": 19.768,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765504440000,
+#         "amount": 2214444.0,
+#         "high": 19.94,
+#         "low": 19.88,
+#         "amount_total": 7.9731882E7,
+#         "volume_total": 4033400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.64,
+#           "medium": 4.54,
+#           "large": -9.55,
+#           "xlarge": -6.62
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4033400,
+#           "volume_sum_last": 8026700
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 74900,
+#         "avg_price": 19.77,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765504500000,
+#         "amount": 1488490.0,
+#         "high": 19.89,
+#         "low": 19.84,
+#         "amount_total": 8.1220372E7,
+#         "volume_total": 4108300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.77,
+#           "medium": 4.14,
+#           "large": -9.4,
+#           "xlarge": -6.5
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4108300,
+#           "volume_sum_last": 8170800
+#         }
+#       },
+#       {
+#         "current": 19.91,
+#         "volume": 56400,
+#         "avg_price": 19.771,
+#         "chg": -0.11,
+#         "percent": -0.55,
+#         "timestamp": 1765504560000,
+#         "amount": 1121248.0,
+#         "high": 19.91,
+#         "low": 19.85,
+#         "amount_total": 8.234162E7,
+#         "volume_total": 4164700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.79,
+#           "medium": 3.7,
+#           "large": -9.56,
+#           "xlarge": -5.92
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4164700,
+#           "volume_sum_last": 8479900
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 33500,
+#         "avg_price": 19.772,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765504620000,
+#         "amount": 666500.0,
+#         "high": 19.91,
+#         "low": 19.88,
+#         "amount_total": 8.300812E7,
+#         "volume_total": 4198200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.6,
+#           "medium": 3.74,
+#           "large": -9.46,
+#           "xlarge": -5.87
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4198200,
+#           "volume_sum_last": 8665500
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 32300,
+#         "avg_price": 19.773,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765504680000,
+#         "amount": 642418.0,
+#         "high": 19.9,
+#         "low": 19.88,
+#         "amount_total": 8.3650538E7,
+#         "volume_total": 4230500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.57,
+#           "medium": 3.65,
+#           "large": -9.39,
+#           "xlarge": -5.83
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4230500,
+#           "volume_sum_last": 8833600
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 145300,
+#         "avg_price": 19.777,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765504740000,
+#         "amount": 2890871.0,
+#         "high": 19.92,
+#         "low": 19.88,
+#         "amount_total": 8.6541409E7,
+#         "volume_total": 4375800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.59,
+#           "medium": 3.98,
+#           "large": -9.56,
+#           "xlarge": -6.0
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4375800,
+#           "volume_sum_last": 8990300
+#         }
+#       },
+#       {
+#         "current": 19.93,
+#         "volume": 69100,
+#         "avg_price": 19.779,
+#         "chg": -0.09,
+#         "percent": -0.45,
+#         "timestamp": 1765504800000,
+#         "amount": 1375595.0,
+#         "high": 19.94,
+#         "low": 19.88,
+#         "amount_total": 8.7917004E7,
+#         "volume_total": 4444900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.62,
+#           "medium": 3.9,
+#           "large": -9.6,
+#           "xlarge": -5.93
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4444900,
+#           "volume_sum_last": 9103100
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 59700,
+#         "avg_price": 19.781,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765504860000,
+#         "amount": 1188152.0,
+#         "high": 19.92,
+#         "low": 19.89,
+#         "amount_total": 8.9105156E7,
+#         "volume_total": 4504600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.22,
+#           "medium": 3.91,
+#           "large": -9.46,
+#           "xlarge": -5.67
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4504600,
+#           "volume_sum_last": 9225300
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 17500,
+#         "avg_price": 19.781,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765504920000,
+#         "amount": 347793.0,
+#         "high": 19.88,
+#         "low": 19.86,
+#         "amount_total": 8.9452949E7,
+#         "volume_total": 4522100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.27,
+#           "medium": 3.81,
+#           "large": -9.43,
+#           "xlarge": -5.65
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4522100,
+#           "volume_sum_last": 9368600
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 82100,
+#         "avg_price": 19.783,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765504980000,
+#         "amount": 1631951.0,
+#         "high": 19.89,
+#         "low": 19.86,
+#         "amount_total": 9.10849E7,
+#         "volume_total": 4604200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.65,
+#           "medium": 3.58,
+#           "large": -9.91,
+#           "xlarge": -5.32
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4604200,
+#           "volume_sum_last": 9571200
+#         }
+#       },
+#       {
+#         "current": 19.92,
+#         "volume": 26100,
+#         "avg_price": 19.784,
+#         "chg": -0.1,
+#         "percent": -0.5,
+#         "timestamp": 1765505040000,
+#         "amount": 519554.0,
+#         "high": 19.93,
+#         "low": 19.88,
+#         "amount_total": 9.1604454E7,
+#         "volume_total": 4630300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.67,
+#           "medium": 3.47,
+#           "large": -9.85,
+#           "xlarge": -5.29
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4630300,
+#           "volume_sum_last": 9744400
+#         }
+#       },
+#       {
+#         "current": 19.93,
+#         "volume": 63800,
+#         "avg_price": 19.786,
+#         "chg": -0.09,
+#         "percent": -0.45,
+#         "timestamp": 1765505100000,
+#         "amount": 1271588.0,
+#         "high": 19.94,
+#         "low": 19.92,
+#         "amount_total": 9.2876042E7,
+#         "volume_total": 4694100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.39,
+#           "medium": 3.36,
+#           "large": -9.56,
+#           "xlarge": -5.19
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4694100,
+#           "volume_sum_last": 9901000
+#         }
+#       },
+#       {
+#         "current": 19.92,
+#         "volume": 31100,
+#         "avg_price": 19.787,
+#         "chg": -0.1,
+#         "percent": -0.5,
+#         "timestamp": 1765505160000,
+#         "amount": 619505.0,
+#         "high": 19.93,
+#         "low": 19.91,
+#         "amount_total": 9.3495547E7,
+#         "volume_total": 4725200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.59,
+#           "medium": 3.2,
+#           "large": -9.63,
+#           "xlarge": -5.16
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4725200,
+#           "volume_sum_last": 10016300
+#         }
+#       },
+#       {
+#         "current": 19.9,
+#         "volume": 36100,
+#         "avg_price": 19.788,
+#         "chg": -0.12,
+#         "percent": -0.6,
+#         "timestamp": 1765505220000,
+#         "amount": 718689.0,
+#         "high": 19.92,
+#         "low": 19.9,
+#         "amount_total": 9.4214236E7,
+#         "volume_total": 4761300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.64,
+#           "medium": 3.26,
+#           "large": -9.79,
+#           "xlarge": -5.12
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4761300,
+#           "volume_sum_last": 10197300
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 42200,
+#         "avg_price": 19.788,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765505280000,
+#         "amount": 839761.0,
+#         "high": 19.91,
+#         "low": 19.88,
+#         "amount_total": 9.5053997E7,
+#         "volume_total": 4803500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.8,
+#           "medium": 3.45,
+#           "large": -9.91,
+#           "xlarge": -5.34
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4803500,
+#           "volume_sum_last": 10312100
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 32200,
+#         "avg_price": 19.789,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765505340000,
+#         "amount": 640158.0,
+#         "high": 19.89,
+#         "low": 19.88,
+#         "amount_total": 9.5694155E7,
+#         "volume_total": 4835700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.92,
+#           "medium": 3.44,
+#           "large": -10.05,
+#           "xlarge": -5.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4835700,
+#           "volume_sum_last": 10510200
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 47200,
+#         "avg_price": 19.79,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765505400000,
+#         "amount": 938550.0,
+#         "high": 19.9,
+#         "low": 19.87,
+#         "amount_total": 9.6632705E7,
+#         "volume_total": 4882900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.03,
+#           "medium": 3.33,
+#           "large": -10.1,
+#           "xlarge": -5.25
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4882900,
+#           "volume_sum_last": 10583800
+#         }
+#       },
+#       {
+#         "current": 19.91,
+#         "volume": 30100,
+#         "avg_price": 19.791,
+#         "chg": -0.11,
+#         "percent": -0.55,
+#         "timestamp": 1765505460000,
+#         "amount": 598843.0,
+#         "high": 19.91,
+#         "low": 19.86,
+#         "amount_total": 9.7231548E7,
+#         "volume_total": 4913000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.06,
+#           "medium": 3.2,
+#           "large": -10.04,
+#           "xlarge": -5.22
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4913000,
+#           "volume_sum_last": 10733700
+#         }
+#       },
+#       {
+#         "current": 19.92,
+#         "volume": 45100,
+#         "avg_price": 19.792,
+#         "chg": -0.1,
+#         "percent": -0.5,
+#         "timestamp": 1765505520000,
+#         "amount": 898250.0,
+#         "high": 19.92,
+#         "low": 19.91,
+#         "amount_total": 9.8129798E7,
+#         "volume_total": 4958100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.14,
+#           "medium": 3.35,
+#           "large": -10.07,
+#           "xlarge": -5.42
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4958100,
+#           "volume_sum_last": 10796000
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 18500,
+#         "avg_price": 19.792,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765505580000,
+#         "amount": 368195.0,
+#         "high": 19.91,
+#         "low": 19.89,
+#         "amount_total": 9.8497993E7,
+#         "volume_total": 4976600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.16,
+#           "medium": 3.28,
+#           "large": -10.04,
+#           "xlarge": -5.4
+#         },
+#         "volume_compare": {
+#           "volume_sum": 4976600,
+#           "volume_sum_last": 10838000
+#         }
+#       },
+#       {
+#         "current": 19.93,
+#         "volume": 48200,
+#         "avg_price": 19.793,
+#         "chg": -0.09,
+#         "percent": -0.45,
+#         "timestamp": 1765505640000,
+#         "amount": 959824.0,
+#         "high": 19.93,
+#         "low": 19.89,
+#         "amount_total": 9.9457817E7,
+#         "volume_total": 5024800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.29,
+#           "medium": 2.89,
+#           "large": -9.71,
+#           "xlarge": -5.48
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5024800,
+#           "volume_sum_last": 11021500
+#         }
+#       },
+#       {
+#         "current": 19.96,
+#         "volume": 34900,
+#         "avg_price": 19.795,
+#         "chg": -0.06,
+#         "percent": -0.3,
+#         "timestamp": 1765505700000,
+#         "amount": 696418.0,
+#         "high": 19.96,
+#         "low": 19.93,
+#         "amount_total": 1.00154235E8,
+#         "volume_total": 5059700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.1,
+#           "medium": 2.86,
+#           "large": -9.53,
+#           "xlarge": -5.44
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5059700,
+#           "volume_sum_last": 11136800
+#         }
+#       },
+#       {
+#         "current": 19.91,
+#         "volume": 23800,
+#         "avg_price": 19.795,
+#         "chg": -0.11,
+#         "percent": -0.55,
+#         "timestamp": 1765505760000,
+#         "amount": 474293.0,
+#         "high": 19.96,
+#         "low": 19.91,
+#         "amount_total": 1.00628528E8,
+#         "volume_total": 5083500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.06,
+#           "medium": 2.96,
+#           "large": -9.61,
+#           "xlarge": -5.41
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5083500,
+#           "volume_sum_last": 11174500
+#         }
+#       },
+#       {
+#         "current": 19.9,
+#         "volume": 54100,
+#         "avg_price": 19.796,
+#         "chg": -0.12,
+#         "percent": -0.6,
+#         "timestamp": 1765505820000,
+#         "amount": 1076664.0,
+#         "high": 19.91,
+#         "low": 19.9,
+#         "amount_total": 1.01705192E8,
+#         "volume_total": 5137600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.14,
+#           "medium": 3.04,
+#           "large": -9.82,
+#           "xlarge": -5.36
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5137600,
+#           "volume_sum_last": 11244100
+#         }
+#       },
+#       {
+#         "current": 19.9,
+#         "volume": 31000,
+#         "avg_price": 19.797,
+#         "chg": -0.12,
+#         "percent": -0.6,
+#         "timestamp": 1765505880000,
+#         "amount": 616470.0,
+#         "high": 19.9,
+#         "low": 19.88,
+#         "amount_total": 1.02321662E8,
+#         "volume_total": 5168600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.17,
+#           "medium": 3.04,
+#           "large": -9.88,
+#           "xlarge": -5.32
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5168600,
+#           "volume_sum_last": 11326100
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 13800,
+#         "avg_price": 19.797,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765505940000,
+#         "amount": 274491.0,
+#         "high": 19.9,
+#         "low": 19.88,
+#         "amount_total": 1.02596153E8,
+#         "volume_total": 5182400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.15,
+#           "medium": 3.01,
+#           "large": -9.85,
+#           "xlarge": -5.31
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5182400,
+#           "volume_sum_last": 11342900
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 52100,
+#         "avg_price": 19.798,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765506000000,
+#         "amount": 1035587.0,
+#         "high": 19.89,
+#         "low": 19.87,
+#         "amount_total": 1.0363174E8,
+#         "volume_total": 5234500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.17,
+#           "medium": 3.34,
+#           "large": -9.94,
+#           "xlarge": -5.57
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5234500,
+#           "volume_sum_last": 11390500
+#         }
+#       },
+#       {
+#         "current": 19.91,
+#         "volume": 49400,
+#         "avg_price": 19.799,
+#         "chg": -0.11,
+#         "percent": -0.55,
+#         "timestamp": 1765506060000,
+#         "amount": 982370.0,
+#         "high": 19.92,
+#         "low": 19.87,
+#         "amount_total": 1.0461411E8,
+#         "volume_total": 5283900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.15,
+#           "medium": 3.16,
+#           "large": -9.84,
+#           "xlarge": -5.47
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5283900,
+#           "volume_sum_last": 11462900
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 20400,
+#         "avg_price": 19.799,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765506120000,
+#         "amount": 405961.0,
+#         "high": 19.92,
+#         "low": 19.88,
+#         "amount_total": 1.05020071E8,
+#         "volume_total": 5304300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.16,
+#           "medium": 2.93,
+#           "large": -9.65,
+#           "xlarge": -5.45
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5304300,
+#           "volume_sum_last": 11534700
+#         }
+#       },
+#       {
+#         "current": 19.9,
+#         "volume": 24600,
+#         "avg_price": 19.799,
+#         "chg": -0.12,
+#         "percent": -0.6,
+#         "timestamp": 1765506180000,
+#         "amount": 489377.0,
+#         "high": 19.9,
+#         "low": 19.89,
+#         "amount_total": 1.05509448E8,
+#         "volume_total": 5328900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.28,
+#           "medium": 2.75,
+#           "large": -9.6,
+#           "xlarge": -5.42
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5328900,
+#           "volume_sum_last": 11681500
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 38400,
+#         "avg_price": 19.8,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765506240000,
+#         "amount": 763290.0,
+#         "high": 19.89,
+#         "low": 19.86,
+#         "amount_total": 1.06272738E8,
+#         "volume_total": 5367300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.18,
+#           "medium": 2.94,
+#           "large": -9.74,
+#           "xlarge": -5.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5367300,
+#           "volume_sum_last": 11767400
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 45300,
+#         "avg_price": 19.8,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765506300000,
+#         "amount": 899439.0,
+#         "high": 19.87,
+#         "low": 19.85,
+#         "amount_total": 1.07172177E8,
+#         "volume_total": 5412600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.18,
+#           "medium": 2.77,
+#           "large": -9.62,
+#           "xlarge": -5.34
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5412600,
+#           "volume_sum_last": 11816300
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 25100,
+#         "avg_price": 19.801,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765506360000,
+#         "amount": 498034.0,
+#         "high": 19.86,
+#         "low": 19.84,
+#         "amount_total": 1.07670211E8,
+#         "volume_total": 5437700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.0,
+#           "medium": 2.56,
+#           "large": -9.47,
+#           "xlarge": -5.09
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5437700,
+#           "volume_sum_last": 11900800
+#         }
+#       },
+#       {
+#         "current": 19.83,
+#         "volume": 66700,
+#         "avg_price": 19.801,
+#         "chg": -0.19,
+#         "percent": -0.95,
+#         "timestamp": 1765506420000,
+#         "amount": 1323570.0,
+#         "high": 19.86,
+#         "low": 19.83,
+#         "amount_total": 1.08993781E8,
+#         "volume_total": 5504400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.92,
+#           "medium": 2.63,
+#           "large": -9.15,
+#           "xlarge": -5.41
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5504400,
+#           "volume_sum_last": 11991600
+#         }
+#       },
+#       {
+#         "current": 19.82,
+#         "volume": 22800,
+#         "avg_price": 19.801,
+#         "chg": -0.2,
+#         "percent": -1.0,
+#         "timestamp": 1765506480000,
+#         "amount": 452200.0,
+#         "high": 19.84,
+#         "low": 19.82,
+#         "amount_total": 1.09445981E8,
+#         "volume_total": 5527200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.02,
+#           "medium": 2.62,
+#           "large": -9.26,
+#           "xlarge": -5.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5527200,
+#           "volume_sum_last": 12051200
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 36700,
+#         "avg_price": 19.802,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765506540000,
+#         "amount": 727855.0,
+#         "high": 19.85,
+#         "low": 19.82,
+#         "amount_total": 1.10173836E8,
+#         "volume_total": 5563900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.01,
+#           "medium": 2.5,
+#           "large": -9.19,
+#           "xlarge": -5.32
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5563900,
+#           "volume_sum_last": 12082800
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 29600,
+#         "avg_price": 19.802,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765506600000,
+#         "amount": 587600.0,
+#         "high": 19.86,
+#         "low": 19.85,
+#         "amount_total": 1.10761436E8,
+#         "volume_total": 5593500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.92,
+#           "medium": 2.52,
+#           "large": -9.15,
+#           "xlarge": -5.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5593500,
+#           "volume_sum_last": 12119200
+#         }
+#       },
+#       {
+#         "current": 19.8,
+#         "volume": 88800,
+#         "avg_price": 19.802,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765506660000,
+#         "amount": 1760066.0,
+#         "high": 19.84,
+#         "low": 19.8,
+#         "amount_total": 1.12521502E8,
+#         "volume_total": 5682300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.73,
+#           "medium": 2.57,
+#           "large": -9.37,
+#           "xlarge": -4.94
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5682300,
+#           "volume_sum_last": 12195300
+#         }
+#       },
+#       {
+#         "current": 19.79,
+#         "volume": 81400,
+#         "avg_price": 19.802,
+#         "chg": -0.23,
+#         "percent": -1.15,
+#         "timestamp": 1765506720000,
+#         "amount": 1611684.0,
+#         "high": 19.82,
+#         "low": 19.78,
+#         "amount_total": 1.14133186E8,
+#         "volume_total": 5763700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.69,
+#           "medium": 2.55,
+#           "large": -9.37,
+#           "xlarge": -4.87
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5763700,
+#           "volume_sum_last": 12262200
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 57000,
+#         "avg_price": 19.802,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765506780000,
+#         "amount": 1126758.0,
+#         "high": 19.78,
+#         "low": 19.75,
+#         "amount_total": 1.15259944E8,
+#         "volume_total": 5820700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.01,
+#           "medium": 2.31,
+#           "large": -9.51,
+#           "xlarge": -4.82
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5820700,
+#           "volume_sum_last": 12374100
+#         }
+#       },
+#       {
+#         "current": 19.75,
+#         "volume": 31200,
+#         "avg_price": 19.802,
+#         "chg": -0.27,
+#         "percent": -1.35,
+#         "timestamp": 1765506840000,
+#         "amount": 616462.0,
+#         "high": 19.77,
+#         "low": 19.75,
+#         "amount_total": 1.15876406E8,
+#         "volume_total": 5851900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.03,
+#           "medium": 2.39,
+#           "large": -9.62,
+#           "xlarge": -4.79
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5851900,
+#           "volume_sum_last": 12466100
+#         }
+#       },
+#       {
+#         "current": 19.77,
+#         "volume": 28300,
+#         "avg_price": 19.801,
+#         "chg": -0.25,
+#         "percent": -1.25,
+#         "timestamp": 1765506900000,
+#         "amount": 559344.0,
+#         "high": 19.77,
+#         "low": 19.75,
+#         "amount_total": 1.1643575E8,
+#         "volume_total": 5880200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.07,
+#           "medium": 2.27,
+#           "large": -9.58,
+#           "xlarge": -4.77
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5880200,
+#           "volume_sum_last": 12525600
+#         }
+#       },
+#       {
+#         "current": 19.8,
+#         "volume": 9100,
+#         "avg_price": 19.801,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765506960000,
+#         "amount": 180021.0,
+#         "high": 19.8,
+#         "low": 19.78,
+#         "amount_total": 1.16615771E8,
+#         "volume_total": 5889300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.08,
+#           "medium": 2.23,
+#           "large": -9.55,
+#           "xlarge": -4.76
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5889300,
+#           "volume_sum_last": 12597100
+#         }
+#       },
+#       {
+#         "current": 19.81,
+#         "volume": 31600,
+#         "avg_price": 19.801,
+#         "chg": -0.21,
+#         "percent": -1.05,
+#         "timestamp": 1765507020000,
+#         "amount": 625511.0,
+#         "high": 19.81,
+#         "low": 19.78,
+#         "amount_total": 1.17241282E8,
+#         "volume_total": 5920900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.15,
+#           "medium": 2.19,
+#           "large": -9.61,
+#           "xlarge": -4.73
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5920900,
+#           "volume_sum_last": 12624500
+#         }
+#       },
+#       {
+#         "current": 19.8,
+#         "volume": 22600,
+#         "avg_price": 19.801,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765507080000,
+#         "amount": 447383.0,
+#         "high": 19.8,
+#         "low": 19.78,
+#         "amount_total": 1.17688665E8,
+#         "volume_total": 5943500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.25,
+#           "medium": 2.03,
+#           "large": -9.57,
+#           "xlarge": -4.72
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5943500,
+#           "volume_sum_last": 12642100
+#         }
+#       },
+#       {
+#         "current": 19.83,
+#         "volume": 34800,
+#         "avg_price": 19.801,
+#         "chg": -0.19,
+#         "percent": -0.95,
+#         "timestamp": 1765507140000,
+#         "amount": 689536.0,
+#         "high": 19.84,
+#         "low": 19.8,
+#         "amount_total": 1.18378201E8,
+#         "volume_total": 5978300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.22,
+#           "medium": 1.96,
+#           "large": -9.5,
+#           "xlarge": -4.69
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5978300,
+#           "volume_sum_last": 12764900
+#         }
+#       },
+#       {
+#         "current": 19.82,
+#         "volume": 17700,
+#         "avg_price": 19.801,
+#         "chg": -0.2,
+#         "percent": -1.0,
+#         "timestamp": 1765507200000,
+#         "amount": 350937.0,
+#         "high": 19.84,
+#         "low": 19.82,
+#         "amount_total": 1.18729138E8,
+#         "volume_total": 5996000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.19,
+#           "medium": 1.95,
+#           "large": -9.47,
+#           "xlarge": -4.67
+#         },
+#         "volume_compare": {
+#           "volume_sum": 5996000,
+#           "volume_sum_last": 12804900
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 19100,
+#         "avg_price": 19.801,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765507260000,
+#         "amount": 378778.0,
+#         "high": 19.84,
+#         "low": 19.82,
+#         "amount_total": 1.19107916E8,
+#         "volume_total": 6015100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.19,
+#           "medium": 1.91,
+#           "large": -9.44,
+#           "xlarge": -4.66
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6015100,
+#           "volume_sum_last": 12816700
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 43600,
+#         "avg_price": 19.802,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765507320000,
+#         "amount": 865050.0,
+#         "high": 19.85,
+#         "low": 19.83,
+#         "amount_total": 1.19972966E8,
+#         "volume_total": 6058700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.26,
+#           "medium": 2.17,
+#           "large": -9.8,
+#           "xlarge": -4.63
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6058700,
+#           "volume_sum_last": 12859800
+#         }
+#       },
+#       {
+#         "current": 19.83,
+#         "volume": 51100,
+#         "avg_price": 19.802,
+#         "chg": -0.19,
+#         "percent": -0.95,
+#         "timestamp": 1765507380000,
+#         "amount": 1013872.0,
+#         "high": 19.85,
+#         "low": 19.83,
+#         "amount_total": 1.20986838E8,
+#         "volume_total": 6109800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.27,
+#           "medium": 2.18,
+#           "large": -9.46,
+#           "xlarge": -5.0
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6109800,
+#           "volume_sum_last": 12879600
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 48100,
+#         "avg_price": 19.802,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765507440000,
+#         "amount": 953930.0,
+#         "high": 19.84,
+#         "low": 19.83,
+#         "amount_total": 1.21940768E8,
+#         "volume_total": 6157900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.12,
+#           "medium": 2.12,
+#           "large": -9.28,
+#           "xlarge": -4.96
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6157900,
+#           "volume_sum_last": 12950400
+#         }
+#       },
+#       {
+#         "current": 19.83,
+#         "volume": 31800,
+#         "avg_price": 19.802,
+#         "chg": -0.19,
+#         "percent": -0.95,
+#         "timestamp": 1765507500000,
+#         "amount": 630399.0,
+#         "high": 19.84,
+#         "low": 19.82,
+#         "amount_total": 1.22571167E8,
+#         "volume_total": 6189700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.1,
+#           "medium": 2.2,
+#           "large": -9.37,
+#           "xlarge": -4.93
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6189700,
+#           "volume_sum_last": 12989700
+#         }
+#       },
+#       {
+#         "current": 19.82,
+#         "volume": 14900,
+#         "avg_price": 19.802,
+#         "chg": -0.2,
+#         "percent": -1.0,
+#         "timestamp": 1765507560000,
+#         "amount": 295396.0,
+#         "high": 19.83,
+#         "low": 19.82,
+#         "amount_total": 1.22866563E8,
+#         "volume_total": 6204600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.03,
+#           "medium": 2.23,
+#           "large": -9.35,
+#           "xlarge": -4.92
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6204600,
+#           "volume_sum_last": 13001400
+#         }
+#       },
+#       {
+#         "current": 19.86,
+#         "volume": 37200,
+#         "avg_price": 19.803,
+#         "chg": -0.16,
+#         "percent": -0.8,
+#         "timestamp": 1765507620000,
+#         "amount": 738218.0,
+#         "high": 19.86,
+#         "low": 19.83,
+#         "amount_total": 1.23604781E8,
+#         "volume_total": 6241800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.05,
+#           "medium": 2.02,
+#           "large": -9.41,
+#           "xlarge": -4.66
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6241800,
+#           "volume_sum_last": 13039700
+#         }
+#       },
+#       {
+#         "current": 19.83,
+#         "volume": 29900,
+#         "avg_price": 19.803,
+#         "chg": -0.19,
+#         "percent": -0.95,
+#         "timestamp": 1765507680000,
+#         "amount": 593191.0,
+#         "high": 19.86,
+#         "low": 19.83,
+#         "amount_total": 1.24197972E8,
+#         "volume_total": 6271700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.03,
+#           "medium": 2.19,
+#           "large": -9.58,
+#           "xlarge": -4.64
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6271700,
+#           "volume_sum_last": 13095500
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 34600,
+#         "avg_price": 19.803,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765507740000,
+#         "amount": 686298.0,
+#         "high": 19.86,
+#         "low": 19.82,
+#         "amount_total": 1.2488427E8,
+#         "volume_total": 6306300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.02,
+#           "medium": 2.11,
+#           "large": -9.53,
+#           "xlarge": -4.6
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6306300,
+#           "volume_sum_last": 13153800
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 23300,
+#         "avg_price": 19.803,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765507800000,
+#         "amount": 462644.0,
+#         "high": 19.87,
+#         "low": 19.85,
+#         "amount_total": 1.25346914E8,
+#         "volume_total": 6329600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 12.11,
+#           "medium": 2.07,
+#           "large": -9.6,
+#           "xlarge": -4.58
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6329600,
+#           "volume_sum_last": 13182700
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 61100,
+#         "avg_price": 19.804,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765507860000,
+#         "amount": 1213823.0,
+#         "high": 19.87,
+#         "low": 19.86,
+#         "amount_total": 1.26560737E8,
+#         "volume_total": 6390700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.78,
+#           "medium": 1.83,
+#           "large": -9.58,
+#           "xlarge": -4.03
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6390700,
+#           "volume_sum_last": 13212800
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 11600,
+#         "avg_price": 19.804,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765507920000,
+#         "amount": 230442.0,
+#         "high": 19.87,
+#         "low": 19.86,
+#         "amount_total": 1.26791179E8,
+#         "volume_total": 6402300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.79,
+#           "medium": 1.81,
+#           "large": -9.57,
+#           "xlarge": -4.03
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6402300,
+#           "volume_sum_last": 13253600
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 6900,
+#         "avg_price": 19.804,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765507980000,
+#         "amount": 137107.0,
+#         "high": 19.88,
+#         "low": 19.87,
+#         "amount_total": 1.26928286E8,
+#         "volume_total": 6409200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.75,
+#           "medium": 1.83,
+#           "large": -9.56,
+#           "xlarge": -4.02
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6409200,
+#           "volume_sum_last": 13298800
+#         }
+#       },
+#       {
+#         "current": 19.86,
+#         "volume": 10200,
+#         "avg_price": 19.804,
+#         "chg": -0.16,
+#         "percent": -0.8,
+#         "timestamp": 1765508040000,
+#         "amount": 202588.0,
+#         "high": 19.87,
+#         "low": 19.86,
+#         "amount_total": 1.27130874E8,
+#         "volume_total": 6419400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.72,
+#           "medium": 1.83,
+#           "large": -9.54,
+#           "xlarge": -4.01
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6419400,
+#           "volume_sum_last": 13387200
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 6600,
+#         "avg_price": 19.804,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765508100000,
+#         "amount": 131108.0,
+#         "high": 19.87,
+#         "low": 19.86,
+#         "amount_total": 1.27261982E8,
+#         "volume_total": 6426000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.7,
+#           "medium": 1.75,
+#           "large": -9.44,
+#           "xlarge": -4.01
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6426000,
+#           "volume_sum_last": 13405500
+#         }
+#       },
+#       {
+#         "current": 19.89,
+#         "volume": 19300,
+#         "avg_price": 19.804,
+#         "chg": -0.13,
+#         "percent": -0.65,
+#         "timestamp": 1765508160000,
+#         "amount": 383733.0,
+#         "high": 19.89,
+#         "low": 19.88,
+#         "amount_total": 1.27645715E8,
+#         "volume_total": 6445300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.5,
+#           "medium": 1.7,
+#           "large": -9.41,
+#           "xlarge": -3.78
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6445300,
+#           "volume_sum_last": 13417800
+#         }
+#       },
+#       {
+#         "current": 19.88,
+#         "volume": 14600,
+#         "avg_price": 19.805,
+#         "chg": -0.14,
+#         "percent": -0.7,
+#         "timestamp": 1765508220000,
+#         "amount": 290189.0,
+#         "high": 19.88,
+#         "low": 19.87,
+#         "amount_total": 1.27935904E8,
+#         "volume_total": 6459900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.49,
+#           "medium": 1.67,
+#           "large": -9.39,
+#           "xlarge": -3.77
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6459900,
+#           "volume_sum_last": 13515400
+#         }
+#       },
+#       {
+#         "current": 19.86,
+#         "volume": 49000,
+#         "avg_price": 19.805,
+#         "chg": -0.16,
+#         "percent": -0.8,
+#         "timestamp": 1765508280000,
+#         "amount": 973689.0,
+#         "high": 19.88,
+#         "low": 19.85,
+#         "amount_total": 1.28909593E8,
+#         "volume_total": 6508900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.44,
+#           "medium": 1.72,
+#           "large": -9.52,
+#           "xlarge": -3.64
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6508900,
+#           "volume_sum_last": 13549500
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 9000,
+#         "avg_price": 19.805,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765508340000,
+#         "amount": 178668.0,
+#         "high": 19.86,
+#         "low": 19.85,
+#         "amount_total": 1.29088261E8,
+#         "volume_total": 6517900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.41,
+#           "medium": 1.73,
+#           "large": -9.51,
+#           "xlarge": -3.63
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6517900,
+#           "volume_sum_last": 13622600
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 24900,
+#         "avg_price": 19.805,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765508400000,
+#         "amount": 494283.0,
+#         "high": 19.86,
+#         "low": 19.84,
+#         "amount_total": 1.29582544E8,
+#         "volume_total": 6542800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.38,
+#           "medium": 1.48,
+#           "large": -9.47,
+#           "xlarge": -3.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6542800,
+#           "volume_sum_last": 13648000
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 13400,
+#         "avg_price": 19.805,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765508460000,
+#         "amount": 265849.0,
+#         "high": 19.86,
+#         "low": 19.83,
+#         "amount_total": 1.29848393E8,
+#         "volume_total": 6556200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.35,
+#           "medium": 1.48,
+#           "large": -9.45,
+#           "xlarge": -3.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6556200,
+#           "volume_sum_last": 13677500
+#         }
+#       },
+#       {
+#         "current": 19.85,
+#         "volume": 18200,
+#         "avg_price": 19.806,
+#         "chg": -0.17,
+#         "percent": -0.85,
+#         "timestamp": 1765508520000,
+#         "amount": 361065.0,
+#         "high": 19.85,
+#         "low": 19.83,
+#         "amount_total": 1.30209458E8,
+#         "volume_total": 6574400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.43,
+#           "medium": 1.37,
+#           "large": -9.43,
+#           "xlarge": -3.37
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6574400,
+#           "volume_sum_last": 13702300
+#         }
+#       },
+#       {
+#         "current": 19.84,
+#         "volume": 34600,
+#         "avg_price": 19.806,
+#         "chg": -0.18,
+#         "percent": -0.9,
+#         "timestamp": 1765508580000,
+#         "amount": 686696.0,
+#         "high": 19.86,
+#         "low": 19.84,
+#         "amount_total": 1.30896154E8,
+#         "volume_total": 6609000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.45,
+#           "medium": 1.19,
+#           "large": -9.47,
+#           "xlarge": -3.17
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6609000,
+#           "volume_sum_last": 13719300
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 14300,
+#         "avg_price": 19.806,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765508640000,
+#         "amount": 283918.0,
+#         "high": 19.87,
+#         "low": 19.84,
+#         "amount_total": 1.31180072E8,
+#         "volume_total": 6623300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.4,
+#           "medium": 1.21,
+#           "large": -9.45,
+#           "xlarge": -3.16
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6623300,
+#           "volume_sum_last": 13743800
+#         }
+#       },
+#       {
+#         "current": 19.87,
+#         "volume": 22900,
+#         "avg_price": 19.806,
+#         "chg": -0.15,
+#         "percent": -0.75,
+#         "timestamp": 1765508700000,
+#         "amount": 454802.0,
+#         "high": 19.87,
+#         "low": 19.85,
+#         "amount_total": 1.31634874E8,
+#         "volume_total": 6646200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.36,
+#           "medium": 1.21,
+#           "large": -9.42,
+#           "xlarge": -3.15
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6646200,
+#           "volume_sum_last": 13785200
+#         }
+#       },
+#       {
+#         "current": 19.83,
+#         "volume": 40400,
+#         "avg_price": 19.806,
+#         "chg": -0.19,
+#         "percent": -0.95,
+#         "timestamp": 1765508760000,
+#         "amount": 801849.0,
+#         "high": 19.86,
+#         "low": 19.83,
+#         "amount_total": 1.32436723E8,
+#         "volume_total": 6686600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.28,
+#           "medium": 1.31,
+#           "large": -9.25,
+#           "xlarge": -3.35
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6686600,
+#           "volume_sum_last": 13793700
+#         }
+#       },
+#       {
+#         "current": 19.82,
+#         "volume": 26900,
+#         "avg_price": 19.806,
+#         "chg": -0.2,
+#         "percent": -1.0,
+#         "timestamp": 1765508820000,
+#         "amount": 533426.0,
+#         "high": 19.84,
+#         "low": 19.82,
+#         "amount_total": 1.32970149E8,
+#         "volume_total": 6713500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.1,
+#           "medium": 1.58,
+#           "large": -9.34,
+#           "xlarge": -3.34
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6713500,
+#           "volume_sum_last": 13904100
+#         }
+#       },
+#       {
+#         "current": 19.8,
+#         "volume": 18600,
+#         "avg_price": 19.806,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765508880000,
+#         "amount": 368534.0,
+#         "high": 19.83,
+#         "low": 19.8,
+#         "amount_total": 1.33338683E8,
+#         "volume_total": 6732100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.03,
+#           "medium": 1.61,
+#           "large": -9.31,
+#           "xlarge": -3.33
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6732100,
+#           "volume_sum_last": 14017700
+#         }
+#       },
+#       {
+#         "current": 19.8,
+#         "volume": 51900,
+#         "avg_price": 19.806,
+#         "chg": -0.22,
+#         "percent": -1.1,
+#         "timestamp": 1765508940000,
+#         "amount": 1026933.0,
+#         "high": 19.8,
+#         "low": 19.77,
+#         "amount_total": 1.34365616E8,
+#         "volume_total": 6784000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.06,
+#           "medium": 1.67,
+#           "large": -9.43,
+#           "xlarge": -3.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6784000,
+#           "volume_sum_last": 14050100
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 26900,
+#         "avg_price": 19.806,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765509000000,
+#         "amount": 532470.0,
+#         "high": 19.8,
+#         "low": 19.78,
+#         "amount_total": 1.34898086E8,
+#         "volume_total": 6810900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.02,
+#           "medium": 1.67,
+#           "large": -9.4,
+#           "xlarge": -3.29
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6810900,
+#           "volume_sum_last": 14104600
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 42600,
+#         "avg_price": 19.806,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765509060000,
+#         "amount": 842288.0,
+#         "high": 19.78,
+#         "low": 19.76,
+#         "amount_total": 1.35740374E8,
+#         "volume_total": 6853500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.99,
+#           "medium": 1.7,
+#           "large": -9.43,
+#           "xlarge": -3.27
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6853500,
+#           "volume_sum_last": 14126600
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 100700,
+#         "avg_price": 19.805,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765509120000,
+#         "amount": 1989377.0,
+#         "high": 19.76,
+#         "low": 19.74,
+#         "amount_total": 1.37729751E8,
+#         "volume_total": 6954200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.99,
+#           "medium": 1.74,
+#           "large": -9.38,
+#           "xlarge": -3.35
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6954200,
+#           "volume_sum_last": 14262900
+#         }
+#       },
+#       {
+#         "current": 19.77,
+#         "volume": 14300,
+#         "avg_price": 19.805,
+#         "chg": -0.25,
+#         "percent": -1.25,
+#         "timestamp": 1765509180000,
+#         "amount": 282665.0,
+#         "high": 19.77,
+#         "low": 19.76,
+#         "amount_total": 1.38012416E8,
+#         "volume_total": 6968500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.9,
+#           "medium": 1.81,
+#           "large": -9.36,
+#           "xlarge": -3.35
+#         },
+#         "volume_compare": {
+#           "volume_sum": 6968500,
+#           "volume_sum_last": 14527200
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 33300,
+#         "avg_price": 19.805,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765509240000,
+#         "amount": 658552.0,
+#         "high": 19.79,
+#         "low": 19.77,
+#         "amount_total": 1.38670968E8,
+#         "volume_total": 7001800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.75,
+#           "medium": 1.9,
+#           "large": -9.32,
+#           "xlarge": -3.33
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7001800,
+#           "volume_sum_last": 14638300
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 23100,
+#         "avg_price": 19.805,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765509300000,
+#         "amount": 457075.0,
+#         "high": 19.79,
+#         "low": 19.78,
+#         "amount_total": 1.39128043E8,
+#         "volume_total": 7024900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.7,
+#           "medium": 1.89,
+#           "large": -9.27,
+#           "xlarge": -3.32
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7024900,
+#           "volume_sum_last": 14667200
+#         }
+#       },
+#       {
+#         "current": 19.79,
+#         "volume": 50600,
+#         "avg_price": 19.805,
+#         "chg": -0.23,
+#         "percent": -1.15,
+#         "timestamp": 1765509360000,
+#         "amount": 1001476.0,
+#         "high": 19.8,
+#         "low": 19.79,
+#         "amount_total": 1.40129519E8,
+#         "volume_total": 7075500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.59,
+#           "medium": 1.74,
+#           "large": -9.07,
+#           "xlarge": -3.26
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7075500,
+#           "volume_sum_last": 14716500
+#         }
+#       },
+#       {
+#         "current": 19.78,
+#         "volume": 62100,
+#         "avg_price": 19.805,
+#         "chg": -0.24,
+#         "percent": -1.2,
+#         "timestamp": 1765509420000,
+#         "amount": 1228046.0,
+#         "high": 19.79,
+#         "low": 19.77,
+#         "amount_total": 1.41357565E8,
+#         "volume_total": 7137600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.62,
+#           "medium": 1.79,
+#           "large": -9.18,
+#           "xlarge": -3.23
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7137600,
+#           "volume_sum_last": 14742500
+#         }
+#       },
+#       {
+#         "current": 19.77,
+#         "volume": 34000,
+#         "avg_price": 19.804,
+#         "chg": -0.25,
+#         "percent": -1.25,
+#         "timestamp": 1765509480000,
+#         "amount": 672141.0,
+#         "high": 19.78,
+#         "low": 19.76,
+#         "amount_total": 1.42029706E8,
+#         "volume_total": 7171600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.53,
+#           "medium": 1.81,
+#           "large": -9.13,
+#           "xlarge": -3.21
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7171600,
+#           "volume_sum_last": 14765300
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 29100,
+#         "avg_price": 19.804,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765509540000,
+#         "amount": 575189.0,
+#         "high": 19.77,
+#         "low": 19.76,
+#         "amount_total": 1.42604895E8,
+#         "volume_total": 7200700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.5,
+#           "medium": 1.93,
+#           "large": -9.23,
+#           "xlarge": -3.2
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7200700,
+#           "volume_sum_last": 14799800
+#         }
+#       },
+#       {
+#         "current": 19.77,
+#         "volume": 19600,
+#         "avg_price": 19.804,
+#         "chg": -0.25,
+#         "percent": -1.25,
+#         "timestamp": 1765509600000,
+#         "amount": 387456.0,
+#         "high": 19.77,
+#         "low": 19.76,
+#         "amount_total": 1.42992351E8,
+#         "volume_total": 7220300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.56,
+#           "medium": 1.93,
+#           "large": -9.3,
+#           "xlarge": -3.19
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7220300,
+#           "volume_sum_last": 14810600
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 48800,
+#         "avg_price": 19.804,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765509660000,
+#         "amount": 964329.0,
+#         "high": 19.77,
+#         "low": 19.75,
+#         "amount_total": 1.4395668E8,
+#         "volume_total": 7269100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.61,
+#           "medium": 2.26,
+#           "large": -9.45,
+#           "xlarge": -3.42
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7269100,
+#           "volume_sum_last": 14832200
+#         }
+#       },
+#       {
+#         "current": 19.77,
+#         "volume": 29400,
+#         "avg_price": 19.804,
+#         "chg": -0.25,
+#         "percent": -1.25,
+#         "timestamp": 1765509720000,
+#         "amount": 580844.0,
+#         "high": 19.77,
+#         "low": 19.75,
+#         "amount_total": 1.44537524E8,
+#         "volume_total": 7298500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.63,
+#           "medium": 2.27,
+#           "large": -9.49,
+#           "xlarge": -3.41
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7298500,
+#           "volume_sum_last": 14839000
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 40000,
+#         "avg_price": 19.803,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765509780000,
+#         "amount": 790454.0,
+#         "high": 19.77,
+#         "low": 19.76,
+#         "amount_total": 1.45327978E8,
+#         "volume_total": 7338500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.66,
+#           "medium": 2.47,
+#           "large": -9.55,
+#           "xlarge": -3.59
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7338500,
+#           "volume_sum_last": 14871900
+#         }
+#       },
+#       {
+#         "current": 19.76,
+#         "volume": 29500,
+#         "avg_price": 19.803,
+#         "chg": -0.26,
+#         "percent": -1.3,
+#         "timestamp": 1765509840000,
+#         "amount": 582708.0,
+#         "high": 19.76,
+#         "low": 19.75,
+#         "amount_total": 1.45910686E8,
+#         "volume_total": 7368000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.66,
+#           "medium": 2.58,
+#           "large": -9.68,
+#           "xlarge": -3.57
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7368000,
+#           "volume_sum_last": 14889800
+#         }
+#       },
+#       {
+#         "current": 19.75,
+#         "volume": 11200,
+#         "avg_price": 19.803,
+#         "chg": -0.27,
+#         "percent": -1.35,
+#         "timestamp": 1765509900000,
+#         "amount": 221208.0,
+#         "high": 19.76,
+#         "low": 19.75,
+#         "amount_total": 1.46131894E8,
+#         "volume_total": 7379200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.67,
+#           "medium": 2.56,
+#           "large": -9.66,
+#           "xlarge": -3.57
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7379200,
+#           "volume_sum_last": 14899300
+#         }
+#       },
+#       {
+#         "current": 19.75,
+#         "volume": 14900,
+#         "avg_price": 19.803,
+#         "chg": -0.27,
+#         "percent": -1.35,
+#         "timestamp": 1765509960000,
+#         "amount": 294344.0,
+#         "high": 19.76,
+#         "low": 19.75,
+#         "amount_total": 1.46426238E8,
+#         "volume_total": 7394100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.71,
+#           "medium": 2.49,
+#           "large": -9.64,
+#           "xlarge": -3.56
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7394100,
+#           "volume_sum_last": 14922800
+#         }
+#       },
+#       {
+#         "current": 19.75,
+#         "volume": 18600,
+#         "avg_price": 19.803,
+#         "chg": -0.27,
+#         "percent": -1.35,
+#         "timestamp": 1765510020000,
+#         "amount": 367373.0,
+#         "high": 19.76,
+#         "low": 19.75,
+#         "amount_total": 1.46793611E8,
+#         "volume_total": 7412700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.76,
+#           "medium": 2.41,
+#           "large": -9.62,
+#           "xlarge": -3.55
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7412700,
+#           "volume_sum_last": 14928400
+#         }
+#       },
+#       {
+#         "current": 19.75,
+#         "volume": 25000,
+#         "avg_price": 19.803,
+#         "chg": -0.27,
+#         "percent": -1.35,
+#         "timestamp": 1765510080000,
+#         "amount": 493725.0,
+#         "high": 19.76,
+#         "low": 19.74,
+#         "amount_total": 1.47287336E8,
+#         "volume_total": 7437700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.74,
+#           "medium": 2.41,
+#           "large": -9.61,
+#           "xlarge": -3.54
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7437700,
+#           "volume_sum_last": 14945700
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 37300,
+#         "avg_price": 19.802,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765510140000,
+#         "amount": 736194.0,
+#         "high": 19.75,
+#         "low": 19.73,
+#         "amount_total": 1.4802353E8,
+#         "volume_total": 7475000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.76,
+#           "medium": 2.48,
+#           "large": -9.72,
+#           "xlarge": -3.52
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7475000,
+#           "volume_sum_last": 14960900
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 0,
+#         "avg_price": 19.802,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765510200000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 7475000,
+#           "volume_sum_last": 14960900
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 75800,
+#         "avg_price": 19.802,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765515600000,
+#         "amount": 1495737.0,
+#         "high": 19.75,
+#         "low": 19.72,
+#         "amount_total": 1.49519267E8,
+#         "volume_total": 7550800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.9,
+#           "medium": 2.69,
+#           "large": -9.7,
+#           "xlarge": -3.89
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7550800,
+#           "volume_sum_last": 15591300
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 31400,
+#         "avg_price": 19.801,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765515660000,
+#         "amount": 619382.0,
+#         "high": 19.75,
+#         "low": 19.72,
+#         "amount_total": 1.50138649E8,
+#         "volume_total": 7582200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.96,
+#           "medium": 2.64,
+#           "large": -9.73,
+#           "xlarge": -3.88
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7582200,
+#           "volume_sum_last": 15684600
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 25800,
+#         "avg_price": 19.801,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765515720000,
+#         "amount": 508801.0,
+#         "high": 19.74,
+#         "low": 19.71,
+#         "amount_total": 1.5064745E8,
+#         "volume_total": 7608000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.06,
+#           "medium": 2.61,
+#           "large": -9.81,
+#           "xlarge": -3.86
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7608000,
+#           "volume_sum_last": 15735200
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 33200,
+#         "avg_price": 19.801,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765515780000,
+#         "amount": 654990.0,
+#         "high": 19.74,
+#         "low": 19.72,
+#         "amount_total": 1.5130244E8,
+#         "volume_total": 7641200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.01,
+#           "medium": 2.61,
+#           "large": -9.78,
+#           "xlarge": -3.85
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7641200,
+#           "volume_sum_last": 15774000
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 41900,
+#         "avg_price": 19.8,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765515840000,
+#         "amount": 826039.0,
+#         "high": 19.73,
+#         "low": 19.71,
+#         "amount_total": 1.52128479E8,
+#         "volume_total": 7683100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.05,
+#           "medium": 2.76,
+#           "large": -9.72,
+#           "xlarge": -4.09
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7683100,
+#           "volume_sum_last": 15813400
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 47800,
+#         "avg_price": 19.8,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765515900000,
+#         "amount": 942150.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.53070629E8,
+#         "volume_total": 7730900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.04,
+#           "medium": 2.89,
+#           "large": -9.87,
+#           "xlarge": -4.06
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7730900,
+#           "volume_sum_last": 15846000
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 37000,
+#         "avg_price": 19.799,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765515960000,
+#         "amount": 729057.0,
+#         "high": 19.71,
+#         "low": 19.7,
+#         "amount_total": 1.53799686E8,
+#         "volume_total": 7767900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.99,
+#           "medium": 2.83,
+#           "large": -9.92,
+#           "xlarge": -3.89
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7767900,
+#           "volume_sum_last": 15880200
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 29700,
+#         "avg_price": 19.799,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765516020000,
+#         "amount": 585285.0,
+#         "high": 19.71,
+#         "low": 19.7,
+#         "amount_total": 1.54384971E8,
+#         "volume_total": 7797600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.98,
+#           "medium": 2.9,
+#           "large": -9.99,
+#           "xlarge": -3.88
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7797600,
+#           "volume_sum_last": 15915900
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 47500,
+#         "avg_price": 19.798,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765516080000,
+#         "amount": 936074.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.55321045E8,
+#         "volume_total": 7845100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.94,
+#           "medium": 3.07,
+#           "large": -10.16,
+#           "xlarge": -3.85
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7845100,
+#           "volume_sum_last": 15957900
+#         }
+#       },
+#       {
+#         "current": 19.73,
+#         "volume": 18300,
+#         "avg_price": 19.798,
+#         "chg": -0.29,
+#         "percent": -1.45,
+#         "timestamp": 1765516140000,
+#         "amount": 360771.0,
+#         "high": 19.73,
+#         "low": 19.7,
+#         "amount_total": 1.55681816E8,
+#         "volume_total": 7863400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.94,
+#           "medium": 3.05,
+#           "large": -10.14,
+#           "xlarge": -3.84
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7863400,
+#           "volume_sum_last": 15991600
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 50800,
+#         "avg_price": 19.798,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765516200000,
+#         "amount": 1001686.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.56683502E8,
+#         "volume_total": 7914200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.83,
+#           "medium": 3.31,
+#           "large": -10.08,
+#           "xlarge": -4.07
+#         },
+#         "volume_compare": {
+#           "volume_sum": 7914200,
+#           "volume_sum_last": 16032100
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 159900,
+#         "avg_price": 19.796,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765516260000,
+#         "amount": 3148421.0,
+#         "high": 19.7,
+#         "low": 19.68,
+#         "amount_total": 1.59831923E8,
+#         "volume_total": 8074100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.93,
+#           "medium": 3.73,
+#           "large": -10.2,
+#           "xlarge": -4.47
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8074100,
+#           "volume_sum_last": 16049400
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 34300,
+#         "avg_price": 19.795,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765516320000,
+#         "amount": 675069.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.60506992E8,
+#         "volume_total": 8108400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.0,
+#           "medium": 3.73,
+#           "large": -10.28,
+#           "xlarge": -4.45
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8108400,
+#           "volume_sum_last": 16072300
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 42600,
+#         "avg_price": 19.795,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765516380000,
+#         "amount": 838140.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 1.61345132E8,
+#         "volume_total": 8151000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.97,
+#           "medium": 3.81,
+#           "large": -10.35,
+#           "xlarge": -4.43
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8151000,
+#           "volume_sum_last": 16088700
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 65900,
+#         "avg_price": 19.794,
+#         "chg": -0.36,
+#         "percent": -1.8,
+#         "timestamp": 1765516440000,
+#         "amount": 1296103.0,
+#         "high": 19.67,
+#         "low": 19.66,
+#         "amount_total": 1.62641235E8,
+#         "volume_total": 8216900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.91,
+#           "medium": 3.59,
+#           "large": -9.98,
+#           "xlarge": -4.52
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8216900,
+#           "volume_sum_last": 16131500
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 108300,
+#         "avg_price": 19.792,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765516500000,
+#         "amount": 2129076.0,
+#         "high": 19.67,
+#         "low": 19.65,
+#         "amount_total": 1.64770311E8,
+#         "volume_total": 8325200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.03,
+#           "medium": 3.19,
+#           "large": -9.93,
+#           "xlarge": -4.29
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8325200,
+#           "volume_sum_last": 16194000
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 90700,
+#         "avg_price": 19.79,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765516560000,
+#         "amount": 1781980.0,
+#         "high": 19.65,
+#         "low": 19.64,
+#         "amount_total": 1.66552291E8,
+#         "volume_total": 8415900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.14,
+#           "medium": 3.06,
+#           "large": -9.94,
+#           "xlarge": -4.26
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8415900,
+#           "volume_sum_last": 16212500
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 70200,
+#         "avg_price": 19.789,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765516620000,
+#         "amount": 1379138.0,
+#         "high": 19.66,
+#         "low": 19.64,
+#         "amount_total": 1.67931429E8,
+#         "volume_total": 8486100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.36,
+#           "medium": 2.83,
+#           "large": -9.97,
+#           "xlarge": -4.23
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8486100,
+#           "volume_sum_last": 16319800
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 50500,
+#         "avg_price": 19.788,
+#         "chg": -0.36,
+#         "percent": -1.8,
+#         "timestamp": 1765516680000,
+#         "amount": 992794.0,
+#         "high": 19.66,
+#         "low": 19.65,
+#         "amount_total": 1.68924223E8,
+#         "volume_total": 8536600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.36,
+#           "medium": 2.78,
+#           "large": -9.79,
+#           "xlarge": -4.35
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8536600,
+#           "volume_sum_last": 16379000
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 24900,
+#         "avg_price": 19.788,
+#         "chg": -0.36,
+#         "percent": -1.8,
+#         "timestamp": 1765516740000,
+#         "amount": 489776.0,
+#         "high": 19.68,
+#         "low": 19.66,
+#         "amount_total": 1.69413999E8,
+#         "volume_total": 8561500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.43,
+#           "medium": 2.75,
+#           "large": -9.84,
+#           "xlarge": -4.33
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8561500,
+#           "volume_sum_last": 16398300
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 46600,
+#         "avg_price": 19.787,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765516800000,
+#         "amount": 916206.0,
+#         "high": 19.68,
+#         "low": 19.65,
+#         "amount_total": 1.70330205E8,
+#         "volume_total": 8608100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.45,
+#           "medium": 2.55,
+#           "large": -9.69,
+#           "xlarge": -4.31
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8608100,
+#           "volume_sum_last": 16453800
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 20300,
+#         "avg_price": 19.787,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765516860000,
+#         "amount": 399186.0,
+#         "high": 19.67,
+#         "low": 19.66,
+#         "amount_total": 1.70729391E8,
+#         "volume_total": 8628400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.39,
+#           "medium": 2.64,
+#           "large": -9.74,
+#           "xlarge": -4.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8628400,
+#           "volume_sum_last": 16484700
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 26700,
+#         "avg_price": 19.787,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765516920000,
+#         "amount": 524830.0,
+#         "high": 19.66,
+#         "low": 19.65,
+#         "amount_total": 1.71254221E8,
+#         "volume_total": 8655100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.36,
+#           "medium": 2.58,
+#           "large": -9.65,
+#           "xlarge": -4.29
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8655100,
+#           "volume_sum_last": 16508300
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 23600,
+#         "avg_price": 19.786,
+#         "chg": -0.36,
+#         "percent": -1.8,
+#         "timestamp": 1765516980000,
+#         "amount": 463851.0,
+#         "high": 19.66,
+#         "low": 19.65,
+#         "amount_total": 1.71718072E8,
+#         "volume_total": 8678700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.36,
+#           "medium": 2.63,
+#           "large": -9.71,
+#           "xlarge": -4.28
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8678700,
+#           "volume_sum_last": 16522000
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 56400,
+#         "avg_price": 19.785,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765517040000,
+#         "amount": 1108246.0,
+#         "high": 19.66,
+#         "low": 19.64,
+#         "amount_total": 1.72826318E8,
+#         "volume_total": 8735100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.3,
+#           "medium": 2.69,
+#           "large": -9.74,
+#           "xlarge": -4.25
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8735100,
+#           "volume_sum_last": 16611400
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 22700,
+#         "avg_price": 19.785,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765517100000,
+#         "amount": 445868.0,
+#         "high": 19.65,
+#         "low": 19.64,
+#         "amount_total": 1.73272186E8,
+#         "volume_total": 8757800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.34,
+#           "medium": 2.73,
+#           "large": -9.83,
+#           "xlarge": -4.24
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8757800,
+#           "volume_sum_last": 16635200
+#         }
+#       },
+#       {
+#         "current": 19.63,
+#         "volume": 58400,
+#         "avg_price": 19.784,
+#         "chg": -0.39,
+#         "percent": -1.95,
+#         "timestamp": 1765517160000,
+#         "amount": 1146857.0,
+#         "high": 19.64,
+#         "low": 19.63,
+#         "amount_total": 1.74419043E8,
+#         "volume_total": 8816200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.35,
+#           "medium": 2.94,
+#           "large": -9.96,
+#           "xlarge": -4.33
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8816200,
+#           "volume_sum_last": 16657400
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 39500,
+#         "avg_price": 19.783,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765517220000,
+#         "amount": 775604.0,
+#         "high": 19.65,
+#         "low": 19.63,
+#         "amount_total": 1.75194647E8,
+#         "volume_total": 8855700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.28,
+#           "medium": 3.01,
+#           "large": -9.8,
+#           "xlarge": -4.49
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8855700,
+#           "volume_sum_last": 16740000
+#         }
+#       },
+#       {
+#         "current": 19.66,
+#         "volume": 34000,
+#         "avg_price": 19.783,
+#         "chg": -0.36,
+#         "percent": -1.8,
+#         "timestamp": 1765517280000,
+#         "amount": 668281.0,
+#         "high": 19.66,
+#         "low": 19.64,
+#         "amount_total": 1.75862928E8,
+#         "volume_total": 8889700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 11.13,
+#           "medium": 3.09,
+#           "large": -9.75,
+#           "xlarge": -4.47
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8889700,
+#           "volume_sum_last": 16755500
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 81500,
+#         "avg_price": 19.782,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765517340000,
+#         "amount": 1604569.0,
+#         "high": 19.7,
+#         "low": 19.67,
+#         "amount_total": 1.77467497E8,
+#         "volume_total": 8971200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.96,
+#           "medium": 3.05,
+#           "large": -9.58,
+#           "xlarge": -4.43
+#         },
+#         "volume_compare": {
+#           "volume_sum": 8971200,
+#           "volume_sum_last": 16813100
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 56900,
+#         "avg_price": 19.781,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765517400000,
+#         "amount": 1120305.0,
+#         "high": 19.71,
+#         "low": 19.66,
+#         "amount_total": 1.78587802E8,
+#         "volume_total": 9028100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.79,
+#           "medium": 2.9,
+#           "large": -9.3,
+#           "xlarge": -4.4
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9028100,
+#           "volume_sum_last": 16840000
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 39200,
+#         "avg_price": 19.781,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765517460000,
+#         "amount": 772278.0,
+#         "high": 19.72,
+#         "low": 19.69,
+#         "amount_total": 1.7936008E8,
+#         "volume_total": 9067300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.76,
+#           "medium": 2.89,
+#           "large": -9.26,
+#           "xlarge": -4.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9067300,
+#           "volume_sum_last": 16853268
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 5700,
+#         "avg_price": 19.781,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765517520000,
+#         "amount": 112394.0,
+#         "high": 19.72,
+#         "low": 19.71,
+#         "amount_total": 1.79472474E8,
+#         "volume_total": 9073000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.75,
+#           "medium": 2.89,
+#           "large": -9.26,
+#           "xlarge": -4.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9073000,
+#           "volume_sum_last": 16883468
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 78200,
+#         "avg_price": 19.78,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765517580000,
+#         "amount": 1540577.0,
+#         "high": 19.72,
+#         "low": 19.68,
+#         "amount_total": 1.81013051E8,
+#         "volume_total": 9151200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.61,
+#           "medium": 2.86,
+#           "large": -9.16,
+#           "xlarge": -4.31
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9151200,
+#           "volume_sum_last": 16917468
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 26000,
+#         "avg_price": 19.78,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765517640000,
+#         "amount": 511760.0,
+#         "high": 19.7,
+#         "low": 19.67,
+#         "amount_total": 1.81524811E8,
+#         "volume_total": 9177200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.58,
+#           "medium": 2.86,
+#           "large": -9.14,
+#           "xlarge": -4.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9177200,
+#           "volume_sum_last": 16968768
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 11400,
+#         "avg_price": 19.78,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765517700000,
+#         "amount": 224386.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.81749197E8,
+#         "volume_total": 9188600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.55,
+#           "medium": 2.86,
+#           "large": -9.12,
+#           "xlarge": -4.29
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9188600,
+#           "volume_sum_last": 17010768
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 27500,
+#         "avg_price": 19.78,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765517760000,
+#         "amount": 541217.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 1.82290414E8,
+#         "volume_total": 9216100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.56,
+#           "medium": 2.82,
+#           "large": -9.1,
+#           "xlarge": -4.28
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9216100,
+#           "volume_sum_last": 17072468
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 25400,
+#         "avg_price": 19.779,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765517820000,
+#         "amount": 499992.0,
+#         "high": 19.7,
+#         "low": 19.67,
+#         "amount_total": 1.82790406E8,
+#         "volume_total": 9241500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.55,
+#           "medium": 2.85,
+#           "large": -9.13,
+#           "xlarge": -4.27
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9241500,
+#           "volume_sum_last": 17224068
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 16300,
+#         "avg_price": 19.779,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765517880000,
+#         "amount": 320748.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 1.83111154E8,
+#         "volume_total": 9257800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.56,
+#           "medium": 2.82,
+#           "large": -9.12,
+#           "xlarge": -4.26
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9257800,
+#           "volume_sum_last": 17250468
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 29200,
+#         "avg_price": 19.779,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765517940000,
+#         "amount": 574694.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 1.83685848E8,
+#         "volume_total": 9287000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.5,
+#           "medium": 2.83,
+#           "large": -9.09,
+#           "xlarge": -4.25
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9287000,
+#           "volume_sum_last": 17267468
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 18400,
+#         "avg_price": 19.779,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518000000,
+#         "amount": 362535.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.84048383E8,
+#         "volume_total": 9305400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.47,
+#           "medium": 2.82,
+#           "large": -9.06,
+#           "xlarge": -4.24
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9305400,
+#           "volume_sum_last": 17300768
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 26700,
+#         "avg_price": 19.778,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765518060000,
+#         "amount": 525966.0,
+#         "high": 19.7,
+#         "low": 19.69,
+#         "amount_total": 1.84574349E8,
+#         "volume_total": 9332100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.47,
+#           "medium": 2.8,
+#           "large": -9.05,
+#           "xlarge": -4.23
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9332100,
+#           "volume_sum_last": 17337468
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 22300,
+#         "avg_price": 19.778,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765518120000,
+#         "amount": 439349.0,
+#         "high": 19.71,
+#         "low": 19.69,
+#         "amount_total": 1.85013698E8,
+#         "volume_total": 9354400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.36,
+#           "medium": 2.88,
+#           "large": -9.02,
+#           "xlarge": -4.22
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9354400,
+#           "volume_sum_last": 17360668
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 11200,
+#         "avg_price": 19.778,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518180000,
+#         "amount": 220633.0,
+#         "high": 19.71,
+#         "low": 19.69,
+#         "amount_total": 1.85234331E8,
+#         "volume_total": 9365600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.33,
+#           "medium": 2.83,
+#           "large": -8.95,
+#           "xlarge": -4.21
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9365600,
+#           "volume_sum_last": 17416368
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 21800,
+#         "avg_price": 19.778,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765518240000,
+#         "amount": 429382.0,
+#         "high": 19.7,
+#         "low": 19.69,
+#         "amount_total": 1.85663713E8,
+#         "volume_total": 9387400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.3,
+#           "medium": 2.9,
+#           "large": -9.0,
+#           "xlarge": -4.2
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9387400,
+#           "volume_sum_last": 17489668
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 5900,
+#         "avg_price": 19.778,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765518300000,
+#         "amount": 116206.0,
+#         "high": 19.7,
+#         "low": 19.69,
+#         "amount_total": 1.85779919E8,
+#         "volume_total": 9393300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.29,
+#           "medium": 2.9,
+#           "large": -8.99,
+#           "xlarge": -4.2
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9393300,
+#           "volume_sum_last": 17504668
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 25200,
+#         "avg_price": 19.778,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518360000,
+#         "amount": 496528.0,
+#         "high": 19.71,
+#         "low": 19.69,
+#         "amount_total": 1.86276447E8,
+#         "volume_total": 9418500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.29,
+#           "medium": 2.79,
+#           "large": -8.89,
+#           "xlarge": -4.19
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9418500,
+#           "volume_sum_last": 17520868
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 19500,
+#         "avg_price": 19.778,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518420000,
+#         "amount": 384381.0,
+#         "high": 19.72,
+#         "low": 19.71,
+#         "amount_total": 1.86660828E8,
+#         "volume_total": 9438000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.3,
+#           "medium": 2.75,
+#           "large": -8.87,
+#           "xlarge": -4.18
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9438000,
+#           "volume_sum_last": 17545868
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 11000,
+#         "avg_price": 19.778,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765518480000,
+#         "amount": 216880.0,
+#         "high": 19.72,
+#         "low": 19.71,
+#         "amount_total": 1.86877708E8,
+#         "volume_total": 9449000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.28,
+#           "medium": 2.76,
+#           "large": -8.86,
+#           "xlarge": -4.17
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9449000,
+#           "volume_sum_last": 17571268
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 30100,
+#         "avg_price": 19.777,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765518540000,
+#         "amount": 593304.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.87471012E8,
+#         "volume_total": 9479100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.22,
+#           "medium": 2.85,
+#           "large": -8.91,
+#           "xlarge": -4.16
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9479100,
+#           "volume_sum_last": 17611968
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 12000,
+#         "avg_price": 19.777,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518600000,
+#         "amount": 236495.0,
+#         "high": 19.71,
+#         "low": 19.7,
+#         "amount_total": 1.87707507E8,
+#         "volume_total": 9491100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.2,
+#           "medium": 2.85,
+#           "large": -8.9,
+#           "xlarge": -4.16
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9491100,
+#           "volume_sum_last": 17625468
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 7200,
+#         "avg_price": 19.777,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765518660000,
+#         "amount": 141918.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.87849425E8,
+#         "volume_total": 9498300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.19,
+#           "medium": 2.86,
+#           "large": -8.89,
+#           "xlarge": -4.15
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9498300,
+#           "volume_sum_last": 17631268
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 16400,
+#         "avg_price": 19.777,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765518720000,
+#         "amount": 323323.0,
+#         "high": 19.72,
+#         "low": 19.71,
+#         "amount_total": 1.88172748E8,
+#         "volume_total": 9514700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.15,
+#           "medium": 2.87,
+#           "large": -8.87,
+#           "xlarge": -4.15
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9514700,
+#           "volume_sum_last": 17716268
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 11000,
+#         "avg_price": 19.777,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765518780000,
+#         "amount": 217082.0,
+#         "high": 19.74,
+#         "low": 19.72,
+#         "amount_total": 1.8838983E8,
+#         "volume_total": 9525700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.16,
+#           "medium": 2.85,
+#           "large": -8.86,
+#           "xlarge": -4.14
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9525700,
+#           "volume_sum_last": 17750868
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 25600,
+#         "avg_price": 19.777,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765518840000,
+#         "amount": 505065.0,
+#         "high": 19.74,
+#         "low": 19.72,
+#         "amount_total": 1.88894895E8,
+#         "volume_total": 9551300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.17,
+#           "medium": 2.86,
+#           "large": -8.91,
+#           "xlarge": -4.13
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9551300,
+#           "volume_sum_last": 17765868
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 14100,
+#         "avg_price": 19.777,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765518900000,
+#         "amount": 278098.0,
+#         "high": 19.73,
+#         "low": 19.72,
+#         "amount_total": 1.89172993E8,
+#         "volume_total": 9565400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.13,
+#           "medium": 2.89,
+#           "large": -8.89,
+#           "xlarge": -4.12
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9565400,
+#           "volume_sum_last": 17777368
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 7400,
+#         "avg_price": 19.777,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765518960000,
+#         "amount": 145932.0,
+#         "high": 19.73,
+#         "low": 19.71,
+#         "amount_total": 1.89318925E8,
+#         "volume_total": 9572800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.12,
+#           "medium": 2.89,
+#           "large": -8.89,
+#           "xlarge": -4.12
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9572800,
+#           "volume_sum_last": 17789468
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 34100,
+#         "avg_price": 19.777,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765519020000,
+#         "amount": 672160.0,
+#         "high": 19.72,
+#         "low": 19.71,
+#         "amount_total": 1.89991085E8,
+#         "volume_total": 9606900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.04,
+#           "medium": 2.88,
+#           "large": -8.86,
+#           "xlarge": -4.07
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9606900,
+#           "volume_sum_last": 17804568
+#         }
+#       },
+#       {
+#         "current": 19.73,
+#         "volume": 9100,
+#         "avg_price": 19.776,
+#         "chg": -0.29,
+#         "percent": -1.45,
+#         "timestamp": 1765519080000,
+#         "amount": 179446.0,
+#         "high": 19.73,
+#         "low": 19.71,
+#         "amount_total": 1.90170531E8,
+#         "volume_total": 9616000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.06,
+#           "medium": 2.86,
+#           "large": -8.85,
+#           "xlarge": -4.07
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9616000,
+#           "volume_sum_last": 17850668
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 11000,
+#         "avg_price": 19.776,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765519140000,
+#         "amount": 217005.0,
+#         "high": 19.73,
+#         "low": 19.72,
+#         "amount_total": 1.90387536E8,
+#         "volume_total": 9627000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.06,
+#           "medium": 2.84,
+#           "large": -8.84,
+#           "xlarge": -4.06
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9627000,
+#           "volume_sum_last": 17878068
+#         }
+#       },
+#       {
+#         "current": 19.74,
+#         "volume": 18200,
+#         "avg_price": 19.776,
+#         "chg": -0.28,
+#         "percent": -1.4,
+#         "timestamp": 1765519200000,
+#         "amount": 359204.0,
+#         "high": 19.74,
+#         "low": 19.72,
+#         "amount_total": 1.9074674E8,
+#         "volume_total": 9645200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 10.02,
+#           "medium": 2.85,
+#           "large": -8.82,
+#           "xlarge": -4.06
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9645200,
+#           "volume_sum_last": 17886468
+#         }
+#       },
+#       {
+#         "current": 19.73,
+#         "volume": 46500,
+#         "avg_price": 19.776,
+#         "chg": -0.29,
+#         "percent": -1.45,
+#         "timestamp": 1765519260000,
+#         "amount": 917779.0,
+#         "high": 19.75,
+#         "low": 19.72,
+#         "amount_total": 1.91664519E8,
+#         "volume_total": 9691700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.97,
+#           "medium": 2.88,
+#           "large": -8.82,
+#           "xlarge": -4.04
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9691700,
+#           "volume_sum_last": 17898268
+#         }
+#       },
+#       {
+#         "current": 19.72,
+#         "volume": 24600,
+#         "avg_price": 19.776,
+#         "chg": -0.3,
+#         "percent": -1.5,
+#         "timestamp": 1765519320000,
+#         "amount": 485204.0,
+#         "high": 19.73,
+#         "low": 19.71,
+#         "amount_total": 1.92149723E8,
+#         "volume_total": 9716300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.86,
+#           "medium": 3.02,
+#           "large": -8.85,
+#           "xlarge": -4.02
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9716300,
+#           "volume_sum_last": 17945268
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 37300,
+#         "avg_price": 19.776,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765519380000,
+#         "amount": 735221.0,
+#         "high": 19.72,
+#         "low": 19.7,
+#         "amount_total": 1.92884944E8,
+#         "volume_total": 9753600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.74,
+#           "medium": 2.99,
+#           "large": -8.72,
+#           "xlarge": -4.01
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9753600,
+#           "volume_sum_last": 18005568
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 32600,
+#         "avg_price": 19.776,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765519440000,
+#         "amount": 642367.0,
+#         "high": 19.71,
+#         "low": 19.7,
+#         "amount_total": 1.93527311E8,
+#         "volume_total": 9786200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.63,
+#           "medium": 2.9,
+#           "large": -8.53,
+#           "xlarge": -4.0
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9786200,
+#           "volume_sum_last": 18013668
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 57400,
+#         "avg_price": 19.775,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765519500000,
+#         "amount": 1130703.0,
+#         "high": 19.7,
+#         "low": 19.69,
+#         "amount_total": 1.94658014E8,
+#         "volume_total": 9843600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.61,
+#           "medium": 3.05,
+#           "large": -8.33,
+#           "xlarge": -4.33
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9843600,
+#           "volume_sum_last": 18032768
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 44200,
+#         "avg_price": 19.775,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765519560000,
+#         "amount": 870414.0,
+#         "high": 19.7,
+#         "low": 19.69,
+#         "amount_total": 1.95528428E8,
+#         "volume_total": 9887800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.57,
+#           "medium": 2.87,
+#           "large": -8.13,
+#           "xlarge": -4.31
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9887800,
+#           "volume_sum_last": 18054368
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 18100,
+#         "avg_price": 19.775,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765519620000,
+#         "amount": 356318.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.95884746E8,
+#         "volume_total": 9905900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.5,
+#           "medium": 2.91,
+#           "large": -8.11,
+#           "xlarge": -4.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9905900,
+#           "volume_sum_last": 18062568
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 16100,
+#         "avg_price": 19.774,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765519680000,
+#         "amount": 316967.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.96201713E8,
+#         "volume_total": 9922000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.5,
+#           "medium": 2.89,
+#           "large": -8.1,
+#           "xlarge": -4.29
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9922000,
+#           "volume_sum_last": 18069468
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 51300,
+#         "avg_price": 19.774,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765519740000,
+#         "amount": 1009796.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.97211509E8,
+#         "volume_total": 9973300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.47,
+#           "medium": 2.86,
+#           "large": -8.06,
+#           "xlarge": -4.27
+#         },
+#         "volume_compare": {
+#           "volume_sum": 9973300,
+#           "volume_sum_last": 18086168
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 34600,
+#         "avg_price": 19.774,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765519800000,
+#         "amount": 681231.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.9789274E8,
+#         "volume_total": 10007900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.39,
+#           "medium": 2.82,
+#           "large": -8.1,
+#           "xlarge": -4.11
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10007900,
+#           "volume_sum_last": 18102668
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 19200,
+#         "avg_price": 19.773,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765519860000,
+#         "amount": 377966.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.98270706E8,
+#         "volume_total": 10027100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.35,
+#           "medium": 2.84,
+#           "large": -8.09,
+#           "xlarge": -4.1
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10027100,
+#           "volume_sum_last": 18151068
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 31600,
+#         "avg_price": 19.773,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765519920000,
+#         "amount": 622074.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 1.9889278E8,
+#         "volume_total": 10058700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.33,
+#           "medium": 2.7,
+#           "large": -7.94,
+#           "xlarge": -4.09
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10058700,
+#           "volume_sum_last": 18158168
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 26700,
+#         "avg_price": 19.773,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765519980000,
+#         "amount": 525457.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 1.99418237E8,
+#         "volume_total": 10085400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.35,
+#           "medium": 2.76,
+#           "large": -7.92,
+#           "xlarge": -4.19
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10085400,
+#           "volume_sum_last": 18190368
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 46700,
+#         "avg_price": 19.773,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765520040000,
+#         "amount": 919562.0,
+#         "high": 19.69,
+#         "low": 19.68,
+#         "amount_total": 2.00337799E8,
+#         "volume_total": 10132100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.2,
+#           "medium": 2.59,
+#           "large": -7.88,
+#           "xlarge": -3.91
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10132100,
+#           "volume_sum_last": 18210768
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 12100,
+#         "avg_price": 19.772,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765520100000,
+#         "amount": 238265.0,
+#         "high": 19.7,
+#         "low": 19.69,
+#         "amount_total": 2.00576064E8,
+#         "volume_total": 10144200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.15,
+#           "medium": 2.63,
+#           "large": -7.87,
+#           "xlarge": -3.9
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10144200,
+#           "volume_sum_last": 18251268
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 61700,
+#         "avg_price": 19.772,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765520160000,
+#         "amount": 1214232.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 2.01790296E8,
+#         "volume_total": 10205900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.05,
+#           "medium": 2.49,
+#           "large": -7.83,
+#           "xlarge": -3.71
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10205900,
+#           "volume_sum_last": 18345568
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 21700,
+#         "avg_price": 19.772,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765520220000,
+#         "amount": 426882.0,
+#         "high": 19.68,
+#         "low": 19.67,
+#         "amount_total": 2.02217178E8,
+#         "volume_total": 10227600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.06,
+#           "medium": 2.5,
+#           "large": -7.86,
+#           "xlarge": -3.7
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10227600,
+#           "volume_sum_last": 18390468
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 15800,
+#         "avg_price": 19.772,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765520280000,
+#         "amount": 310952.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 2.0252813E8,
+#         "volume_total": 10243400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 9.01,
+#           "medium": 2.53,
+#           "large": -7.85,
+#           "xlarge": -3.69
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10243400,
+#           "volume_sum_last": 18473068
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 29700,
+#         "avg_price": 19.771,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765520340000,
+#         "amount": 584701.0,
+#         "high": 19.7,
+#         "low": 19.68,
+#         "amount_total": 2.03112831E8,
+#         "volume_total": 10273100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.86,
+#           "medium": 2.65,
+#           "large": -7.83,
+#           "xlarge": -3.68
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10273100,
+#           "volume_sum_last": 18491368
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 67200,
+#         "avg_price": 19.771,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765520400000,
+#         "amount": 1322971.0,
+#         "high": 19.7,
+#         "low": 19.68,
+#         "amount_total": 2.04435802E8,
+#         "volume_total": 10340300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.69,
+#           "medium": 2.73,
+#           "large": -7.64,
+#           "xlarge": -3.77
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10340300,
+#           "volume_sum_last": 18517968
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 56700,
+#         "avg_price": 19.77,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765520460000,
+#         "amount": 1115815.0,
+#         "high": 19.69,
+#         "low": 19.67,
+#         "amount_total": 2.05551617E8,
+#         "volume_total": 10397000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.59,
+#           "medium": 2.84,
+#           "large": -7.68,
+#           "xlarge": -3.75
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10397000,
+#           "volume_sum_last": 18527668
+#         }
+#       },
+#       {
+#         "current": 19.67,
+#         "volume": 17400,
+#         "avg_price": 19.77,
+#         "chg": -0.35,
+#         "percent": -1.75,
+#         "timestamp": 1765520520000,
+#         "amount": 342344.0,
+#         "high": 19.68,
+#         "low": 19.67,
+#         "amount_total": 2.05893961E8,
+#         "volume_total": 10414400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.56,
+#           "medium": 2.85,
+#           "large": -7.67,
+#           "xlarge": -3.75
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10414400,
+#           "volume_sum_last": 18561568
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 268400,
+#         "avg_price": 19.767,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765520580000,
+#         "amount": 5278066.0,
+#         "high": 19.68,
+#         "low": 19.65,
+#         "amount_total": 2.11172027E8,
+#         "volume_total": 10682800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.47,
+#           "medium": 3.33,
+#           "large": -7.31,
+#           "xlarge": -4.49
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10682800,
+#           "volume_sum_last": 18579268
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 109200,
+#         "avg_price": 19.766,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765520640000,
+#         "amount": 2145795.0,
+#         "high": 19.66,
+#         "low": 19.64,
+#         "amount_total": 2.13317822E8,
+#         "volume_total": 10792000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.57,
+#           "medium": 3.48,
+#           "large": -7.36,
+#           "xlarge": -4.69
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10792000,
+#           "volume_sum_last": 18633368
+#         }
+#       },
+#       {
+#         "current": 19.65,
+#         "volume": 132700,
+#         "avg_price": 19.765,
+#         "chg": -0.37,
+#         "percent": -1.85,
+#         "timestamp": 1765520700000,
+#         "amount": 2608323.0,
+#         "high": 19.66,
+#         "low": 19.64,
+#         "amount_total": 2.15926145E8,
+#         "volume_total": 10924700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.36,
+#           "medium": 3.25,
+#           "large": -7.08,
+#           "xlarge": -4.54
+#         },
+#         "volume_compare": {
+#           "volume_sum": 10924700,
+#           "volume_sum_last": 18705300
+#         }
+#       },
+#       {
+#         "current": 19.71,
+#         "volume": 218400,
+#         "avg_price": 19.764,
+#         "chg": -0.31,
+#         "percent": -1.55,
+#         "timestamp": 1765520760000,
+#         "amount": 4310346.0,
+#         "high": 19.78,
+#         "low": 19.65,
+#         "amount_total": 2.20236491E8,
+#         "volume_total": 11143100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 7.91,
+#           "medium": 2.87,
+#           "large": -6.63,
+#           "xlarge": -4.15
+#         },
+#         "volume_compare": {
+#           "volume_sum": 11143100,
+#           "volume_sum_last": 18734600
+#         }
+#       },
+#       {
+#         "current": 19.68,
+#         "volume": 52500,
+#         "avg_price": 19.764,
+#         "chg": -0.34,
+#         "percent": -1.7,
+#         "timestamp": 1765520820000,
+#         "amount": 1033978.0,
+#         "high": 19.71,
+#         "low": 19.68,
+#         "amount_total": 2.21270469E8,
+#         "volume_total": 11195600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 7.9,
+#           "medium": 2.87,
+#           "large": -6.62,
+#           "xlarge": -4.15
+#         },
+#         "volume_compare": {
+#           "volume_sum": 11195600,
+#           "volume_sum_last": 18770900
+#         }
+#       },
+#       {
+#         "current": 19.7,
+#         "volume": 36900,
+#         "avg_price": 19.764,
+#         "chg": -0.32,
+#         "percent": -1.6,
+#         "timestamp": 1765520880000,
+#         "amount": 726484.0,
+#         "high": 19.7,
+#         "low": 19.67,
+#         "amount_total": 2.21996953E8,
+#         "volume_total": 11232500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 7.84,
+#           "medium": 2.94,
+#           "large": -6.5,
+#           "xlarge": -4.28
+#         },
+#         "volume_compare": {
+#           "volume_sum": 11232500,
+#           "volume_sum_last": 18796700
+#         }
+#       },
+#       {
+#         "current": 19.69,
+#         "volume": 64400,
+#         "avg_price": 19.763,
+#         "chg": -0.33,
+#         "percent": -1.65,
+#         "timestamp": 1765520940000,
+#         "amount": 1268449.0,
+#         "high": 19.7,
+#         "low": 19.68,
+#         "amount_total": 2.23265402E8,
+#         "volume_total": 11296900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 7.82,
+#           "medium": 2.93,
+#           "large": -6.47,
+#           "xlarge": -4.27
+#         },
+#         "volume_compare": {
+#           "volume_sum": 11296900,
+#           "volume_sum_last": 18848400
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 152000,
+#         "avg_price": 19.762,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765521000000,
+#         "amount": 2987489.0,
+#         "high": 19.69,
+#         "low": 19.64,
+#         "amount_total": 2.26252891E8,
+#         "volume_total": 11448900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 7.77,
+#           "medium": 3.17,
+#           "large": -6.38,
+#           "xlarge": -4.57
+#         },
+#         "volume_compare": {
+#           "volume_sum": 11448900,
+#           "volume_sum_last": 18925200
+#         }
+#       },
+#       {
+#         "current": 19.61,
+#         "volume": 234700,
+#         "avg_price": 19.759,
+#         "chg": -0.41,
+#         "percent": -2.05,
+#         "timestamp": 1765521060000,
+#         "amount": 4604785.0,
+#         "high": 19.63,
+#         "low": 19.6,
+#         "amount_total": 2.30857676E8,
+#         "volume_total": 11683600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 7.87,
+#           "medium": 3.4,
+#           "large": -6.13,
+#           "xlarge": -5.13
+#         },
+#         "volume_compare": {
+#           "volume_sum": 11683600,
+#           "volume_sum_last": 18986800
+#         }
+#       },
+#       {
+#         "current": 19.53,
+#         "volume": 432300,
+#         "avg_price": 19.752,
+#         "chg": -0.49,
+#         "percent": -2.45,
+#         "timestamp": 1765521120000,
+#         "amount": 8460786.0,
+#         "high": 19.61,
+#         "low": 19.51,
+#         "amount_total": 2.39318462E8,
+#         "volume_total": 12115900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.27,
+#           "medium": 4.19,
+#           "large": -5.68,
+#           "xlarge": -6.78
+#         },
+#         "volume_compare": {
+#           "volume_sum": 12115900,
+#           "volume_sum_last": 19002900
+#         }
+#       },
+#       {
+#         "current": 19.57,
+#         "volume": 125800,
+#         "avg_price": 19.75,
+#         "chg": -0.45,
+#         "percent": -2.25,
+#         "timestamp": 1765521180000,
+#         "amount": 2459826.0,
+#         "high": 19.58,
+#         "low": 19.52,
+#         "amount_total": 2.41778288E8,
+#         "volume_total": 12241700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.28,
+#           "medium": 4.23,
+#           "large": -5.72,
+#           "xlarge": -6.79
+#         },
+#         "volume_compare": {
+#           "volume_sum": 12241700,
+#           "volume_sum_last": 19023300
+#         }
+#       },
+#       {
+#         "current": 19.54,
+#         "volume": 95900,
+#         "avg_price": 19.749,
+#         "chg": -0.48,
+#         "percent": -2.4,
+#         "timestamp": 1765521240000,
+#         "amount": 1875133.0,
+#         "high": 19.57,
+#         "low": 19.53,
+#         "amount_total": 2.43653421E8,
+#         "volume_total": 12337600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.17,
+#           "medium": 4.19,
+#           "large": -5.48,
+#           "xlarge": -6.88
+#         },
+#         "volume_compare": {
+#           "volume_sum": 12337600,
+#           "volume_sum_last": 19051700
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 196100,
+#         "avg_price": 19.745,
+#         "chg": -0.51,
+#         "percent": -2.55,
+#         "timestamp": 1765521300000,
+#         "amount": 3828628.0,
+#         "high": 19.54,
+#         "low": 19.51,
+#         "amount_total": 2.47482049E8,
+#         "volume_total": 12533700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.2,
+#           "medium": 4.07,
+#           "large": -5.57,
+#           "xlarge": -6.7
+#         },
+#         "volume_compare": {
+#           "volume_sum": 12533700,
+#           "volume_sum_last": 19076000
+#         }
+#       },
+#       {
+#         "current": 19.52,
+#         "volume": 143000,
+#         "avg_price": 19.743,
+#         "chg": -0.5,
+#         "percent": -2.5,
+#         "timestamp": 1765521360000,
+#         "amount": 2791342.0,
+#         "high": 19.53,
+#         "low": 19.51,
+#         "amount_total": 2.50273391E8,
+#         "volume_total": 12676700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.21,
+#           "medium": 4.04,
+#           "large": -5.57,
+#           "xlarge": -6.68
+#         },
+#         "volume_compare": {
+#           "volume_sum": 12676700,
+#           "volume_sum_last": 19106900
+#         }
+#       },
+#       {
+#         "current": 19.52,
+#         "volume": 79300,
+#         "avg_price": 19.741,
+#         "chg": -0.5,
+#         "percent": -2.5,
+#         "timestamp": 1765521420000,
+#         "amount": 1548863.0,
+#         "high": 19.55,
+#         "low": 19.52,
+#         "amount_total": 2.51822254E8,
+#         "volume_total": 12756000,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.16,
+#           "medium": 3.97,
+#           "large": -5.6,
+#           "xlarge": -6.53
+#         },
+#         "volume_compare": {
+#           "volume_sum": 12756000,
+#           "volume_sum_last": 19159000
+#         }
+#       },
+#       {
+#         "current": 19.52,
+#         "volume": 201400,
+#         "avg_price": 19.738,
+#         "chg": -0.5,
+#         "percent": -2.5,
+#         "timestamp": 1765521480000,
+#         "amount": 3932005.0,
+#         "high": 19.55,
+#         "low": 19.51,
+#         "amount_total": 2.55754259E8,
+#         "volume_total": 12957400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.2,
+#           "medium": 3.93,
+#           "large": -5.74,
+#           "xlarge": -6.38
+#         },
+#         "volume_compare": {
+#           "volume_sum": 12957400,
+#           "volume_sum_last": 19226900
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 256100,
+#         "avg_price": 19.734,
+#         "chg": -0.51,
+#         "percent": -2.55,
+#         "timestamp": 1765521540000,
+#         "amount": 4994700.0,
+#         "high": 19.52,
+#         "low": 19.5,
+#         "amount_total": 2.60748959E8,
+#         "volume_total": 13213500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.44,
+#           "medium": 4.47,
+#           "large": -5.64,
+#           "xlarge": -7.27
+#         },
+#         "volume_compare": {
+#           "volume_sum": 13213500,
+#           "volume_sum_last": 19307800
+#         }
+#       },
+#       {
+#         "current": 19.49,
+#         "volume": 162700,
+#         "avg_price": 19.731,
+#         "chg": -0.53,
+#         "percent": -2.65,
+#         "timestamp": 1765521600000,
+#         "amount": 3173422.0,
+#         "high": 19.54,
+#         "low": 19.49,
+#         "amount_total": 2.63922381E8,
+#         "volume_total": 13376200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.44,
+#           "medium": 4.75,
+#           "large": -5.58,
+#           "xlarge": -7.61
+#         },
+#         "volume_compare": {
+#           "volume_sum": 13376200,
+#           "volume_sum_last": 19374600
+#         }
+#       },
+#       {
+#         "current": 19.47,
+#         "volume": 184700,
+#         "avg_price": 19.727,
+#         "chg": -0.55,
+#         "percent": -2.75,
+#         "timestamp": 1765521660000,
+#         "amount": 3595017.0,
+#         "high": 19.49,
+#         "low": 19.45,
+#         "amount_total": 2.67517398E8,
+#         "volume_total": 13560900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.55,
+#           "medium": 4.98,
+#           "large": -5.53,
+#           "xlarge": -7.99
+#         },
+#         "volume_compare": {
+#           "volume_sum": 13560900,
+#           "volume_sum_last": 19417300
+#         }
+#       },
+#       {
+#         "current": 19.47,
+#         "volume": 146500,
+#         "avg_price": 19.724,
+#         "chg": -0.55,
+#         "percent": -2.75,
+#         "timestamp": 1765521720000,
+#         "amount": 2850697.0,
+#         "high": 19.47,
+#         "low": 19.44,
+#         "amount_total": 2.70368095E8,
+#         "volume_total": 13707400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.6,
+#           "medium": 5.06,
+#           "large": -5.35,
+#           "xlarge": -8.3
+#         },
+#         "volume_compare": {
+#           "volume_sum": 13707400,
+#           "volume_sum_last": 19455900
+#         }
+#       },
+#       {
+#         "current": 19.48,
+#         "volume": 118000,
+#         "avg_price": 19.722,
+#         "chg": -0.54,
+#         "percent": -2.7,
+#         "timestamp": 1765521780000,
+#         "amount": 2296123.0,
+#         "high": 19.49,
+#         "low": 19.45,
+#         "amount_total": 2.72664218E8,
+#         "volume_total": 13825400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.54,
+#           "medium": 5.17,
+#           "large": -5.34,
+#           "xlarge": -8.37
+#         },
+#         "volume_compare": {
+#           "volume_sum": 13825400,
+#           "volume_sum_last": 19538900
+#         }
+#       },
+#       {
+#         "current": 19.47,
+#         "volume": 59200,
+#         "avg_price": 19.721,
+#         "chg": -0.55,
+#         "percent": -2.75,
+#         "timestamp": 1765521840000,
+#         "amount": 1152907.0,
+#         "high": 19.49,
+#         "low": 19.47,
+#         "amount_total": 2.73817125E8,
+#         "volume_total": 13884600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.56,
+#           "medium": 5.14,
+#           "large": -5.37,
+#           "xlarge": -8.33
+#         },
+#         "volume_compare": {
+#           "volume_sum": 13884600,
+#           "volume_sum_last": 19641800
+#         }
+#       },
+#       {
+#         "current": 19.48,
+#         "volume": 88300,
+#         "avg_price": 19.719,
+#         "chg": -0.54,
+#         "percent": -2.7,
+#         "timestamp": 1765521900000,
+#         "amount": 1719255.0,
+#         "high": 19.48,
+#         "low": 19.46,
+#         "amount_total": 2.7553638E8,
+#         "volume_total": 13972900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.55,
+#           "medium": 4.96,
+#           "large": -5.38,
+#           "xlarge": -8.13
+#         },
+#         "volume_compare": {
+#           "volume_sum": 13972900,
+#           "volume_sum_last": 19737700
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 58500,
+#         "avg_price": 19.718,
+#         "chg": -0.51,
+#         "percent": -2.55,
+#         "timestamp": 1765521960000,
+#         "amount": 1140704.0,
+#         "high": 19.52,
+#         "low": 19.48,
+#         "amount_total": 2.76677084E8,
+#         "volume_total": 14031400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.51,
+#           "medium": 4.86,
+#           "large": -5.27,
+#           "xlarge": -8.1
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14031400,
+#           "volume_sum_last": 20003600
+#         }
+#       },
+#       {
+#         "current": 19.53,
+#         "volume": 45400,
+#         "avg_price": 19.718,
+#         "chg": -0.49,
+#         "percent": -2.45,
+#         "timestamp": 1765522020000,
+#         "amount": 886058.0,
+#         "high": 19.53,
+#         "low": 19.5,
+#         "amount_total": 2.77563142E8,
+#         "volume_total": 14076800,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.46,
+#           "medium": 4.87,
+#           "large": -5.35,
+#           "xlarge": -7.98
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14076800,
+#           "volume_sum_last": 20058100
+#         }
+#       },
+#       {
+#         "current": 19.54,
+#         "volume": 97400,
+#         "avg_price": 19.717,
+#         "chg": -0.48,
+#         "percent": -2.4,
+#         "timestamp": 1765522080000,
+#         "amount": 1902627.0,
+#         "high": 19.54,
+#         "low": 19.52,
+#         "amount_total": 2.79465769E8,
+#         "volume_total": 14174200,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.26,
+#           "medium": 4.78,
+#           "large": -5.26,
+#           "xlarge": -7.79
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14174200,
+#           "volume_sum_last": 20096600
+#         }
+#       },
+#       {
+#         "current": 19.52,
+#         "volume": 102200,
+#         "avg_price": 19.715,
+#         "chg": -0.5,
+#         "percent": -2.5,
+#         "timestamp": 1765522140000,
+#         "amount": 1995992.0,
+#         "high": 19.53,
+#         "low": 19.51,
+#         "amount_total": 2.81461761E8,
+#         "volume_total": 14276400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.23,
+#           "medium": 4.79,
+#           "large": -5.2,
+#           "xlarge": -7.82
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14276400,
+#           "volume_sum_last": 20252100
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 82100,
+#         "avg_price": 19.714,
+#         "chg": -0.51,
+#         "percent": -2.55,
+#         "timestamp": 1765522200000,
+#         "amount": 1601919.0,
+#         "high": 19.53,
+#         "low": 19.5,
+#         "amount_total": 2.8306368E8,
+#         "volume_total": 14358500,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.22,
+#           "medium": 4.81,
+#           "large": -5.26,
+#           "xlarge": -7.77
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14358500,
+#           "volume_sum_last": 20362000
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 84800,
+#         "avg_price": 19.713,
+#         "chg": -0.51,
+#         "percent": -2.55,
+#         "timestamp": 1765522260000,
+#         "amount": 1653684.0,
+#         "high": 19.51,
+#         "low": 19.49,
+#         "amount_total": 2.84717364E8,
+#         "volume_total": 14443300,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.11,
+#           "medium": 4.96,
+#           "large": -5.34,
+#           "xlarge": -7.73
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14443300,
+#           "volume_sum_last": 20446800
+#         }
+#       },
+#       {
+#         "current": 19.51,
+#         "volume": 53100,
+#         "avg_price": 19.712,
+#         "chg": -0.51,
+#         "percent": -2.55,
+#         "timestamp": 1765522320000,
+#         "amount": 1035799.0,
+#         "high": 19.51,
+#         "low": 19.5,
+#         "amount_total": 2.85753163E8,
+#         "volume_total": 14496400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.14,
+#           "medium": 4.84,
+#           "large": -5.27,
+#           "xlarge": -7.7
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14496400,
+#           "volume_sum_last": 20571200
+#         }
+#       },
+#       {
+#         "current": 19.5,
+#         "volume": 69000,
+#         "avg_price": 19.711,
+#         "chg": -0.52,
+#         "percent": -2.6,
+#         "timestamp": 1765522380000,
+#         "amount": 1345798.0,
+#         "high": 19.51,
+#         "low": 19.5,
+#         "amount_total": 2.87098961E8,
+#         "volume_total": 14565400,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.13,
+#           "medium": 4.96,
+#           "large": -5.34,
+#           "xlarge": -7.75
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14565400,
+#           "volume_sum_last": 20658200
+#         }
+#       },
+#       {
+#         "current": 19.48,
+#         "volume": 125300,
+#         "avg_price": 19.709,
+#         "chg": -0.54,
+#         "percent": -2.7,
+#         "timestamp": 1765522440000,
+#         "amount": 2442807.0,
+#         "high": 19.51,
+#         "low": 19.48,
+#         "amount_total": 2.89541768E8,
+#         "volume_total": 14690700,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.21,
+#           "medium": 5.21,
+#           "large": -5.4,
+#           "xlarge": -8.02
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14690700,
+#           "volume_sum_last": 20859800
+#         }
+#       },
+#       {
+#         "current": 19.52,
+#         "volume": 139200,
+#         "avg_price": 19.707,
+#         "chg": -0.5,
+#         "percent": -2.5,
+#         "timestamp": 1765522500000,
+#         "amount": 2715408.0,
+#         "high": 19.52,
+#         "low": 19.48,
+#         "amount_total": 2.92257176E8,
+#         "volume_total": 14829900,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.21,
+#           "medium": 5.03,
+#           "large": -5.49,
+#           "xlarge": -7.75
+#         },
+#         "volume_compare": {
+#           "volume_sum": 14829900,
+#           "volume_sum_last": 20989200
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 219700,
+#         "avg_price": 19.705,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765522560000,
+#         "amount": 4298364.0,
+#         "high": 19.64,
+#         "low": 19.52,
+#         "amount_total": 2.9655554E8,
+#         "volume_total": 15049600,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": {
+#           "small": 8.17,
+#           "medium": 4.64,
+#           "large": -5.44,
+#           "xlarge": -7.37
+#         },
+#         "volume_compare": {
+#           "volume_sum": 15049600,
+#           "volume_sum_last": 21123700
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 0,
+#         "avg_price": 19.705,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765522620000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 15049600,
+#           "volume_sum_last": 21123700
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 0,
+#         "avg_price": 19.705,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765522680000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 15049600,
+#           "volume_sum_last": 21123700
+#         }
+#       },
+#       {
+#         "current": 19.64,
+#         "volume": 0,
+#         "avg_price": 19.705,
+#         "chg": -0.38,
+#         "percent": -1.9,
+#         "timestamp": 1765522740000,
+#         "amount": 0.0,
+#         "high": null,
+#         "low": null,
+#         "amount_total": null,
+#         "volume_total": null,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 15049600,
+#           "volume_sum_last": 21123700
+#         }
+#       },
+#       {
+#         "current": 19.6,
+#         "volume": 157500,
+#         "avg_price": 19.704,
+#         "chg": -0.42,
+#         "percent": -2.1,
+#         "timestamp": 1765522800000,
+#         "amount": 3087000.0,
+#         "high": 19.6,
+#         "low": 19.6,
+#         "amount_total": 2.9964254E8,
+#         "volume_total": 15207100,
+#         "macd": null,
+#         "kdj": null,
+#         "ratio": null,
+#         "capital": null,
+#         "volume_compare": {
+#           "volume_sum": 15207100,
+#           "volume_sum_last": 21323300
+#         }
+#       }
+#     ],
+#     "items_size": 242
+#   },
+#   "error_code": 0,
+#   "error_description": ""
+# }

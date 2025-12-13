@@ -1,4 +1,4 @@
-### quote
+### quote 获取股票实时数据（扩展）
 # @name quote
 GET https://stock.xueqiu.com/v5/stock/quote.json?symbol=SH603533&extend=detail HTTP/1.1
 Accept: application/json
