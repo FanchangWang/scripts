@@ -1,0 +1,40 @@
+# @name message
+POST https://wxpusher.zjiecode.com/api/send/message HTTP/1.1
+Content-Type: application/json
+
+{
+  "appToken": "{{$dotenv appToken}}",
+  "content": "<h1>这是标题</h1><br/><div style='white-space: pre-wrap;'>这是正文</div>",
+  "summary": "这是标题",
+  "contentType": 2,
+  "uids": ["{{$dotenv uids}}"],
+  "verifyPayType": 0
+}
+
+
+# HTTP/1.1 200 OK
+# Server: nginx
+# Date: Sat, 13 Dec 2025 15:34:33 GMT
+# Content-Type: application/json
+# Transfer-Encoding: chunked
+# Connection: close
+# Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
+
+# {
+#   "code": 1000,
+#   "msg": "处理成功",
+#   "data": [
+#     {
+#       "spt": null,
+#       "uid": "UID_xKkkEccqH4wC2CqOY48uCMYZqVWU",
+#       "topicId": null,
+#       "messageId": 1910542100,
+#       "messageContentId": 1875125821,
+#       "sendRecordId": 1910542100,
+#       "url": "https://wxpusher.zjiecode.com/api/message/OU2lvJ3bYuRoMPPxB9lPqFsRLnyNO0hQ",
+#       "code": 1000,
+#       "status": "创建发送任务成功"
+#     }
+#   ],
+#   "success": true
+# }
