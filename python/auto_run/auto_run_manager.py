@@ -1,19 +1,26 @@
-import subprocess
-import logging
-from logging.handlers import TimedRotatingFileHandler
-import time
 import ctypes
-import winreg
-import sys
+import logging
 import os
 import shlex
+import subprocess
+import sys
+import time
+import winreg
 
 # 配置日志，使用覆盖模式
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log')
+os.makedirs(log_dir, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [PID:%(process)d] - %(levelname)s - %(message)s',
     handlers=[
-        TimedRotatingFileHandler(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'run.log'), when='D', interval=1, backupCount=0, encoding='utf-8'),  # 日志文件放在脚本所在目录
+        logging.handlers.TimedRotatingFileHandler(
+            os.path.join(log_dir, 'run.log'),
+            when='D',
+            interval=1,
+            backupCount=7,
+            encoding='utf-8'
+        ),  # 日志文件放在log目录下，保留7个文件
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -391,10 +398,12 @@ class AutoRunManager:
             self.start_exe("JetBrains Toolbox", r'C:\Users\guyue\AppData\Local\JetBrains\Toolbox\bin\jetbrains-toolbox.exe', '--minimize')
             self.start_exe("FDM 下载器", r'C:\Users\guyue\AppData\Local\Softdeluxe\Free Download Manager\fdm.exe', '--hidden')
             self.start_exe("UniGetUI", r'C:\Program Files\UniGetUI\UniGetUI.exe', '--daemon')
-            self.start_exe("Epson Event Manager", r'C:\Program Files (x86)\Epson Software\Event Manager\EEventManager.exe')
-            self.start_exe("Epson Status", r'C:\WINDOWS\system32\spool\DRIVERS\x64\3\E_YATIYOE.EXE', r'/EPT "EPLTarget\P0000000000000001" /M "L4260 Series"')
 
             self.start_exe("微信", r'C:\Program Files\Tencent\Weixin\Weixin.exe', '-autorun')
+
+            self.start_exe("Epson Event Manager", r'C:\Program Files (x86)\Epson Software\Event Manager\EEventManager.exe')
+            self.start_exe("Epson Status", r'C:\WINDOWS\system32\spool\DRIVERS\x64\3\E_YATIYOE.EXE', r'/EPT "EPLTarget\P0000000000000001" /M "L4260 Series" /EF "HKCU"')
+
 
         logging.info("=== 自动运行管理器执行完成 ===")
 
