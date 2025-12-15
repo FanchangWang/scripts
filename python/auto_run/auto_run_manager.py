@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import winreg
+from logging.handlers import TimedRotatingFileHandler
 
 # 配置日志，使用覆盖模式
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log')
@@ -14,7 +15,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [PID:%(process)d] - %(levelname)s - %(message)s',
     handlers=[
-        logging.handlers.TimedRotatingFileHandler(
+        TimedRotatingFileHandler(
             os.path.join(log_dir, 'run.log'),
             when='D',
             interval=1,
