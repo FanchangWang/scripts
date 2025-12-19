@@ -139,6 +139,8 @@ class StockMonitor:
             api_timestamp = stock_data.get('timestamp')
             # 转换为datetime对象
             self.NAME = f"股票:{event_type} {api_dt.strftime('%H:%M')} 价:{current_price} 今:{today_profit:.2f} 总:{profit:.2f}"
+        else:
+            self.NAME = f"股票:{event_type} {api_dt.strftime('%H:%M')} 价:{current_price} {'涨' if chg >= 0 else '跌'}:{chg} ({stock_data.get('percent', 0)}%)"
 
         self.log(f"{'收盘价' if event_type == '收盘' else '当前价'}: {current_price}")
         self.log(f"涨跌额: {chg} 元 {stock_data.get('percent', 0)}%")

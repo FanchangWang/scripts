@@ -1,12 +1,12 @@
 import ctypes
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import os
 import shlex
 import subprocess
 import sys
 import time
 import winreg
-from logging.handlers import TimedRotatingFileHandler
 
 # 配置日志，使用覆盖模式
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log')

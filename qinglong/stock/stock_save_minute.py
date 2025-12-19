@@ -105,10 +105,11 @@ class StockDataSaver:
                         old_data = json.load(f)
                     # 比较数据是否相同
                     if old_data == data:
-                        self.logger.info(f"文件内容相同，无需更新: {file_path}")
+                        self.logger.info(f"股票分钟线数据已存在，文件内容相同，无需更新: {file_path}")
+                        self.push_notification("股票分钟线数据已存在", f"股票 {self.stock_symbol} 的分钟线数据已存在，跳过保存")
                         return True
                     else:
-                        self.logger.info(f"文件内容不同，覆盖写入: {file_path}")
+                        self.logger.info(f"股票分钟线数据已存在，文件内容不同，覆盖写入: {file_path}")
                 except Exception as e:
                     self.logger.warning(f"读取文件失败或文件格式错误: {str(e)}，将覆盖写入")
 
@@ -117,16 +118,19 @@ class StockDataSaver:
                     json.dump(data, f, ensure_ascii=False, indent=2)
 
                 self.logger.info(f"数据已覆盖保存到: {file_path}")
+                self.push_notification("股票分钟线数据覆盖保存成功", f"股票 {self.stock_symbol} 的分钟线数据已存在，覆盖保存成功")
                 return True
             else:
                 # 保存数据到文件
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
 
-                self.logger.info(f"数据已保存到: {file_path}")
+                self.logger.info(f"股票分钟线数据保存成功，保存路径: {file_path}")
+                self.push_notification("股票分钟线数据保存成功", f"股票 {self.stock_symbol} 的分钟线数据保存成功，保存路径: {file_path}")
                 return True
         except Exception as e:
             self.logger.error(f"保存数据失败: {str(e)}")
+            self.push_notification("股票分钟线数据保存失败", f"股票 {self.stock_symbol} 的分钟线数据保存失败，错误信息: {str(e)}")
             return False
 
     def push_notification(self, title, message):
@@ -172,13 +176,7 @@ class StockDataSaver:
             return
 
         # 保存数据
-        save_success = self.save_data_to_file(data)
-        if save_success:
-            self.logger.info("股票分钟线数据保存成功")
-            self.push_notification("股票分钟线数据保存成功", f"股票 {self.stock_symbol} 的分钟线数据已保存")
-        else:
-            self.logger.error("股票分钟线数据保存失败")
-            self.push_notification("股票分钟线数据保存失败", f"股票 {self.stock_symbol} 的分钟线数据保存失败")
+        self.save_data_to_file(data)
 
         self.logger.info("股票分钟线数据保存任务结束")
 
