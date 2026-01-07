@@ -393,7 +393,6 @@ class AutoRunManager:
             self.start_exe('Twinkle Tray', r'C:\Users\guyue\AppData\Local\Programs\twinkle-tray\Twinkle Tray.exe')
             self.start_exe('EcoPaste 剪贴板', r'C:\Users\guyue\AppData\Local\Programs\EcoPaste\EcoPaste.exe', '--auto-launch')
             self.start_exe('pot 翻译工具', r'C:\Program Files\pot\pot.exe')
-            self.start_exe('Maye Lite 启动器', r'C:\Users\guyue\AppData\Local\Programs\MayeLite\Maye Lite.exe', '--autoruns')
 
             self.start_exe("Microsoft OneNote", r'C:\Program Files\Microsoft Office\root\Office16\ONENOTEM.EXE', '/tsr')
             self.start_exe("JetBrains Toolbox", r'C:\Users\guyue\AppData\Local\JetBrains\Toolbox\bin\jetbrains-toolbox.exe', '--minimize')
