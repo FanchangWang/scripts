@@ -390,6 +390,7 @@ class AutoRunManager:
             self.run_as_normal_user_task()
         else:
             logging.info("当前以普通用户权限运行")
+            self.start_exe('Maye Lite 启动器', r'C:\Users\guyue\AppData\Local\Programs\MayeLite\Maye Lite.exe', '--autoruns')
             self.start_exe('Twinkle Tray', r'C:\Users\guyue\AppData\Local\Programs\twinkle-tray\Twinkle Tray.exe')
             self.start_exe('EcoPaste 剪贴板', r'C:\Users\guyue\AppData\Local\Programs\EcoPaste\EcoPaste.exe', '--auto-launch')
             self.start_exe('pot 翻译工具', r'C:\Program Files\pot\pot.exe')
