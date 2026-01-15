@@ -1,0 +1,81 @@
+### 智谱 AI glm-4.6v-flash 模型
+# @name glm46vFlashChat
+POST https://open.bigmodel.cn/api/paas/v4/chat/completions
+Content-Type: application/json
+Authorization: Bearer {{$dotenv GLM_API_KEY}}
+
+{
+  "model": "glm-4.6v-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是一位北京现代汽车品牌的专家，对车型配置非常熟悉。\n以下是一道单选题，请只从题目实际列出的选项里选择正确答案。\n注意：题目可能只给出 2 个或 3 个选项，并非永远 4 个。\n请仅输出对应选项的那个英文字母，不要输出任何其他字符。"
+    },
+    {
+      "role": "user",
+      "content": "Q：第五代 胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离为？\nA. 4.5米\nB. 5米\nC. 6米\nD. 7米"
+    }
+  ]
+}
+
+# 正确答案 C
+# Q：第五代 胜达的外观设计语言是？\nA. 光影式造型\nB. 中国专属方盒子造型\nC. 全球 One Model 方盒子造型\nD. 大方盒子造型
+
+# 正确答案 A
+# Q: 第五代 胜达尾门最大开启角度为？\nA. A、90.4°\nB. B、94.0°\nC. C、100.4°\nD. D、140.0°
+
+# 正确答案 D
+# Q：第五代 胜达的环抱式“H”型LED氛围灯有多种颜色可选？\nC. 32色\nD. 64色
+
+# 正确答案 C
+# Q：第五代 胜达的空调烘干系统作用是？\nA. 快速制冷\nB. 清洁空调系统\nC. 烘干风道内产生冷凝水，防止空调发霉有异味\nD. 防止PM2.5进入车内
+
+# 正确答案 B
+# Q：第五代 胜达的ccNC是指哪项技术？\nA. 快速移动通信\nB. 智能网联架构\nC. 中央信息处理\nD. 智能计算芯片
+
+# 正确答案 C
+# Q：第五代 胜达的F-OTA是指哪项技术？\nA. 云管端一体化整车硬件升级系统\nB. 智能网联架构\nC. 整车全域升级系统\nD. 智能物联网架构
+
+# 正确答案 D
+# Q：第五代 胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离为？\nA. 4.5米\nB. 5米\nC. 6米\nD. 7米
+
+# HTTP/1.1 200 OK
+# Date: Thu, 15 Jan 2026 03:29:19 GMT
+# Content-Type: application/json; charset=UTF-8
+# Transfer-Encoding: chunked
+# Connection: close
+# Set-Cookie: acw_tc=ac11000117684477522951587e092710e610c8aba2f52e1bd91be93354b002;path=/;HttpOnly;Max-Age=1800
+# Vary: Accept-Encoding, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, Origin, Access-Control-Request-Method, Access-Control-Request-Headers
+# X-LOG-ID: 20260115112912c9a346f50cab4b6b
+# Strict-Transport-Security: max-age=31536000; includeSubDomains
+# Content-Encoding: gzip
+
+# {
+#   "choices": [
+#     {
+#       "finish_reason": "stop",
+#       "index": 0,
+#       "message": {
+#         "content": "\nB",
+#         "reasoning_content": "用户现在需要解决这个关于北京现代第五代胜达RSPA遥控智能泊车辅助的问题。首先回忆相关知识，第五代胜达的RSPA遥控智能泊车辅助功能，根据资料，应该是最大移动距离是5米？不对，再仔细想。或者看选项，选项是A.4.5米，B.5米，C.6米，D.7米。根据北京现代第五代胜达的参数，RSPA遥控泊车辅助的最大移动距离是5米？不对，可能我记错了。或者查官方信息，第五代胜达的RSPA功能，最大移动距离是5米？不对，再看选项。或者正确答案是B？不对，等一下，实际资料中，第五代胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离是5米？不对，可能我混淆了其他车型。或者根据题目给出的选项，正确选项是B？不对，再仔细分析。题目问的是第五代胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离。根据北京现代官方信息，第五代胜达的RSPA功能，最大移动距离是5米？不对，可能正确答案是B？或者等一下，可能正确选项是B.5米？不对，再看选项。或者正确答案是B？不对，让我再确认。根据北京现代第五代胜达的配置，RSPA遥控泊车辅助的最大移动距离是5米？不对，有的资料说第五代胜达的RSPA是4.5米？不对，可能我之前记错了。现在看选项，选项A是4.5米，B是5米，C6，D7。根据正确知识，第五代胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离是5米？不对，或者官方数据是5米？不对，查资料：北京现代第五代胜达搭载的RSPA遥控智能泊车辅助系统，其最大移动距离为5米？不对，可能正确答案是B？不对，等一下，可能正确选项是B？或者我搞反了。现在题目要求只输出选项字母，所以需要确定正确选项。根据我的专业知识，第五代胜达的RSPA遥控智能泊车辅助最多能移动车辆的距离是5米？不对，再查：第五代胜达的RSPA功能，最大移动距离是5米？不对，有的资料说第五代胜达的RSPA是4.5米？不对，可能正确答案是B？不对，或者看选项，正确选项是B？不对，让我再确认。哦，可能正确答案是B？不对，或者A？不对。现在根据题目，正确选项应该是B？不对，或者我之前的记忆有误。现在重新思考：第五代胜达的RSPA遥控智能泊车辅助，根据官方介绍，其最大移动距离是5米？不对，可能正确答案是B。所以输出B。",
+#         "role": "assistant"
+#       }
+#     }
+#   ],
+#   "created": 1768447759,
+#   "id": "20260115112912c9a346f50cab4b6b",
+#   "model": "glm-4.6v-flash",
+#   "object": "chat.completion",
+#   "request_id": "20260115112912c9a346f50cab4b6b",
+#   "usage": {
+#     "completion_tokens": 621,
+#     "completion_tokens_details": {
+#       "reasoning_tokens": 614
+#     },
+#     "prompt_tokens": 125,
+#     "prompt_tokens_details": {
+#       "cached_tokens": 0
+#     },
+#     "total_tokens": 746
+#   }
+# }
