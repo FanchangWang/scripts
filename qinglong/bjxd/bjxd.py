@@ -528,6 +528,14 @@ class BeiJingHyundai:
 
     def run(self) -> None:
         """运行主程序"""
+
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            print("✅ dotenv 成功加载 .env 文件")
+        except ImportError:
+            print("⚠️ 缺少 dotenv 库, 青龙环境请忽略, 本地运行请安装此库")
+
         # 使用列表保持顺序，使用集合实现去重
         tokens = []
         tokens_set = set()
