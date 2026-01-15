@@ -6,8 +6,12 @@
     BJXD: str - 北京现代 APP api token (多个账号用英文逗号分隔，建议每个账号一个变量)
     BJXD1/BJXD2/BJXD3: str - 北京现代 APP api token (每个账号一个变量)
     BJXD_ANSWER: str - 预设答案 (可选, ABCD 中的一个)
-    HUNYUAN_API_KEY: str - 腾讯混元AI APIKey (可选)
-    GLM_API_KEY: str - 智谱 GLM AI APIKey (可选)
+    AI_API_KEY: str - 通用 AI APIKey (可选)
+    AI_REQUEST_URL: str - 通用 AI 请求 URL (可选)
+    AI_MODEL: str - 通用 AI 模型名称 (可选)
+    AI_REQUEST_PARAMS: str - 通用 AI 请求参数 (可选, JSON 格式字符串)
+    HUNYUAN_API_KEY: str - 腾讯混元AI APIKey (已废弃，不建议使用)
+    GLM_API_KEY: str - 智谱 GLM AI APIKey (已废弃，不建议使用)
 
 cron: 25 6 * * *
 """
@@ -15,6 +19,7 @@ cron: 25 6 * * *
 import os
 import random
 import time
+import json
 from datetime import datetime
 from typing import List, Dict, Any
 import requests
@@ -59,8 +64,12 @@ class BeiJingHyundai:
         self.users: List[Dict[str, Any]] = []  # 所有用户信息列表
         self.correct_answer: str = ""  # 正确答案
         self.preset_answer: str = ""  # 预设答案
-        self.ai_hunyuan_api_key: str = ""  # 腾讯混元AI APIKey
-        self.ai_glm_api_key: str = ""  # 智谱 GLM AI APIKey
+        self.ai_hunyuan_api_key: str = ""  # 腾讯混元AI APIKey（兼容旧环境变量）
+        self.ai_glm_api_key: str = ""  # 智谱 GLM AI APIKey（兼容旧环境变量）
+        self.ai_api_key: str = ""  # 通用 AI APIKey
+        self.ai_request_url: str = ""  # AI 请求地址
+        self.ai_model: str = ""  # AI 模型
+        self.ai_request_params: str = ""  # AI 请求参数（JSON字符串格式）
         self.wrong_answers: set = set()  # 错误答案集合
         self.log_content: str = ""  # 日志内容
 
@@ -359,80 +368,47 @@ class BeiJingHyundai:
         time.sleep(random.randint(3, 5))
         self.submit_question_answer(questions_hid, answer, share_user_hid)
 
-    def get_ai_hunyuan_answer(self, question: str) -> str:
-        """获取AI答案"""
+    def get_ai_answer(self, question: str) -> str:
+        """获取通用AI答案"""
+        if not self.ai_api_key or not self.ai_request_url or not self.ai_model:
+            return ""
+
         headers = {
-            "Authorization": f"Bearer {self.ai_hunyuan_api_key}",
+            "Authorization": f"Bearer {self.ai_api_key}",
             "Content-Type": "application/json",
         }
-        prompt = f"你是一个专业的北京现代汽车专家，请直接给出这个单选题的答案，并且不要带'答案'等其他内容。\n{question}"
+
+        # 构建默认的消息内容
+        system_prompt = "你是一位北京现代汽车品牌的专家，对车型配置非常熟悉。\n以下是一道单选题，请只从题目实际列出的选项里选择正确答案。\n注意：题目可能只给出 2 个或 3 个选项，并非永远 4 个。\n请仅输出对应选项的那个英文字母，不要输出任何其他字符。"
+
+        # 构建默认的 json_data
         json_data = {
-            "model": "hunyuan-turbo",
-            "messages": [{"role": "user", "content": prompt}],
-            "enable_enhancement": True,
-            "force_search_enhancement": True,
-            "enable_instruction_search": True,
-        }
-
-        try:
-            response = requests.post(
-                "https://api.hunyuan.cloud.tencent.com/v1/chat/completions",
-                headers=headers,
-                json=json_data,
-            )
-            response.raise_for_status()
-            response_json = response.json()
-            print(f"腾讯混元AI API response ——> {response_json}")
-
-            # 获取AI回答内容并转大写
-            choices = response_json.get("choices", [])
-            if choices and len(choices) > 0:
-                message = choices[0].get("message", {})
-                ai_response = message.get("content", "").upper()
-            else:
-                ai_response = ""
-
-            # 使用集合操作找出有效答案
-            valid_answers = set("ABCD") - self.wrong_answers
-            found_answers = set(ai_response) & valid_answers
-
-            # 如果找到答案则返回其中一个
-            if found_answers:
-                return found_answers.pop()
-            else:
-                print(f"❌ 没有找到符合的 AI 答案")
-                return ""
-
-        except Exception as e:
-            print(f"腾讯混元AI API 请求失败: {str(e)}")
-
-        return ""
-
-    def get_ai_glm_answer(self, question: str) -> str:
-        """获取AI答案"""
-        headers = {
-            "Authorization": f"Bearer {self.ai_glm_api_key}",
-            "Content-Type": "application/json",
-        }
-        json_data = {
-            "model": "glm-4.5-flash",
+            "model": self.ai_model,
             "messages": [
-                {"role": "system", "content": "你是一位北京现代汽车品牌的专家，对车型配置非常熟悉。\n以下是一道单选题，请只从题目实际列出的选项里选择正确答案。\n注意：题目可能只给出 2 个或 3 个选项，并非永远 4 个。\n请仅输出对应选项的那个英文字母，不要输出任何其他字符。"},
-                {"role": "user", "content": f"{question}"}
-            ],
-            "stream": False,
-            "do_sample": False
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ]
         }
 
+        # 如果提供了额外的请求参数，合并到 json_data 中
+        if self.ai_request_params:
+            try:
+                extra_params = json.loads(self.ai_request_params)
+                json_data.update(extra_params)
+            except json.JSONDecodeError as e:
+                print(f"❌ AI 请求参数解析失败: {str(e)}")
+
         try:
+            print(f"通用 AI API request ——> {json_data}")
             response = requests.post(
-                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                self.ai_request_url,
                 headers=headers,
                 json=json_data,
             )
+            print(f"通用 AI API response status ——> {response.status_code}")
+            print(f"通用 AI API response text ——> {response.text}")
             response.raise_for_status()
             response_json = response.json()
-            print(f"智谱 GLM AI API response ——> {response_json}")
 
             # 获取AI回答内容并转大写
             choices = response_json.get("choices", [])
@@ -450,11 +426,11 @@ class BeiJingHyundai:
             if found_answers:
                 return found_answers.pop()
             else:
-                print(f"❌ 没有找到符合的 AI 答案")
+                self.log(f"❌ 没有找到符合的 AI 答案")
                 return ""
 
         except Exception as e:
-            print(f"智谱 GLM AI API 请求失败: {str(e)}")
+            self.log(f"通用 AI API 请求失败: {str(e)}")
 
         return ""
 
@@ -470,16 +446,11 @@ class BeiJingHyundai:
             self.log(f"使用预设答案: {self.preset_answer}")
             return self.preset_answer
 
-        # 3. 存在AI APIKey时，使用AI答案
-        if self.ai_hunyuan_api_key:
-            ai_answer = self.get_ai_hunyuan_answer(question)
+        # 3. 存在AI配置时，使用通用AI方法获取答案
+        if self.ai_api_key and self.ai_request_url and self.ai_model:
+            ai_answer = self.get_ai_answer(question)
             if ai_answer:
-                self.log(f"使用AI答案: {ai_answer}")
-                return ai_answer
-        elif self.ai_glm_api_key:
-            ai_answer = self.get_ai_glm_answer(question)
-            if ai_answer:
-                self.log(f"使用智谱 GLM AI 答案: {ai_answer}")
+                self.log(f"使用 AI 答案: {ai_answer}")
                 return ai_answer
 
         # 4. 随机选择答案（排除错误答案）
@@ -595,19 +566,41 @@ class BeiJingHyundai:
 
         self.log(f"👻 共获取到用户 token {len(tokens)} 个")
 
-        self.ai_hunyuan_api_key = os.getenv("HUNYUAN_API_KEY", "")
-        self.log(
-            "💯 已获取到腾讯混元 AI APIKey, 使用腾讯混元 AI 答题"
-            if self.ai_hunyuan_api_key
-            else "😭 未设置腾讯混元 AI HUNYUAN_API_KEY 环境变量"
-        )
+        # 获取新的 AI 配置参数
+        self.ai_api_key = os.getenv("AI_API_KEY", "")
+        self.ai_request_url = os.getenv("AI_REQUEST_URL", "")
+        self.ai_model = os.getenv("AI_MODEL", "")
+        self.ai_request_params = os.getenv("AI_REQUEST_PARAMS", "")
 
-        self.ai_glm_api_key = os.getenv("GLM_API_KEY", "")
-        self.log(
-            "💯 已获取到智谱 GLM AI APIKey, 使用智谱 GLM AI 答题"
-            if self.ai_glm_api_key
-            else "😭 未设置智谱 GLM AI GLM_API_KEY 环境变量"
-        )
+        # 兼容旧的环境变量
+        if not self.ai_api_key and not self.ai_request_url and not self.ai_model:
+            # 检查旧的腾讯混元 AI 配置
+            self.ai_hunyuan_api_key = os.getenv("HUNYUAN_API_KEY", "")
+            if self.ai_hunyuan_api_key:
+                self.ai_api_key = self.ai_hunyuan_api_key
+                self.ai_request_url = "https://api.hunyuan.cloud.tencent.com/v1/chat/completions"
+                self.ai_model = "hunyuan-turbo"
+                self.ai_request_params = json.dumps({"enable_enhancement": True, "force_search_enhancement": True, "enable_instruction_search": True})
+                self.log("💯 已获取到腾讯混元 AI 配置, 使用腾讯混元 AI 答题")
+            else:
+                self.log("😭 未设置腾讯混元 AI HUNYUAN_API_KEY 环境变量")
+
+            # 检查旧的智谱 GLM AI 配置
+            self.ai_glm_api_key = os.getenv("GLM_API_KEY", "")
+            if self.ai_glm_api_key:
+                self.ai_api_key = self.ai_glm_api_key
+                self.ai_request_url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+                self.ai_model = "glm-4.5-flash"
+                self.ai_request_params = json.dumps({"do_sample": False})
+                self.log("💯 已获取到智谱 GLM AI 配置, 使用智谱 GLM AI 答题")
+            else:
+                self.log("😭 未设置智谱 GLM AI GLM_API_KEY 环境变量")
+        else:
+            # 使用新的 AI 配置
+            if self.ai_api_key and self.ai_request_url and self.ai_model:
+                self.log("💯 已获取到通用 AI 配置, 使用通用 AI 答题")
+            else:
+                self.log("⚠️ 通用 AI 配置不完整, 请检查 AI_API_KEY、AI_REQUEST_URL 和 AI_MODEL 环境变量")
 
         # 获取预设答案
         self.preset_answer = os.getenv("BJXD_ANSWER", "").upper()
@@ -671,19 +664,29 @@ class BeiJingHyundai:
             self.log(f"任务状态: {self.user['task']}")
 
             # 调试使用 设置任务状态
+            # self.user["task"]["question"] = False
             # self.user["task"]["sign"] = False
             # self.user["task"]["view"] = False
-            # self.user["task"]["question"] = False
 
-            # 签到
+            # 获取任务状态
             user_task = self.user.get("task", {})
+
+            # 任务：答题
+            if not user_task.get("question"):
+                self.get_question_info(self.user.get("share_user_hid", ""))
+            else:
+                self.log("✅ 答题任务 已完成，跳过")
+                if not self.correct_answer:
+                    self.get_answered_question()
+
+            # 任务：签到
             if not user_task.get("sign"):
                 self.get_sign_info()
                 time.sleep(random.randint(5, 10))
             else:
                 self.log("✅ 签到任务 已完成，跳过")
 
-            # 阅读文章
+            # 任务：阅读文章
             if not user_task.get("view"):
                 article_ids = self.get_article_list()
                 if article_ids:
@@ -702,14 +705,6 @@ class BeiJingHyundai:
                         self.log(f"❌ 提交文章积分失败: {str(e)}")
             else:
                 self.log("✅ 浏览文章任务 已完成，跳过")
-
-            # 答题
-            if not user_task.get("question"):
-                self.get_question_info(self.user.get("share_user_hid", ""))
-            else:
-                self.log("✅ 答题任务 已完成，跳过")
-                if not self.correct_answer:
-                    self.get_answered_question()
 
         self.log("\n============ 积分详情 ============")
         for i, user in enumerate(self.users, 1):
