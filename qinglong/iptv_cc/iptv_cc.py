@@ -348,6 +348,14 @@ class IPTV:
 
     def run(self):
         """运行主程序"""
+
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            print("✅ dotenv 成功加载 .env 文件")
+        except ImportError:
+            print("⚠️ 缺少 dotenv 库, 青龙环境请忽略, 本地运行请安装此库")
+
         username = os.getenv("IPTV_CC_USERNAME", "")
         password = os.getenv("IPTV_CC_PASSWORD", "")
         if not username or not password:
