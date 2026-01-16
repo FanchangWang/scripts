@@ -214,7 +214,7 @@ class Binmt:
             points_increase = current_points - self.initial_points
 
             # 更新NAME
-            self.NAME = f"{self.NAME} 金币(+{gold_increase}) 积分(+{points_increase})"
+            self.NAME = f"{self.NAME} 金币:{current_gold}(+{gold_increase}) 积分:{current_points}(+{points_increase})"
 
             # 打印包含新增值的积分信息
             message = f"金币：{current_gold} (+{gold_increase}) 积分：{current_points} (+{points_increase})\n"
@@ -238,6 +238,14 @@ class Binmt:
 
     def run(self):
         """运行主程序"""
+
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            print("✅ dotenv 成功加载 .env 文件")
+        except ImportError:
+            print("⚠️ 缺少 dotenv 库, 青龙环境请忽略, 本地运行请安装此库")
+
         username = os.getenv("BINMT_CC_USERNAME", "")
         password = os.getenv("BINMT_CC_PASSWORD", "")
         if not username or not password:
