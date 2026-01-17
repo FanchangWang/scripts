@@ -226,52 +226,6 @@ class AutoRunManager:
             logging.error(f"启动失败 ErrMsg: {str(e)}")
             return False
 
-    def run_as_normal_user_task(self):
-        """创建一次性计划任务"""
-        logging.info(f"创建一次性计划任务: {self._task_name}")
-        try:
-            task_run_cmd = f'pythonw.exe "{os.path.abspath(__file__)}"'
-            # 1、创建任务计划
-            create_cmd = [
-                "schtasks", "/create",
-                "/tn", self._task_name,
-                "/tr", task_run_cmd,
-                "/sc", "ONCE",
-                "/st", "00:00",
-                "/f"
-            ]
-            result = subprocess.run(create_cmd, capture_output=True, text=True, encoding='gbk')
-            if result.returncode != 0:
-                logging.error(f"创建任务失败 ErrMsg: {result.stderr}")
-                return False
-            logging.info(f"创建任务 {result.stdout}")
-            # 2、运行任务计划
-            run_cmd = [
-                "schtasks", "/run",
-                "/tn", self._task_name
-            ]
-            result = subprocess.run(run_cmd, capture_output=True, text=True, encoding='gbk')
-            if result.returncode != 0:
-                logging.error(f"运行任务失败 ErrMsg: {result.stderr}")
-                return False
-            logging.info(f"运行任务 {result.stdout}")
-            time.sleep(5) # 等待任务执行，防止过早删除任务
-            # 3、删除任务计划
-            delete_cmd = [
-                "schtasks", "/delete",
-                "/tn", self._task_name,
-                "/f" # 强制删除，不提示确认
-            ]
-            result = subprocess.run(delete_cmd, capture_output=True, text=True, encoding='gbk')
-            if result.returncode != 0:
-                logging.error(f"删除任务失败 ErrMsg: {result.stderr}")
-                return False
-            logging.info(f"删除任务 {result.stdout}")
-            return True
-        except Exception as e:
-            logging.error(f"创建任务失败 ErrMsg: {str(e)}")
-            return False
-
     def _get_environment_variable(self, is_system=False):
         """读取系统或用户环境变量"""
         try:
@@ -386,8 +340,6 @@ class AutoRunManager:
             self.start_exe('Snow Shot 截图工具', r'C:\Program Files\Snow Shot\snowshot.exe', '--auto_start')
             self.start_exe("SwitchHosts", r'C:\Users\guyue\AppData\Local\Programs\SwitchHosts\SwitchHosts.exe')
             self.start_exe("PowerToys", r'C:\Program Files\PowerToys\PowerToys.exe')
-            # 创建一次性计划任务
-            self.run_as_normal_user_task()
         else:
             logging.info("当前以普通用户权限运行")
             self.start_exe('Maye Lite 启动器', r'C:\Users\guyue\AppData\Local\Programs\MayeLite\Maye Lite.exe', '--autoruns')
@@ -404,7 +356,6 @@ class AutoRunManager:
 
             self.start_exe("Epson Event Manager", r'C:\Program Files (x86)\Epson Software\Event Manager\EEventManager.exe')
             self.start_exe("Epson Status", r'C:\WINDOWS\system32\spool\DRIVERS\x64\3\E_YATIYOE.EXE', r'/EPT "EPLTarget\P0000000000000001" /M "L4260 Series" /EF "HKCU"')
-
 
         logging.info("=== 自动运行管理器执行完成 ===")
 
