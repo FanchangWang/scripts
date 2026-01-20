@@ -342,6 +342,9 @@ class AutoRunManager:
             self.start_exe("PowerToys", r'C:\Program Files\PowerToys\PowerToys.exe')
         else:
             logging.info("当前以普通用户权限运行")
+
+            self.start_exe("微信", r'C:\Program Files\Tencent\Weixin\Weixin.exe', '-autorun')
+
             self.start_exe('Maye Lite 启动器', r'C:\Users\guyue\AppData\Local\Programs\MayeLite\Maye Lite.exe', '--autoruns')
             self.start_exe('Twinkle Tray', r'C:\Users\guyue\AppData\Local\Programs\twinkle-tray\Twinkle Tray.exe')
             self.start_exe('EcoPaste 剪贴板', r'C:\Users\guyue\AppData\Local\Programs\EcoPaste\EcoPaste.exe', '--auto-launch')
@@ -349,10 +352,8 @@ class AutoRunManager:
 
             self.start_exe("Microsoft OneNote", r'C:\Program Files\Microsoft Office\root\Office16\ONENOTEM.EXE', '/tsr')
             self.start_exe("JetBrains Toolbox", r'C:\Users\guyue\AppData\Local\JetBrains\Toolbox\bin\jetbrains-toolbox.exe', '--minimize')
-            self.start_exe("FDM 下载器", r'C:\Users\guyue\AppData\Local\Softdeluxe\Free Download Manager\fdm.exe', '--hidden')
+            self.start_exe("FDM 下载器", r'C:\Users\guyue\AppData\Local\Programs\Softdeluxe\Free Download Manager\fdm.exe', '--hidden')
             self.start_exe("UniGetUI", r'C:\Program Files\UniGetUI\UniGetUI.exe', '--daemon')
-
-            self.start_exe("微信", r'C:\Program Files\Tencent\Weixin\Weixin.exe', '-autorun')
 
             self.start_exe("Epson Event Manager", r'C:\Program Files (x86)\Epson Software\Event Manager\EEventManager.exe')
             self.start_exe("Epson Status", r'C:\WINDOWS\system32\spool\DRIVERS\x64\3\E_YATIYOE.EXE', r'/EPT "EPLTarget\P0000000000000001" /M "L4260 Series" /EF "HKCU"')
