@@ -96,7 +96,16 @@ def connect_to_device(ip_port):
 
 def start_scrcpy(device_id=None, extra_args=None):
     """启动scrcpy"""
-    cmd = ["scrcpy.exe","--stay-awake","--turn-screen-off"]
+    cmd = ["scrcpy.exe","--stay-awake"]
+    # 询问用户是否保持屏幕关闭
+    reply = QMessageBox.question(
+        None,
+        "屏幕设置",
+        "是否保持屏幕关闭？",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+    )
+    if reply == QMessageBox.StandardButton.Yes:
+        cmd.append("--turn-screen-off")
     if device_id:
         cmd.extend(["-s", device_id])
     if extra_args:
