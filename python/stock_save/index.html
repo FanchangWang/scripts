@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票交易数据图表</title>
+    <script src="/static/chart.umd.min.js"></script>
+    <script src="/static/hammerjs@2.0.8.min.js"></script>
+    <script src="/static/chartjs-plugin-zoom.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #2c3e50;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 30px;
+            min-height: 800px;
+        }
+
+        canvas {
+            max-height: 1200px;
+            height: 800px !important;
+        }
+
+        .controls {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .controls h2 {
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            color: #34495e;
+        }
+
+        .week-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .week-btn {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .week-btn:hover {
+            border-color: #3498db;
+            background: #f0f8ff;
+        }
+
+        .week-btn.active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+            color: #666;
+        }
+
+        .error {
+            text-align: center;
+            padding: 50px;
+            font-size: 18px;
+            color: #e74c3c;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>股票交易数据折线图</h1>
+        <div class="chart-container">
+            <div class="loading" id="loading">加载数据中...</div>
+            <div class="error" id="error" style="display: none;"></div>
+            <canvas id="stockChart" style="display: none;"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let chart = null;
+
+        // 颜色数组
+        const colors = [
+            '#2ecc71',  // 绿色
+            // '#3498db',  // 蓝色
+            '#e74c3c',  // 红色
+            '#f39c12',  // 橙色
+            '#9b59b6',  // 紫色
+            '#1abc9c',  // 青色
+            '#e67e22',  // 深橙色
+            '#34495e'   // 深蓝色
+        ];
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+        });
+
+        // 获取数据
+        async function fetchData() {
+            try {
+                const response = await fetch('/api/stock-data');
+                if (!response.ok) {
+                    throw new Error('网络请求失败');
+                }
+                const allData = await response.json();
+                const chartData = prepareChartData(allData);
+                console.log('chartData:', chartData);
+                // 绘制图表
+                drawChart(chartData);
+            } catch (error) {
+                console.error('获取数据失败:', error);
+                showError('获取数据失败，请检查服务器是否运行');
+            }
+        }
+
+
+        // 绘制图表
+        function drawChart(chartData) {
+            // 隐藏加载状态
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('stockChart').style.display = 'block';
+
+            // 销毁旧图表
+            if (chart) {
+                chart.destroy();
+            }
+
+            // 创建新图表
+            const ctx = document.getElementById('stockChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            titleFont: {
+                                size: 14
+                            },
+                            bodyFont: {
+                                size: 13
+                            },
+                            callbacks: {
+                                label: function (context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y.toFixed(2);
+                                    }
+                                    return label;
+                                }
+                            }
+                        },
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: '股票交易价格走势',
+                            font: {
+                                size: 18
+                            }
+                        },
+                        zoom: {
+                            zoom: {
+                                wheel: {
+                                    enabled: true,
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                mode: 'x',
+                                limits: {
+                                    x: { min: 'original', max: 'original' },
+                                    y: { min: 0.1, max: 10 }
+                                }
+                            },
+                            pan: {
+                                enabled: true,
+                                mode: 'x',
+                                threshold: 5,
+                                modifierKey: null
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '交易时间'
+                            },
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: '价格 (元)'
+                            },
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 准备图表数据
+        function prepareChartData(allData) {
+            // 获取所有时间点 周一到周五 09:30 到 11:30, 13:00 到 15:00
+            const allTimes = new Array();
+            for (let day = 0; day < 5; day++) {
+                for (let hour = 9; hour <= 15; hour++) {
+                    for (let minute = 0; minute < 60; minute += 1) {
+                        if (hour === 9 && minute < 30) {
+                            continue;
+                        }
+                        if (hour === 11 && minute > 30) {
+                            continue;
+                        }
+                        if (hour === 12) {
+                            continue;
+                        }
+                        if (hour === 15 && minute > 0) {
+                            continue;
+                        }
+                        allTimes.push(`${['周一', '周二', '周三', '周四', '周五'][day]} ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`);
+                    }
+                }
+            }
+            console.log(allTimes);
+
+            // 准备数据集
+            const datasets = [];
+
+            allData.weeks.forEach((week, datasetIndex) => {
+                const dataset = {
+                    label: week.week_display,
+                    data: [],
+                    borderColor: colors[datasetIndex % colors.length],
+                    backgroundColor: `${colors[datasetIndex % colors.length]}33`,
+                    tension: 0.1,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    pointHoverBackgroundColor: colors[datasetIndex % colors.length],
+                    pointHoverBorderColor: '#fff',
+                    pointHoverBorderWidth: 2
+                };
+
+                // 填充数据点，没有数据的时间点用null
+                allTimes.forEach(time => {
+                    let price = null;
+                    // 查找对应时间的价格
+                    for (const day of week.days) {
+                        const item = day.items.find(i => i.time === time);
+                        if (item) {
+                            price = item.price;
+                            break;
+                        }
+                    }
+                    dataset.data.push(price);
+                });
+
+                datasets.push(dataset);
+            });
+
+            return {
+                labels: allTimes,
+                datasets: datasets
+            };
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('stockChart').style.display = 'none';
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+    </script>
+</body>
+
+</html>
