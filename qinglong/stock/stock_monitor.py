@@ -84,6 +84,14 @@ class StockMonitor:
 
     def run(self):
         """主运行方法"""
+
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+            print("✅ dotenv 成功加载 .env 文件")
+        except ImportError:
+            print("⚠️ 缺少 dotenv 库, 青龙环境请忽略, 本地运行请安装此库")
+
         # 获取当前时间
         now_dt = datetime.now()
         # 判断是否处于股票交易时间 9:15-11:30, 13:00-15:00

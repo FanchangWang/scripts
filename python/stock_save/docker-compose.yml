@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  stock-save-minute:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock-save-minute
+    volumes:
+      - ./data:/app/data
+      - ./log:/app/log
+      - ./.env:/app/.env:ro  # 挂载 .env 文件（如果存在）
+    environment:
+      - TZ=Asia/Shanghai
+    restart: always
