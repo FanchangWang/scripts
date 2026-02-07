@@ -1,0 +1,119 @@
+### 获取 Token
+# @name getToken
+GET {{$dotenv BASE_URL}}/open/auth/token?client_id={{$dotenv CLIENT_ID}}&client_secret={{$dotenv CLIENT_SECRET}}
+Accept: application/json
+
+# response
+# {
+#   "code": 200,
+#   "data": {
+#     "token": "0e22d492-7510-4463-9d83-8514816dd7f4",
+#     "token_type": "Bearer",
+#     "expiration": 1773042629
+#   }
+# }
+
+
+### 获取环境变量
+
+@auth_token = {{getToken.response.body.data.token}}
+
+# @name getEnvs
+GET {{$dotenv BASE_URL}}/open/envs?searchValue=BJXD1
+Accept: application/json
+Authorization: Bearer {{auth_token}}
+
+# response
+# {
+#   "code": 200,
+#   "data": [
+#     {
+#       "id": 2,
+#       "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+#       "timestamp": "Thu Jan 29 2026 12:23:29 GMT+0800 (China Standard Time)",
+#       "status": 0,
+#       "position": 4499980000000000,
+#       "name": "BJXD1",
+#       "remarks": "BJXD 潇鸿130 账号",
+#       "isPinned": 0,
+#       "createdAt": "2024-12-13T17:23:09.402Z",
+#       "updatedAt": "2026-01-29T04:23:29.145Z"
+#     }
+#   ]
+# }
+
+### 更新环境变量
+@auth_token = {{getToken.response.body.data.token}}
+@env_id = {{getEnvs.response.body.data[0].id}}
+@env_name = {{getEnvs.response.body.data[0].name}}
+@env_value = {{getEnvs.response.body.data[0].value}}
+@env_remarks = {{getEnvs.response.body.data[0].remarks}}
+
+# @name putEnv
+PUT {{$dotenv BASE_URL}}/open/envs
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{auth_token}}
+
+{
+  "id": {{env_id}},
+  "name": "{{env_name}}",
+  "value": "{{env_value}}",
+  "remarks": "{{env_remarks}} Test"
+}
+
+# response
+# {
+#   "code": 200,
+#   "data": {
+#     "id": 2,
+#     "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+#     "timestamp": "Sat Feb 07 2026 16:33:23 GMT+0800 (China Standard Time)",
+#     "status": 0,
+#     "position": 4499980000000000,
+#     "name": "BJXD1",
+#     "remarks": "BJXD 潇鸿130 账号 Test",
+#     "isPinned": 0,
+#     "createdAt": "2024-12-13T17:23:09.402Z",
+#     "updatedAt": "2026-02-07T08:33:23.907Z"
+#   }
+# }
+
+
+### 创建环境变量
+
+@auth_token = {{getToken.response.body.data.token}}
+
+# @name createEnv
+
+POST {{$dotenv BASE_URL}}/open/envs
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{auth_token}}
+
+[
+  {
+    "name": "TEST",
+    "value": "TEST VALUE",
+    "remarks": "TEST REMARKS"
+  }
+]
+
+# response
+# {
+#   "code": 200,
+#   "data": [
+#     {
+#       "id": 19,
+#       "value": "TEST VALUE",
+#       "status": 0,
+#       "timestamp": "Sat Feb 07 2026 16:49:22 GMT+0800 (China Standard Time)",
+#       "position": 4499830000000000,
+#       "name": "TEST",
+#       "remarks": "TEST REMARKS",
+#       "isPinned": 0,
+#       "updatedAt": "2026-02-07T08:49:22.264Z",
+#       "createdAt": "2026-02-07T08:49:22.264Z"
+#     }
+#   ]
+# }
