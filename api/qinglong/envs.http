@@ -123,7 +123,7 @@ Authorization: Bearer {{auth_token}}
 @auth_token = {{getToken.response.body.data.token}}
 
 # @name deleteEnv
-DELETE {{$dotenv BASE_URL}}/open/envs/
+DELETE {{$dotenv BASE_URL}}/open/envs
 Content-Type: application/json
 Accept: application/json
 Authorization: Bearer {{auth_token}}
