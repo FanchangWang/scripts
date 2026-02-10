@@ -49,7 +49,7 @@ Authorization: Bearer {{auth_token}}
 @env_value = {{getEnvs.response.body.data[0].value}}
 @env_remarks = {{getEnvs.response.body.data[0].remarks}}
 
-# @name putEnv
+# @name updateEnv
 PUT {{$dotenv BASE_URL}}/open/envs
 Content-Type: application/json
 Accept: application/json
@@ -93,9 +93,9 @@ Authorization: Bearer {{auth_token}}
 
 [
   {
-    "name": "TEST",
-    "value": "TEST VALUE",
-    "remarks": "TEST REMARKS"
+    "name": "TEST2",
+    "value": "TEST2 VALUE",
+    "remarks": "TEST2 REMARKS"
   }
 ]
 
@@ -117,3 +117,15 @@ Authorization: Bearer {{auth_token}}
 #     }
 #   ]
 # }
+
+### 删除环境变量
+
+@auth_token = {{getToken.response.body.data.token}}
+
+# @name deleteEnv
+DELETE {{$dotenv BASE_URL}}/open/envs/
+Content-Type: application/json
+Accept: application/json
+Authorization: Bearer {{auth_token}}
+
+[19, 20]
