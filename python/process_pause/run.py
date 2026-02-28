@@ -48,6 +48,8 @@ class WeChatProcessManager:
         self.root.geometry("320x120")
         self.root.resizable(False, False)
         self.root.attributes("-topmost", True)
+        # 隐藏最小化按钮，只保留关闭按钮
+        self.root.attributes("-toolwindow", True)
 
         # 设置窗口样式
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
