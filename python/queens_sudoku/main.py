@@ -1,0 +1,479 @@
+import win32gui
+import win32ui
+import win32con
+import numpy as np
+from PIL import Image
+import pyautogui
+import os
+import sys
+from ctypes import windll
+import traceback
+
+def print_exception_with_line():
+    """自定义异常处理，打印完整行号"""
+    exc_type, exc_value, exc_tb = sys.exc_info()
+    print("\n" + "="*50)
+    print("错误详情：")
+    print("="*50)
+    traceback.print_exception(exc_type, exc_value, exc_tb)
+    print("="*50)
+
+# 启用DPI感知
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except:
+        pass
+
+class QueensSudokuHelper:
+    def __init__(self, window_title="智商不够别点"):
+        self.window_title = window_title
+        self.hwnd = None
+        self.screenshot = None
+        self.game_area = None  # (x1, y1, x2, y2)
+        self.grid_colors = None
+        self.color_map = {}  # {color_code: (r, g, b)}
+        self.solution = None
+
+    def find_window(self):
+        """查找窗口句柄"""
+        self.hwnd = win32gui.FindWindow(None, self.window_title)
+        print(f"窗口句柄: {self.hwnd}")
+        if not self.hwnd:
+            raise Exception(f"未找到窗口: {self.window_title}")
+        return self.hwnd
+
+    def capture_screenshot(self):
+        """使用 PrintWindow 截图，支持后台/最小化窗口"""
+        if not self.hwnd:
+            self.find_window()
+
+        # 获取客户区尺寸
+        left, top, right, bottom = win32gui.GetClientRect(self.hwnd)
+        width = right - left
+        height = bottom - top
+
+        # 创建设备上下文
+        hwndDC = win32gui.GetWindowDC(self.hwnd)
+        mfcDC = win32ui.CreateDCFromHandle(hwndDC)
+        saveDC = mfcDC.CreateCompatibleDC()
+
+        # 创建位图
+        saveBitMap = win32ui.CreateBitmap()
+        saveBitMap.CreateCompatibleBitmap(mfcDC, width, height)
+        saveDC.SelectObject(saveBitMap)
+
+        # ========== 关键修改：使用 PrintWindow 替代 BitBlt ==========
+        # 参数3的含义：
+        # 0 = 仅客户区
+        # 1 = 整个窗口（含标题栏边框）
+        # 2 = 客户区（Win8+，更可靠）
+        # 3 = 整个窗口（Win8+，推荐）
+
+        PW_CLIENTONLY = 0
+        PW_WINDOW = 1
+        PW_RENDERFULLCONTENT = 2  # Win8+
+        PW_RENDERFULLCONTENT_WINDOW = 3  # Win8+，整个窗口
+
+        result = windll.user32.PrintWindow(self.hwnd, saveDC.GetSafeHdc(), 3)
+
+        if result == 0:
+            print("PrintWindow 失败，尝试 BitBlt 备用...")
+            saveDC.BitBlt((0, 0), (width, height), mfcDC, (0, 0), win32con.SRCCOPY)
+
+        # 获取位图数据
+        bmpinfo = saveBitMap.GetInfo()
+        bmpstr = saveBitMap.GetBitmapBits(True)
+
+        # 转换为 numpy（BGRX 格式）
+        img = Image.frombuffer(
+            'RGB',
+            (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
+            bmpstr,
+            'raw',
+            'BGRX',
+            0,
+            1
+        )
+
+        # 清理资源
+        win32gui.DeleteObject(saveBitMap.GetHandle())
+        saveDC.DeleteDC()
+        mfcDC.DeleteDC()
+        win32gui.ReleaseDC(self.hwnd, hwndDC)
+
+        self.screenshot = np.array(img)
+        return self.screenshot
+
+    def find_game_area(self):
+        """定位游戏地图操作区"""
+        if self.screenshot is None:
+            self.capture_screenshot()
+
+        height, width, _ = self.screenshot.shape
+        # 忽略四边10像素
+        start_x, end_x = 10, width - 10
+        start_y, end_y = 10, height - 10
+        print(f"游戏窗口尺寸: {start_x}, {start_y}, {end_x}, {end_y}")
+
+        COLOR_FFFFFF = (0xFF, 0xFF, 0xFF)
+        COLOR_F0F0F0 = (0xF0, 0xF0, 0xF0)
+
+        for y in range(start_y, end_y):
+            row = self.screenshot[y, start_x:end_x]
+
+            # 统计颜色分布
+            color_count = {
+                'ff': 0,
+                'f0': 0,
+                'other': 0
+            }
+
+            for pixel in row:
+                pixel_tuple = tuple(pixel)
+                if pixel_tuple == COLOR_FFFFFF:
+                    color_count['ff'] += 1
+                elif pixel_tuple == COLOR_F0F0F0:
+                    color_count['f0'] += 1
+                else:
+                    color_count['other'] += 1
+
+            # 检查是否符合条件：主要由ffffff和f0f0f0组成，其他颜色少于10个
+            if color_count['other'] < 10 and color_count['f0'] > 0:
+                # color_count['f0'] 的数量必须占当前行的 80% 以上
+                if color_count['f0'] / (end_x - start_x) < 0.8:
+                    continue
+                # 按照新算法计算游戏区坐标
+                # x1 = (ffffff数量 + other数量) / 2
+                # x2 = x1 + f0数量
+                x1 = int((color_count['ff'] + color_count['other']) / 2)
+                game_width = color_count['f0']
+
+                # 转换为绝对坐标
+                x1_abs = start_x + x1
+                y1_abs = y
+                x2_abs = x1_abs + game_width
+                y2_abs = y1_abs + game_width
+
+                self.game_area = (x1_abs, y1_abs, x2_abs, y2_abs)
+                print(f"游戏区域坐标: {self.game_area}")
+                return self.game_area
+
+        raise Exception("未找到游戏操作区")
+
+    def extract_grid_colors(self):
+        """提取棋盘色块信息"""
+        if self.game_area is None:
+            self.find_game_area()
+
+        x1, y1, x2, y2 = self.game_area
+        game_img = self.screenshot[y1:y2, x1:x2]
+        height, width, _ = game_img.shape
+
+        COLOR_F0F0F0 = (0xF0, 0xF0, 0xF0)
+        COLOR_F2F2F2 = (0xF2, 0xF2, 0xF2)
+        COLOR_FFFFFF = (0xFF, 0xFF, 0xFF)
+
+
+        # 收集所有色块颜色
+        color_dict = {}
+        grid_data = []
+
+        # 记录当前行状态：0-背景行，1-棋盘行
+        row_stat = 0
+        # 逐行扫描
+        y = 0
+        while y < height:
+            row = game_img[y]
+            if row_stat == 1: # 棋盘行，跳过色块，需要等待背景行出现
+                if np.all(row == COLOR_F0F0F0):
+                    row_stat = 0 # 切换到背景行，下次循环开始等待色块
+                y += 1
+                continue
+            # 背景行，跳过背景，需要等待色块出现
+            if np.all(row == COLOR_F0F0F0): # 跳过背景
+                y += 1
+                continue
+
+            # 记录当前列状态：0-背景列(边框)，1-棋盘列(色块)
+            col_stat = 0
+            # 检测该行色块
+            row_colors = []
+            i = 0
+            while i < width:
+                pixel_tuple = tuple(game_img[y, i])
+                if col_stat == 1: # 棋盘列，跳过色块，需要等待背景列出现
+                    if pixel_tuple == COLOR_F0F0F0:
+                        # 连续 5 个 f0，判断是否为背景列
+                        if i + 5 >= width: # 超出边界，跳过
+                            break
+                        # 检查是否为背景列
+                        if np.all(game_img[y, i:i+5] == COLOR_F0F0F0):
+                            col_stat = 0 # 切换到背景列，下次循环开始等待色块
+                            i += 5
+                            continue
+                    i += 1
+                    continue
+                # 背景列，跳过背景，需要等待色块出现
+                # 跳过 f0
+                if pixel_tuple == COLOR_F0F0F0:
+                    i += 1
+                    continue
+
+                # 跳过圆角，原理：检查下一行同列色块颜色是否一致
+                # row_colors 为空时才进行检查，避免重复检查
+                if not row_colors:
+                    if y + 1 >= height: # 超出边界，跳过
+                        break
+                    next_row_pixel_tuple = tuple(game_img[y + 1, i])
+                    if not (pixel_tuple == next_row_pixel_tuple):
+                        break
+
+                # 获取色块颜色，原理：跳过10个像素边框过度，检测第11-20个像素的颜色是否相同
+                if i + 20 >= width: # 超出边界，跳过
+                    break
+                pixels_piece = game_img[y, i+11:i+20]
+                # pixels_piece[0] 不能为 f0
+                current_color = tuple(pixels_piece[0])
+                if current_color == COLOR_F0F0F0:
+                    i += 1
+                    continue
+                if current_color == COLOR_F2F2F2:
+                    i += 1
+                    continue
+                if current_color == COLOR_FFFFFF:
+                    i += 1
+                    continue
+
+                if not np.all(pixels_piece == pixels_piece[0]):
+                    i += 1
+                    continue
+
+                # 找到连续色块
+                col_stat = 1 # 切换到棋盘列，下次循环开始等待色块
+                i += 21
+                if current_color not in color_dict:
+                    color_dict[current_color] = len(color_dict)
+                row_colors.append(current_color)
+
+            if row_colors:
+                grid_data.append(row_colors)
+                row_stat = 1 # 切换到棋盘行，下次循环开始等待色块
+            y += 1
+
+        # 转换为颜色代码的二维数组
+        self.grid_colors = []
+        for row in grid_data:
+            color_row = []
+            for color in row:
+                for rgb, code in color_dict.items():
+                    if rgb == color:
+                        color_row.append(code)
+                        break
+            self.grid_colors.append(color_row)
+
+        # 构建颜色映射
+        self.color_map = {i: color for i, color in enumerate(color_dict)}
+
+        return self.grid_colors, self.color_map
+
+    def check_grid(self):
+        """检查棋盘是否有效"""
+        if self.grid_colors is None:
+            return False
+        # color_map 数量应该与 grid_colors 数量一致
+        if len(self.color_map) != len(self.grid_colors):
+            print(f"color_map 数量与 grid_colors 数量不一致，color_map 数量 {len(self.color_map)}，与 grid_colors 数量 {len(self.grid_colors)} 不一致")
+            return False
+        # 每一行 grid_colors 的数量都应该与 grid_colors 的数量一致
+        for row in self.grid_colors:
+            if len(row) != len(self.grid_colors):
+                print(f"行 grid_colors 数量 {len(row)} 与 grid_colors 数量 {len(self.grid_colors)} 不一致")
+                return False
+        return True
+
+    def solve_sudoku(self):
+        """使用回溯法求解数独游戏"""
+
+        grid = np.array(self.grid_colors)
+        n = len(grid)
+
+        solution = []
+        used_cols = set()
+        used_colors = set()
+
+        def backtrack(row):
+            if row == n:
+                return True
+
+            for col in range(n):
+                # 检查列是否已使用
+                if col in used_cols:
+                    continue
+
+                color = grid[row][col]
+
+                # 检查颜色是否已使用
+                if color in used_colors:
+                    continue
+
+                # 检查是否与已放置的小牛相邻
+                valid = True
+                for r, c in enumerate(solution):
+                    if abs(r - row) <= 1 and abs(c - col) <= 1:
+                        valid = False
+                        break
+
+                if not valid:
+                    continue
+
+                # 放置小牛
+                solution.append(col)
+                used_cols.add(col)
+                used_colors.add(color)
+
+                if backtrack(row + 1):
+                    return True
+
+                # 回溯
+                solution.pop()
+                used_cols.remove(col)
+                used_colors.remove(color)
+
+            return False
+
+        if backtrack(0):
+            self.solution = solution
+            return self.solution
+        return None
+
+    def print_grid(self):
+        """打印棋盘"""
+
+        print("颜色映射：")
+        for code, rgb in self.color_map.items():
+            print(f"{code}:\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
+            print(f" ", end="")
+        print()
+
+        print("棋盘数字：")
+        for row in self.grid_colors:
+            for code in row:
+                print(f"{code}", end=" ")
+            print()
+
+        print("棋盘颜色：")
+        for row in self.grid_colors:
+            for color_code in row:
+                rgb = self.color_map[color_code]
+                print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
+                print(f" ", end="")
+            print()
+            print()
+
+    def print_solution_text(self):
+        """以文字形式打印解"""
+        if not self.solution:
+            print("无解")
+            return
+
+        for row, col in enumerate(self.solution):
+            color_code = self.grid_colors[row][col]
+            rgb = self.color_map[color_code]
+            row_code = len(self.color_map) - row
+            print(f"行:{row_code} 列:{col+1} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m")
+
+    def print_solution_grid(self):
+        """以棋盘形式打印解"""
+        if not self.solution:
+            print("无解")
+            return
+
+        for row_idx, row in enumerate(self.grid_colors):
+            for col_idx, color_code in enumerate(row):
+                rgb = self.color_map[color_code]
+                if self.solution[row_idx] == col_idx:
+                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m🐮\033[0m", end="")
+                else:
+                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
+                print(f" ", end="")
+            print()
+            print()
+
+    def run(self):
+        """运行完整流程"""
+        try:
+            print("查找窗口...")
+            self.find_window()
+            print("截图...")
+            self.capture_screenshot()
+            print("定位游戏区域...")
+            self.find_game_area()
+            print("提取棋盘信息...")
+            self.extract_grid_colors()
+            print("打印棋盘...")
+            self.print_grid()
+            print("检查棋盘...")
+            valid = self.check_grid()
+            if not valid:
+                print("棋盘无效")
+                return
+            print("棋盘有效")
+            print("求解中...")
+            self.solve_sudoku()
+            print("解（文字形式）：")
+            self.print_solution_text()
+            print("解（棋盘形式）：")
+            self.print_solution_grid()
+        except Exception as e:
+            print_exception_with_line()
+
+
+if __name__ == "__main__":
+    import sys
+
+    # 添加测试模式，当命令行参数包含 "--test" 时使用示例数据
+    if len(sys.argv) > 1 and sys.argv[1] == "--test":
+        # 使用示例棋盘数据测试
+        helper = QueensSudokuHelper()
+        # 示例棋盘数据
+        helper.grid_colors = [
+            [0, 0, 0, 0, 0, 0, 0, 7],
+            [0, 1, 1, 3, 3, 3, 0, 7],
+            [0, 1, 2, 2, 2, 3, 0, 7],
+            [0, 1, 5, 4, 2, 3, 0, 7],
+            [6, 1, 5, 4, 4, 3, 0, 7],
+            [6, 1, 5, 5, 5, 3, 0, 7],
+            [6, 1, 1, 1, 0, 0, 0, 7],
+            [6, 6, 7, 7, 7, 7, 7, 7],
+        ]
+        # 示例颜色映射
+        helper.color_map = {
+            0: (255, 0, 0),
+            1: (0, 255, 0),
+            2: (0, 0, 255),
+            3: (255, 255, 0),
+            4: (255, 0, 255),
+            5: (0, 255, 255),
+            6: (128, 0, 0),
+            7: (0, 128, 0),
+        }
+
+        print("使用示例棋盘进行测试...")
+        print("打印棋盘...")
+        helper.print_grid()
+        print("求解中...")
+        helper.solve_sudoku()
+        print("\n解（文字形式）：")
+        helper.print_solution_text()
+        print("\n解（棋盘形式）：")
+        helper.print_solution_grid()
+    else:
+        # 正常运行模式
+        try:
+            helper = QueensSudokuHelper()
+            helper.run()
+        except Exception as e:
+            print(f"错误：{e}")
+            print("请确保游戏窗口'智商不够别点'已打开，或使用 --test 参数运行测试模式")

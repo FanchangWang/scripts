@@ -1,0 +1,16 @@
+[project]
+name = "queens-sudoku"
+version = "0.1.0"
+description = "佛系消消消(皇后数独)求解器"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.4.3",
+    "pillow>=12.1.1",
+    "pyautogui>=0.9.54",
+    "pywin32>=311",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
