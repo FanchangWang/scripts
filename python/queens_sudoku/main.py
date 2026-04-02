@@ -257,7 +257,7 @@ class QueensSudokuHelper:
                     color_dict[current_color] = len(color_dict)
                 row_colors.append(current_color)
 
-            if row_colors:
+            if row_colors and len(row_colors) >= 4:
                 grid_data.append(row_colors)
                 row_stat = 1 # 切换到棋盘行，下次循环开始等待色块
             y += 1
@@ -348,6 +348,79 @@ class QueensSudokuHelper:
             return self.solution
         return None
 
+    def solve_sudoku2(self):
+        """使用回溯法求解数独游戏（每行每列每颜色各2头牛）"""
+        grid = np.array(self.grid_colors)
+        n = len(grid)
+
+        solution = []
+        col_count = [0] * n
+        color_count = {}
+        placed_positions = []
+
+        def backtrack(row):
+            # 如果当前行已经放了2个，进入下一行
+            if len(solution) > row and len(solution[row]) == 2:
+                if row + 1 == n:
+                    # 检查是否所有列和颜色都恰好有2个
+                    for i in range(n):
+                        if col_count[i] != 2:
+                            return False
+                    for c in range(n):
+                        if color_count.get(c, 0) != 2:
+                            return False
+                    return True
+                return backtrack(row + 1)
+
+            # 确保 solution 列表长度足够
+            while len(solution) <= row:
+                solution.append([])
+
+            for col in range(n):
+                # 检查该列是否已经有2个小牛
+                if col_count[col] >= 2:
+                    continue
+
+                color = grid[row][col]
+
+                # 检查该颜色是否已经有2个小牛
+                if color_count.get(color, 0) >= 2:
+                    continue
+
+                # [删除] 原来在这里的"检查当前行是否已经放过这个颜色"代码块已移除
+
+                # 检查是否与已放置的小牛相邻（周围8格）
+                valid = True
+                for r, c in placed_positions:
+                    if abs(r - row) <= 1 and abs(c - col) <= 1:
+                        valid = False
+                        break
+
+                if not valid:
+                    continue
+
+                # 放置小牛
+                solution[row].append(col)
+                col_count[col] += 1
+                color_count[color] = color_count.get(color, 0) + 1
+                placed_positions.append((row, col))
+
+                if backtrack(row):
+                    return True
+
+                # 回溯
+                solution[row].pop()
+                col_count[col] -= 1
+                color_count[color] -= 1
+                placed_positions.pop()
+
+            return False
+
+        if backtrack(0):
+            self.solution = solution
+            return self.solution
+        return None
+
     def print_grid(self):
         """打印棋盘"""
 
@@ -372,24 +445,22 @@ class QueensSudokuHelper:
             print()
             print()
 
-    def print_solution_text(self):
-        """以文字形式打印解"""
+    def print_solution(self):
+        """打印 solve_sudoku 的解（文字形式+棋盘形式）"""
         if not self.solution:
             print("无解")
             return
 
+        # 文字形式
+        print("解（文字形式）：")
         for row, col in enumerate(self.solution):
             color_code = self.grid_colors[row][col]
             rgb = self.color_map[color_code]
             row_code = len(self.color_map) - row
             print(f"行:{row_code} 列:{col+1} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m")
 
-    def print_solution_grid(self):
-        """以棋盘形式打印解"""
-        if not self.solution:
-            print("无解")
-            return
-
+        # 棋盘形式
+        print("\n解（棋盘形式）：")
         for row_idx, row in enumerate(self.grid_colors):
             for col_idx, color_code in enumerate(row):
                 rgb = self.color_map[color_code]
@@ -401,7 +472,36 @@ class QueensSudokuHelper:
             print()
             print()
 
-    def run(self):
+    def print_solution2(self):
+        """打印 solve_sudoku2 的解（每行2头牛）"""
+        if not self.solution:
+            print("无解")
+            return
+
+        # 文字形式
+        print("解（文字形式）：")
+        for row_idx, cols in enumerate(self.solution):
+            for col in cols:
+                color_code = self.grid_colors[row_idx][col]
+                rgb = self.color_map[color_code]
+                row_code = len(self.color_map) - row_idx
+                print(f"行:{row_code} 列:{col+1} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m")
+
+        # 棋盘形式
+        print("\n解（棋盘形式）：")
+        for row_idx, row in enumerate(self.grid_colors):
+            for col_idx, color_code in enumerate(row):
+                rgb = self.color_map[color_code]
+                # 检查当前位置是否在 solution 中
+                if col_idx in self.solution[row_idx]:
+                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m🐮\033[0m", end="")
+                else:
+                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
+                print(f" ", end="")
+            print()
+            print()
+
+    def run(self, mode="1"):
         """运行完整流程"""
         try:
             print("查找窗口...")
@@ -420,12 +520,17 @@ class QueensSudokuHelper:
                 print("棋盘无效")
                 return
             print("棋盘有效")
-            print("求解中...")
-            self.solve_sudoku()
-            print("解（文字形式）：")
-            self.print_solution_text()
-            print("解（棋盘形式）：")
-            self.print_solution_grid()
+
+            # 根据模式求解
+            if mode == "2":
+                print("求解中（双牛模式）...")
+                self.solve_sudoku2()
+                self.print_solution2()
+            else:
+                print("求解中（单牛模式）...")
+                self.solve_sudoku()
+                self.print_solution()
+
         except Exception as e:
             print_exception_with_line()
 
@@ -433,47 +538,17 @@ class QueensSudokuHelper:
 if __name__ == "__main__":
     import sys
 
-    # 添加测试模式，当命令行参数包含 "--test" 时使用示例数据
-    if len(sys.argv) > 1 and sys.argv[1] == "--test":
-        # 使用示例棋盘数据测试
-        helper = QueensSudokuHelper()
-        # 示例棋盘数据
-        helper.grid_colors = [
-            [0, 0, 0, 0, 0, 0, 0, 7],
-            [0, 1, 1, 3, 3, 3, 0, 7],
-            [0, 1, 2, 2, 2, 3, 0, 7],
-            [0, 1, 5, 4, 2, 3, 0, 7],
-            [6, 1, 5, 4, 4, 3, 0, 7],
-            [6, 1, 5, 5, 5, 3, 0, 7],
-            [6, 1, 1, 1, 0, 0, 0, 7],
-            [6, 6, 7, 7, 7, 7, 7, 7],
-        ]
-        # 示例颜色映射
-        helper.color_map = {
-            0: (255, 0, 0),
-            1: (0, 255, 0),
-            2: (0, 0, 255),
-            3: (255, 255, 0),
-            4: (255, 0, 255),
-            5: (0, 255, 255),
-            6: (128, 0, 0),
-            7: (0, 128, 0),
-        }
+    # 解析命令行参数
+    mode = "1"
 
-        print("使用示例棋盘进行测试...")
-        print("打印棋盘...")
-        helper.print_grid()
-        print("求解中...")
-        helper.solve_sudoku()
-        print("\n解（文字形式）：")
-        helper.print_solution_text()
-        print("\n解（棋盘形式）：")
-        helper.print_solution_grid()
-    else:
-        # 正常运行模式
-        try:
-            helper = QueensSudokuHelper()
-            helper.run()
-        except Exception as e:
-            print(f"错误：{e}")
-            print("请确保游戏窗口'智商不够别点'已打开，或使用 --test 参数运行测试模式")
+    for arg in sys.argv[1:]:
+        if arg == "--2":
+            mode = "2"
+
+    # 正常运行模式
+    try:
+        helper = QueensSudokuHelper()
+        helper.run(mode)
+    except Exception as e:
+        print(f"错误：{e}")
+        print("请确保游戏窗口'智商不够别点'已打开")
