@@ -167,8 +167,6 @@ class QueensSudokuHelper:
         height, width, _ = game_img.shape
 
         COLOR_F0F0F0 = (0xF0, 0xF0, 0xF0)
-        COLOR_F2F2F2 = (0xF2, 0xF2, 0xF2)
-        COLOR_FFFFFF = (0xFF, 0xFF, 0xFF)
 
         # 收集所有色块颜色
         color_dict = {}
@@ -177,84 +175,74 @@ class QueensSudokuHelper:
         # 记录当前行状态：0-背景行，1-棋盘行
         row_stat = 0
         # 逐行扫描
-        y = 0
-        while y < height:
+        for y in range(height):
             row = game_img[y]
             if row_stat == 1: # 棋盘行，跳过色块，需要等待背景行出现
-                if np.all(row == COLOR_F0F0F0):
+                if np.all(row == COLOR_F0F0F0): # 背景行出现
                     row_stat = 0 # 切换到背景行，下次循环开始等待色块
-                y += 1
-                continue
-            # 背景行，跳过背景，需要等待色块出现
-            if np.all(row == COLOR_F0F0F0): # 跳过背景
-                y += 1
-                continue
+            else: # 背景行，跳过背景，需要等待色块出现
+                if np.all(row == COLOR_F0F0F0): # 跳过背景行
+                    continue
 
-            # 记录当前列状态：0-背景列(边框)，1-棋盘列(色块)
-            col_stat = 0
-            # 检测该行色块
-            row_colors = []
-            i = 0
-            while i < width:
-                pixel_tuple = tuple(game_img[y, i])
-                if col_stat == 1: # 棋盘列，跳过色块，需要等待背景列出现
-                    if pixel_tuple == COLOR_F0F0F0:
-                        # 连续 5 个 f0，判断是否为背景列
-                        if i + 5 >= width: # 超出边界，跳过
-                            break
-                        # 检查是否为背景列
-                        if np.all(game_img[y, i:i+5] == COLOR_F0F0F0):
-                            col_stat = 0 # 切换到背景列，下次循环开始等待色块
-                            i += 5
+                # 记录当前列状态：0-背景列(边框)，1-棋盘列(色块)
+                col_stat = 0
+                # 检测该行色块
+                row_colors = []
+                i = 0
+                while i < width:
+                    pixel_tuple = tuple(row[i])
+                    if col_stat == 1: # 棋盘列，跳过色块，需要等待背景列出现
+                        if pixel_tuple == COLOR_F0F0F0:
+                            # 连续 5 个 f0，判断是否为背景列
+                            if i + 5 >= width: # 超出边界，跳过
+                                break
+                            # 检查是否为背景列
+                            if np.all(row[i:i+5] == COLOR_F0F0F0):
+                                col_stat = 0 # 切换到背景列，下次循环开始等待色块
+                                i += 5
+                                continue
+                        i += 1
+                    else: # 背景列，跳过背景，需要等待色块出现
+                        # 跳过 f0
+                        if pixel_tuple == COLOR_F0F0F0:
+                            i += 1
                             continue
-                    i += 1
-                    continue
-                # 背景列，跳过背景，需要等待色块出现
-                # 跳过 f0
-                if pixel_tuple == COLOR_F0F0F0:
-                    i += 1
-                    continue
 
-                # 跳过圆角，原理：检查下一行同列色块颜色是否一致
-                # row_colors 为空时才进行检查，避免重复检查
-                if not row_colors:
-                    if y + 1 >= height: # 超出边界，跳过
-                        break
-                    next_row_pixel_tuple = tuple(game_img[y + 1, i])
-                    if not (pixel_tuple == next_row_pixel_tuple):
-                        break
+                        # 跳过圆角，原理：检查下一行同列色块颜色是否一致
+                        # row_colors 为空时才进行检查，避免重复检查
+                        if not row_colors:
+                            if y + 1 >= height: # 超出边界，跳过
+                                break
+                            next_row = game_img[y + 1]
+                            next_row_pixel_tuple = tuple(next_row[i])
+                            if not (pixel_tuple == next_row_pixel_tuple):
+                                break
 
-                # 获取色块颜色，原理：跳过10个像素边框过度，检测第11-20个像素的颜色是否相同
-                if i + 20 >= width: # 超出边界，跳过
-                    break
-                pixels_piece = game_img[y, i+11:i+20]
-                # pixels_piece[0] 不能为 f0
-                current_color = tuple(pixels_piece[0])
-                if current_color == COLOR_F0F0F0:
-                    i += 1
-                    continue
-                if current_color == COLOR_F2F2F2:
-                    i += 1
-                    continue
-                if current_color == COLOR_FFFFFF:
-                    i += 1
-                    continue
+                        # 获取色块颜色，原理：跳过10个像素边框过度，检测第11-20个像素的颜色是否相同
+                        if i + 20 >= width: # 超出边界，跳过
+                            break
+                        pixels_piece = row[i+11:i+20]
+                        # pixels_piece[0] 不能为 f0
+                        current_color = tuple(pixels_piece[0])
+                        if current_color == COLOR_F0F0F0:
+                            i += 1
+                            continue
 
-                if not np.all(pixels_piece == pixels_piece[0]):
-                    i += 1
-                    continue
+                        if not np.all(pixels_piece == pixels_piece[0]):
+                            i += 1
+                            continue
 
-                # 找到连续色块
-                col_stat = 1 # 切换到棋盘列，下次循环开始等待色块
-                i += 21
-                if current_color not in color_dict:
-                    color_dict[current_color] = len(color_dict)
-                row_colors.append(current_color)
+                        # 找到连续色块
+                        col_stat = 1 # 切换到棋盘列，下次循环开始等待色块
+                        i += 21
+                        if current_color not in color_dict:
+                            color_dict[current_color] = len(color_dict)
+                        row_colors.append(current_color)
 
-            if row_colors and len(row_colors) >= 4:
-                grid_data.append(row_colors)
-                row_stat = 1 # 切换到棋盘行，下次循环开始等待色块
-            y += 1
+                # 棋盘最小为 4x4
+                if row_colors and len(row_colors) >= 4:
+                    grid_data.append(row_colors)
+                    row_stat = 1 # 切换到棋盘行，下次循环开始等待色块
 
         # 转换为颜色代码的二维数组
         self.grid_colors = []
@@ -278,14 +266,43 @@ class QueensSudokuHelper:
             return False
         # color_map 数量应该与 grid_colors 数量一致
         if len(self.color_map) != len(self.grid_colors):
-            print(f"color_map 数量与 grid_colors 数量不一致，color_map 数量 {len(self.color_map)}，与 grid_colors 数量 {len(self.grid_colors)} 不一致")
+            print(f"color 与 grid 数量不一致! color_map={len(self.color_map)} grid_colors={len(self.grid_colors)}")
             return False
         # 每一行 grid_colors 的数量都应该与 grid_colors 的数量一致
         for row in self.grid_colors:
             if len(row) != len(self.grid_colors):
-                print(f"行 grid_colors 数量 {len(row)} 与 grid_colors 数量 {len(self.grid_colors)} 不一致")
+                print(f"grid 行与列数量不一致! 行={len(row)} 列={len(self.grid_colors)}")
                 return False
         return True
+
+    def print_grid(self):
+        """打印棋盘"""
+
+        print("颜色映射：")
+        for code, rgb in self.color_map.items():
+            print(f"{code}:\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
+            print(f" ", end="")
+        print()
+
+        print("棋盘数字：")
+        for row in self.grid_colors:
+            for code in row:
+                print(f"{code:2d}", end=" ")
+            print()
+
+        print("棋盘颜色：")
+        for row_idx, row in enumerate(self.grid_colors):
+            row_code = len(self.color_map) - row_idx
+            print(f"{row_code:2d}", end=" ")
+            for color_code in row:
+                rgb = self.color_map[color_code]
+                print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
+                print(f" ", end="")
+            print()
+            print()
+        for col_idx in range(len(self.grid_colors) + 1):
+            print(f"{col_idx:2d}", end=" ")
+        print()
 
     def solve_sudoku(self):
         """使用回溯法求解数独游戏"""
@@ -415,30 +432,6 @@ class QueensSudokuHelper:
             return self.solution
         return None
 
-    def print_grid(self):
-        """打印棋盘"""
-
-        print("颜色映射：")
-        for code, rgb in self.color_map.items():
-            print(f"{code}:\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
-            print(f" ", end="")
-        print()
-
-        print("棋盘数字：")
-        for row in self.grid_colors:
-            for code in row:
-                print(f"{code}", end=" ")
-            print()
-
-        print("棋盘颜色：")
-        for row in self.grid_colors:
-            for color_code in row:
-                rgb = self.color_map[color_code]
-                print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
-                print(f" ", end="")
-            print()
-            print()
-
     def print_solution(self):
         """打印 solve_sudoku 的解（文字形式+棋盘形式）"""
         if not self.solution:
@@ -451,20 +444,25 @@ class QueensSudokuHelper:
             color_code = self.grid_colors[row][col]
             rgb = self.color_map[color_code]
             row_code = len(self.color_map) - row
-            print(f"行:{row_code} 列:{col+1} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m")
+            col_code = col + 1
+            print(f"行:{row_code:2d} 列:{col_code:2d} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m")
 
         # 棋盘形式
         print("\n解（棋盘形式）：")
         for row_idx, row in enumerate(self.grid_colors):
+            row_code = len(self.color_map) - row_idx
+            print(f"{row_code:2d}", end=" ")
             for col_idx, color_code in enumerate(row):
                 rgb = self.color_map[color_code]
                 if self.solution[row_idx] == col_idx:
-                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m🐮\033[0m", end="")
+                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m🐮\033[0m", end=" ")
                 else:
-                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
-                print(f" ", end="")
+                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end=" ")
             print()
             print()
+        for col_idx in range(len(self.grid_colors) + 1):
+            print(f"{col_idx:2d}", end=" ")
+        print()
 
     def print_solution2(self):
         """打印 solve_sudoku2 的解（每行2头牛）"""
@@ -479,11 +477,14 @@ class QueensSudokuHelper:
                 color_code = self.grid_colors[row_idx][col]
                 rgb = self.color_map[color_code]
                 row_code = len(self.color_map) - row_idx
-                print(f"行:{row_code} 列:{col+1} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m")
+                col_code = col + 1
+                print(f"行:{row_code:2d} 列:{col_code:2d} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m")
 
         # 棋盘形式
         print("\n解（棋盘形式）：")
         for row_idx, row in enumerate(self.grid_colors):
+            row_code = len(self.color_map) - row_idx
+            print(f"{row_code:2d}", end=" ")
             for col_idx, color_code in enumerate(row):
                 rgb = self.color_map[color_code]
                 # 检查当前位置是否在 solution 中
@@ -494,6 +495,9 @@ class QueensSudokuHelper:
                 print(f" ", end="")
             print()
             print()
+        for col_idx in range(len(self.grid_colors) + 1):
+            print(f"{col_idx:2d}", end=" ")
+        print()
 
     def run(self, mode="1"):
         """运行完整流程"""
