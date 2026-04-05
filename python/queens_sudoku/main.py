@@ -1,9 +1,10 @@
 import sys
+import time
 import traceback
 from ctypes import windll
 
 import numpy as np
-import pyautogui
+import win32api
 import win32con
 import win32gui
 import win32ui
@@ -34,9 +35,11 @@ class QueensSudokuHelper:
     def __init__(self, window_title="智商不够别点"):
         self.window_title = window_title
         self.hwnd = None
+        self.client_origin_screen = None
         self.screenshot = None
         self.game_area = None  # [x1, y1, x2, y2]
-        self.grid_colors = None
+        self.grid_colors = []  # 地图格子 => 颜色
+        self.grid_coords = []  # 地图格子 => 坐标
         self.color_map = {}  # {color_code: (r, g, b)}
         self.solution = None
 
@@ -49,10 +52,9 @@ class QueensSudokuHelper:
         return self.hwnd
 
     def capture_screenshot(self):
-        """使用 PrintWindow 截图，支持后台/最小化窗口"""
-        if not self.hwnd:
-            self.find_window()
-
+        """使用 PrintWindow 截图，支持后台窗口"""
+        # 记录左上角 0,0 屏幕坐标
+        self.client_origin_screen = win32gui.ClientToScreen(self.hwnd, (0, 0))
         # 获取客户区尺寸
         left, top, right, bottom = win32gui.GetClientRect(self.hwnd)
         width = right - left
@@ -70,15 +72,10 @@ class QueensSudokuHelper:
 
         # ========== 关键修改：使用 PrintWindow 替代 BitBlt ==========
         # 参数3的含义：
-        # 0 = 仅客户区
-        # 1 = 整个窗口（含标题栏边框）
-        # 2 = 客户区（Win8+，更可靠）
-        # 3 = 整个窗口（Win8+，推荐）
-
-        PW_CLIENTONLY = 0
-        PW_WINDOW = 1
-        PW_RENDERFULLCONTENT = 2  # Win8+
-        PW_RENDERFULLCONTENT_WINDOW = 3  # Win8+，整个窗口
+        # PW_CLIENTONLY = 0 # 0 = 仅客户区
+        # PW_WINDOW = 1 # 1 = 整个窗口（含标题栏边框）
+        # PW_RENDERFULLCONTENT = 2  # Win8+ # 2 = 客户区（Win8+，更可靠）
+        # PW_RENDERFULLCONTENT_WINDOW = 3  # Win8+，整个窗口 # 3 = 整个窗口（Win8+，推荐）
 
         result = windll.user32.PrintWindow(self.hwnd, saveDC.GetSafeHdc(), 3)
 
@@ -160,7 +157,7 @@ class QueensSudokuHelper:
                     # print(f"条件4成功: {y} 更新 y2")
                     self.game_area[3] = y
 
-        if not self.game_area is None:
+        if self.game_area is not None:
             print(f"游戏区域坐标: {self.game_area}")
             return self.game_area
 
@@ -176,7 +173,6 @@ class QueensSudokuHelper:
 
         # 收集所有色块颜色
         color_dict = {}
-        grid_data = []
 
         # 记录当前行状态：0-背景行，1-棋盘行
         row_stat = 0
@@ -192,26 +188,28 @@ class QueensSudokuHelper:
 
                 # 记录当前列状态：0-背景列(边框)，1-棋盘列(色块)
                 col_stat = 0
-                # 检测该行色块
+                # 记录当前行格子 颜色code
                 row_colors = []
-                i = 0
-                while i < width:
-                    pixel_tuple = tuple(row[i])
+                # 记录当前行格子 坐标
+                row_coords = []
+                x = 0
+                while x < width:
+                    pixel_tuple = tuple(row[x])
                     if col_stat == 1:  # 棋盘列，跳过色块，需要等待背景列出现
                         if pixel_tuple == COLOR_F0F0F0:
                             # 连续 5 个 f0，判断是否为背景列
-                            if i + 5 >= width:  # 超出边界，跳过
+                            if x + 5 >= width:  # 超出边界，跳过
                                 break
                             # 检查是否为背景列
-                            if np.all(row[i : i + 5] == COLOR_F0F0F0):
+                            if np.all(row[x : x + 5] == COLOR_F0F0F0):
                                 col_stat = 0  # 切换到背景列，下次循环开始等待色块
-                                i += 5
+                                x += 5
                                 continue
-                        i += 1
+                        x += 1
                     else:  # 背景列，跳过背景，需要等待色块出现
                         # 跳过 f0
                         if pixel_tuple == COLOR_F0F0F0:
-                            i += 1
+                            x += 1
                             continue
 
                         # 跳过圆角，原理：检查下一行同列色块颜色是否一致
@@ -220,56 +218,50 @@ class QueensSudokuHelper:
                             if y + 1 >= height:  # 超出边界，跳过
                                 break
                             next_row = game_img[y + 1]
-                            next_row_pixel_tuple = tuple(next_row[i])
+                            next_row_pixel_tuple = tuple(next_row[x])
                             if not (pixel_tuple == next_row_pixel_tuple):
                                 break
 
                         # 获取色块颜色，原理：跳过10个像素边框过度，检测第11-20个像素的颜色是否相同
-                        if i + 20 >= width:  # 超出边界，跳过
+                        if x + 20 >= width:  # 超出边界，跳过
                             break
-                        pixels_piece = row[i + 11 : i + 20]
+                        pixels_piece = row[x + 11 : x + 20]
                         # pixels_piece[0] 不能为 f0
                         current_color = tuple(pixels_piece[0])
                         if current_color == COLOR_F0F0F0:
-                            i += 1
+                            x += 1
                             continue
 
                         if not np.all(pixels_piece == pixels_piece[0]):
-                            i += 1
+                            x += 1
                             continue
 
                         # 找到连续色块
                         col_stat = 1  # 切换到棋盘列，下次循环开始等待色块
-                        i += 21
-                        if current_color not in color_dict:
-                            color_dict[current_color] = len(color_dict)
-                        row_colors.append(current_color)
+                        x += 21
+
+                        # 获取 color_code 并记录到 row_colors
+                        color_code = 0
+                        if current_color in color_dict:  # 已经存在
+                            color_code = color_dict[current_color]
+                        else:  # 新不存在的颜色
+                            color_code = len(color_dict)
+                            color_dict[current_color] = color_code
+                            self.color_map[color_code] = current_color
+                        row_colors.append(color_code)
+                        # 记录格子坐标（加上游戏区域偏移）
+                        row_coords.append({"x": x1 + x, "y": y1 + y + 20})
 
                 # 棋盘最小为 4x4
                 if row_colors and len(row_colors) >= 4:
-                    grid_data.append(row_colors)
+                    self.grid_colors.append(row_colors)  # 记录当前行格子 颜色code
+                    self.grid_coords.append(row_coords)  # 记录当前行格子 坐标
                     row_stat = 1  # 切换到棋盘行，下次循环开始等待色块
-
-        # 转换为颜色代码的二维数组
-        self.grid_colors = []
-        for row in grid_data:
-            color_row = []
-            for color in row:
-                for rgb, code in color_dict.items():
-                    if rgb == color:
-                        color_row.append(code)
-                        break
-            self.grid_colors.append(color_row)
-
-        # 构建颜色映射
-        self.color_map = {i: color for i, color in enumerate(color_dict)}
 
         return self.grid_colors, self.color_map
 
     def check_grid(self):
         """检查棋盘是否有效"""
-        if self.grid_colors is None:
-            return False
         # color_map 数量应该与 grid_colors 数量一致
         if len(self.color_map) != len(self.grid_colors):
             print(
@@ -290,8 +282,7 @@ class QueensSudokuHelper:
 
         print("颜色映射：")
         for code, rgb in self.color_map.items():
-            print(f"{code}:\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
-            print(f" ", end="")
+            print(f"{code}:\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end=" ")
         print()
 
         print("棋盘数字：")
@@ -306,8 +297,7 @@ class QueensSudokuHelper:
             print(f"{row_code:2d}", end=" ")
             for color_code in row:
                 rgb = self.color_map[color_code]
-                print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
-                print(f" ", end="")
+                print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end=" ")
             print()
             print()
         for col_idx in range(len(self.grid_colors) + 1):
@@ -443,30 +433,39 @@ class QueensSudokuHelper:
         return None
 
     def print_solution(self):
-        """打印 solve_sudoku 的解（文字形式+棋盘形式）"""
-        if not self.solution:
-            print("无解")
-            return
-
+        """打印 solve_sudoku2 的解（每行2头牛）"""
         # 文字形式
         print("解（文字形式）：")
-        for row, col in enumerate(self.solution):
-            color_code = self.grid_colors[row][col]
-            rgb = self.color_map[color_code]
-            row_code = len(self.color_map) - row
-            col_code = col + 1
-            print(
-                f"行:{row_code:2d} 列:{col_code:2d} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m"
-            )
+        for row_idx, col_item in enumerate(self.solution):
+            row_code = len(self.color_map) - row_idx
+            print(f"行:{row_code:2d}", end=" ")
+            # 兼容处理 单牛/双牛 模式 解格式
+            col_list = col_item if isinstance(col_item, list) else [col_item]
+            for col_idx in col_list:
+                color_code = self.grid_colors[row_idx][col_idx]
+                rgb = self.color_map[color_code]
+                col_code = col_idx + 1
+                print(
+                    f"列:{col_code:2d} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m",
+                    end=" ",
+                )
+            print()
 
         # 棋盘形式
-        print("\n解（棋盘形式）：")
+        print("解（棋盘形式）：")
         for row_idx, row in enumerate(self.grid_colors):
             row_code = len(self.color_map) - row_idx
             print(f"{row_code:2d}", end=" ")
             for col_idx, color_code in enumerate(row):
                 rgb = self.color_map[color_code]
-                if self.solution[row_idx] == col_idx:
+                # 兼容处理 单牛/双牛 模式 解格式
+                solution_list = (
+                    self.solution[row_idx]
+                    if isinstance(self.solution[row_idx], list)  # 双牛模式
+                    else [self.solution[row_idx]]  # 单牛模式
+                )
+                # 检查当前位置是否在 solution 中
+                if col_idx in solution_list:
                     print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m🐮\033[0m", end=" ")
                 else:
                     print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end=" ")
@@ -476,42 +475,36 @@ class QueensSudokuHelper:
             print(f"{col_idx:2d}", end=" ")
         print()
 
-    def print_solution2(self):
-        """打印 solve_sudoku2 的解（每行2头牛）"""
-        if not self.solution:
-            print("无解")
-            return
+    def mouse_doubleClick(self, x, y):
+        """双击鼠标 支持后台窗口"""
+        lparam = win32api.MAKELONG(x, y)
+        win32gui.PostMessage(
+            self.hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam
+        )
+        time.sleep(0.05)
+        win32gui.PostMessage(self.hwnd, win32con.WM_LBUTTONUP, 0, lparam)
+        time.sleep(0.1)
+        win32gui.PostMessage(
+            self.hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam
+        )
+        time.sleep(0.05)
+        win32gui.PostMessage(self.hwnd, win32con.WM_LBUTTONUP, 0, lparam)
 
-        # 文字形式
-        print("解（文字形式）：")
-        for row_idx, cols in enumerate(self.solution):
-            for col in cols:
-                color_code = self.grid_colors[row_idx][col]
-                rgb = self.color_map[color_code]
-                row_code = len(self.color_map) - row_idx
-                col_code = col + 1
-                print(
-                    f"行:{row_code:2d} 列:{col_code:2d} \033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m"
-                )
-
-        # 棋盘形式
-        print("\n解（棋盘形式）：")
-        for row_idx, row in enumerate(self.grid_colors):
-            row_code = len(self.color_map) - row_idx
-            print(f"{row_code:2d}", end=" ")
-            for col_idx, color_code in enumerate(row):
-                rgb = self.color_map[color_code]
-                # 检查当前位置是否在 solution 中
-                if col_idx in self.solution[row_idx]:
-                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m🐮\033[0m", end="")
-                else:
-                    print(f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m  \033[0m", end="")
-                print(f" ", end="")
-            print()
-            print()
-        for col_idx in range(len(self.grid_colors) + 1):
-            print(f"{col_idx:2d}", end=" ")
-        print()
+    def exec_solution(self):
+        """执行数独游戏（每行2头牛） 支持后台窗口"""
+        try:
+            # 如果窗口被最小化，先恢复
+            if win32gui.IsIconic(self.hwnd):
+                win32gui.ShowWindow(self.hwnd, win32con.SW_RESTORE)
+            time.sleep(0.3)
+        except Exception:
+            pass
+        for row_idx, col_item in enumerate(self.solution):
+            # 兼容处理 单牛/双牛 模式 解格式
+            col_list = col_item if isinstance(col_item, list) else [col_item]
+            for col_idx in col_list:
+                coord = self.grid_coords[row_idx][col_idx]
+                self.mouse_doubleClick(coord["x"], coord["y"])
 
     def run(self, mode="1"):
         """运行完整流程"""
@@ -532,16 +525,21 @@ class QueensSudokuHelper:
                 print("棋盘无效")
                 return
             print("棋盘有效")
-
             # 根据模式求解
             if mode == "2":
                 print("求解中（双牛模式）...")
-                self.solve_sudoku2()
-                self.print_solution2()
+                valid = self.solve_sudoku2()
             else:
                 print("求解中（单牛模式）...")
-                self.solve_sudoku()
-                self.print_solution()
+                valid = self.solve_sudoku()
+            if not valid:
+                print("无解")
+                return
+            print("打印解...")
+            self.print_solution()
+            print("执行解...")
+            self.exec_solution()
+            print("解完成")
 
         except Exception as e:
             print_exception_with_line()

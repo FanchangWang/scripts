@@ -8,7 +8,7 @@
 ## 安装依赖
 
 ```bash
-python -m uv add pywin32 numpy pillow pyautogui --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+python -m uv sync
 ```
 
 ## 使用方法
@@ -18,15 +18,11 @@ python -m uv add pywin32 numpy pillow pyautogui --index-url https://pypi.tuna.ts
 确保游戏窗口已打开，标题为"智商不够别点"，然后运行：
 
 ```bash
+# 单牛模式
 python -m uv run main.py
-```
 
-### 2. 测试模式
-
-使用示例棋盘数据测试求解功能：
-
-```bash
-python -m uv run main.py --test
+# 双牛模式
+python -m uv run main.py --2
 ```
 
 ## 功能说明
@@ -37,12 +33,20 @@ python -m uv run main.py --test
 4. **棋盘提取**：识别并提取棋盘色块信息
 5. **数独求解**：使用回溯法求解皇后数独问题
 6. **彩色打印**：在终端中彩色显示棋盘和解决方案
+7. **自动点击**：自动解答（支持后台窗口）
 
-## 游戏规则
+## 游戏规则（单牛模式）
 
 - 每个颜色有且只有一头牛
 - 每行有且只有一头牛
 - 每列有且只有一头牛
+- 每头牛周围8个格子内没有牛
+
+## 游戏规则（双牛模式）
+
+- 每个颜色有且只有两头牛
+- 每行有且只有两头牛
+- 每列有且只有两头牛
 - 每头牛周围8个格子内没有牛
 
 ## 输出说明
@@ -54,6 +58,5 @@ python -m uv run main.py --test
 ## 注意事项
 
 1. 确保游戏窗口处于活动状态
-2. 确保游戏窗口没有被其他窗口遮挡
-3. 如果无法定位游戏区域，可能需要调整游戏窗口大小或分辨率
-4. 脚本已启用 DPI 感知，支持高分辨率屏幕
+2. 如果无法定位游戏区域，可能需要调整游戏窗口大小或分辨率
+3. 脚本已启用 DPI 感知，支持高分辨率屏幕
