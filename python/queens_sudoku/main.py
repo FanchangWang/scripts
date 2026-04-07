@@ -214,25 +214,35 @@ class QueensSudokuHelper:
 
                         # 跳过圆角，原理：检查下一行同列色块颜色是否一致
                         # row_colors 为空时才进行检查，避免重复检查
-                        if not row_colors:
-                            if y + 1 >= height:  # 超出边界，跳过
-                                break
-                            next_row = game_img[y + 1]
-                            next_row_pixel_tuple = tuple(next_row[x])
-                            if not (pixel_tuple == next_row_pixel_tuple):
-                                break
+                        # if not row_colors:
+                        #     if y + 1 >= height:  # 超出边界，跳过
+                        #         break
+                        #     next_row = game_img[y + 1]
+                        #     next_row_pixel_tuple = tuple(next_row[x])
+                        #     if not (pixel_tuple == next_row_pixel_tuple):
+                        #         break
 
                         # 获取色块颜色，原理：跳过10个像素边框过度，检测第11-20个像素的颜色是否相同
                         if x + 20 >= width:  # 超出边界，跳过
                             break
-                        pixels_piece = row[x + 11 : x + 20]
-                        # pixels_piece[0] 不能为 f0
-                        current_color = tuple(pixels_piece[0])
+                        # pixels_piece = row[x + 11 : x + 20]
+                        # # pixels_piece[0] 不能为 f0
+                        # current_color = tuple(pixels_piece[0])
+                        # if current_color == COLOR_F0F0F0:
+                        #     x += 1
+                        #     continue
+                        # if not np.all(pixels_piece == pixels_piece[0]):
+                        #     x += 1
+                        #     continue
+                        if y + 1 >= height:  # 超出边界，跳过
+                            break
+                        next_row = game_img[y + 2]
+                        next_pixels_piece = next_row[x + 11 : x + 20]
+                        current_color = tuple(next_pixels_piece[0])
                         if current_color == COLOR_F0F0F0:
                             x += 1
                             continue
-
-                        if not np.all(pixels_piece == pixels_piece[0]):
+                        if not np.all(next_pixels_piece == next_pixels_piece[0]):
                             x += 1
                             continue
 
@@ -492,13 +502,6 @@ class QueensSudokuHelper:
 
     def exec_solution(self):
         """执行数独游戏（每行2头牛） 支持后台窗口"""
-        try:
-            # 如果窗口被最小化，先恢复
-            if win32gui.IsIconic(self.hwnd):
-                win32gui.ShowWindow(self.hwnd, win32con.SW_RESTORE)
-            time.sleep(0.3)
-        except Exception:
-            pass
         for row_idx, col_item in enumerate(self.solution):
             # 兼容处理 单牛/双牛 模式 解格式
             col_list = col_item if isinstance(col_item, list) else [col_item]
