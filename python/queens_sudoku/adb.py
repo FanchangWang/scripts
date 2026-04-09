@@ -1,14 +1,11 @@
+import io
 import sys
 import time
 import traceback
-from ctypes import windll
 
 import numpy as np
-import win32api
-import win32con
-import win32gui
-import win32ui
 from PIL import Image
+from ppadb.client import Client as AdbClient
 
 
 def print_exception_with_line():
@@ -21,21 +18,10 @@ def print_exception_with_line():
     print("=" * 50)
 
 
-# 启用DPI感知
-if sys.platform == "win32":
-    try:
-        import ctypes
-
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
-    except Exception:
-        pass
-
-
 class QueensSudokuHelper:
-    def __init__(self, window_title="智商不够别点"):
-        self.window_title = window_title
-        self.hwnd = None
-        self.client_origin_screen = None
+    def __init__(self, serial="adb-LJSKJJZPU4UWCMSC-chVoIz._adb-tls-connect._tcp"):
+        self.serial = serial
+        self.device = None
         self.screenshot = None
         self.game_area = None  # [x1, y1, x2, y2]
         self.grid_colors = []  # 地图格子 => 颜色
@@ -43,108 +29,67 @@ class QueensSudokuHelper:
         self.color_map = {}  # {color_code: (r, g, b)}
         self.solution = None
 
-    def find_window(self):
-        """查找窗口句柄"""
-        self.hwnd = win32gui.FindWindow(None, self.window_title)
-        print(f"窗口句柄: {self.hwnd}")
-        if not self.hwnd:
-            raise Exception(f"未找到窗口: {self.window_title}")
-        return self.hwnd
+    def find_device(self):
+        """查找移动端"""
+        client = AdbClient(host="127.0.0.1", port=5037)
+        devices = client.devices()
+        match len(devices):
+            case 0:
+                raise Exception("无已连接的移动端")
+            case 1:  # 只有一个设备，默认使用此设备
+                self.device = devices[0]
+                return self.device
+            case _:
+                for device in devices:
+                    if device.serial == self.serial:
+                        self.device = device
+                        return self.device
+        raise Exception(f"未找到移动端: {self.serial}")
 
     def capture_screenshot(self):
-        """使用 PrintWindow 截图，支持后台窗口"""
-        # 记录左上角 0,0 屏幕坐标
-        self.client_origin_screen = win32gui.ClientToScreen(self.hwnd, (0, 0))
-        # 获取客户区尺寸
-        left, top, right, bottom = win32gui.GetClientRect(self.hwnd)
-        width = right - left
-        height = bottom - top
-
-        # 创建设备上下文
-        hwndDC = win32gui.GetWindowDC(self.hwnd)
-        mfcDC = win32ui.CreateDCFromHandle(hwndDC)
-        saveDC = mfcDC.CreateCompatibleDC()
-
-        # 创建位图
-        saveBitMap = win32ui.CreateBitmap()
-        saveBitMap.CreateCompatibleBitmap(mfcDC, width, height)
-        saveDC.SelectObject(saveBitMap)
-
-        # ========== 关键修改：使用 PrintWindow 替代 BitBlt ==========
-        # 参数3的含义：
-        # PW_CLIENTONLY = 0 # 0 = 仅客户区
-        # PW_WINDOW = 1 # 1 = 整个窗口（含标题栏边框）
-        # PW_RENDERFULLCONTENT = 2  # Win8+ # 2 = 客户区（Win8+，更可靠）
-        # PW_RENDERFULLCONTENT_WINDOW = 3  # Win8+，整个窗口 # 3 = 整个窗口（Win8+，推荐）
-
-        result = windll.user32.PrintWindow(self.hwnd, saveDC.GetSafeHdc(), 3)
-
-        if result == 0:
-            print("PrintWindow 失败，尝试 BitBlt 备用...")
-            saveDC.BitBlt((0, 0), (width, height), mfcDC, (0, 0), win32con.SRCCOPY)
-
-        # 获取位图数据
-        bmpinfo = saveBitMap.GetInfo()
-        bmpstr = saveBitMap.GetBitmapBits(True)
-
-        # 转换为 numpy（BGRX 格式）
-        img = Image.frombuffer(
-            "RGB",
-            (bmpinfo["bmWidth"], bmpinfo["bmHeight"]),
-            bmpstr,
-            "raw",
-            "BGRX",
-            0,
-            1,
-        )
-
-        # 清理资源
-        win32gui.DeleteObject(saveBitMap.GetHandle())
-        saveDC.DeleteDC()
-        mfcDC.DeleteDC()
-        win32gui.ReleaseDC(self.hwnd, hwndDC)
-
-        self.screenshot = np.array(img)
+        """使用 adb 获取手机截图"""
+        screencap = self.device.screencap()  # 截图 PNG
+        image = Image.open(io.BytesIO(screencap))  # 用 PIL 解码 PNG 二进制数据
+        # 转换为 numpy 数组 (H, W, C) 格式
+        self.screenshot = np.array(image)
+        # if self.screenshot.shape[2] == 4:
+        #     self.screenshot = self.screenshot[:, :, :3]  # 只保留 RGB
         return self.screenshot
 
     def find_game_area(self):
         """定位游戏地图操作区"""
-        if self.screenshot is None:
-            self.capture_screenshot()
-
         height, width, _ = self.screenshot.shape
-        print(f"游戏窗口尺寸: {width}, {height}")
+        print(f"窗口尺寸: {width}, {height}")
 
         # 忽略四边10像素
         start_x, end_x = 10, width - 10
         start_y, end_y = 10, height - 10
 
-        COLOR_FF = (0xFF, 0xFF, 0xFF)
-        COLOR_F0 = (0xF0, 0xF0, 0xF0)
+        COLOR_Border = (0xFE, 0xFE, 0xFE, 0xFF)
+        COLOR_Game = (0xEF, 0xEF, 0xEF, 0xFF)
 
         for y in range(start_y, end_y):
             if self.game_area is None:  # 第一次匹配到为游戏的起始行
                 row = self.screenshot[y, start_x:end_x]
-                # 从左向右扫描，找到第一个非 COLOR_FFFFFF 的像素
+                # 从左向右扫描，找到第一个非 边框 的像素
                 for x_offset, pixel in enumerate(row):
                     pixel_tuple = tuple(pixel)
-                    if pixel_tuple != COLOR_FF:
-                        x1 = (
-                            start_x + x_offset + 1
-                        )  # 跳过第一个非 FF 的像素（因为不同 n*n 棋盘的边界颜色不同）
+                    if pixel_tuple != COLOR_Border:
+                        # 跳过第一个非 FF 的像素（因为不同 n*n 棋盘的边界颜色不同）
+                        x1 = start_x + x_offset + 1
                         if x1 >= width:  # 到达列末
                             break
 
-                        # 条件：第一个非 F0 右侧像素点颜色为 COLOR_F0
-                        if tuple(self.screenshot[y, x1]) != COLOR_F0:
-                            # print(f"条件2失败: {pixel_tuple} ({x1}, {y})")
+                        # 条件：第一个非 F0 右侧像素点颜色为 游戏背景
+                        if tuple(self.screenshot[y, x1]) != COLOR_Game:
+                            # print(f"非 F0 右侧像素: {pixel_tuple} ({x1}, {y})")
                             break
 
                         x2 = width - x1
-                        # 条件：本行排除左右 FF F2 全部为 COLOR_F0
+                        # 条件：本行排除左右 边框 后，全部为 游戏背景
                         row_f0 = self.screenshot[y, x1:x2]
-                        if not np.all(row_f0 == np.array(COLOR_F0)):
-                            # print(f"条件3失败: {pixel_tuple} ({x1}, {y}) ({x2}, {y})")
+                        if not np.all(row_f0 == np.array(COLOR_Game)):
+                            # print(f"排除左右: {pixel_tuple} ({x1}, {y}) ({x2}, {y})")
                             break
 
                         # 所有条件满足，第一次匹配到为游戏的起始行，最后一次匹配到为游戏的结束行
@@ -153,7 +98,7 @@ class QueensSudokuHelper:
                         break
             else:
                 row_f0 = self.screenshot[y, self.game_area[0] : self.game_area[2]]
-                if np.all(row_f0 == np.array(COLOR_F0)):
+                if np.all(row_f0 == np.array(COLOR_Game)):
                     # print(f"条件4成功: {y} 更新 y2")
                     self.game_area[3] = y
 
@@ -169,7 +114,8 @@ class QueensSudokuHelper:
         game_img = self.screenshot[y1:y2, x1:x2]
         height, width, _ = game_img.shape
 
-        COLOR_F0F0F0 = (0xF0, 0xF0, 0xF0)
+        COLOR_Game = (0xEF, 0xEF, 0xEF, 0xFF)
+        COLOR_Game2 = (0xEE, 0xEF, 0xEF, 0xFF)
 
         # 收集所有色块颜色
         color_dict = {}
@@ -180,10 +126,10 @@ class QueensSudokuHelper:
         for y in range(height):
             row = game_img[y]
             if row_stat == 1:  # 棋盘行，跳过色块，需要等待背景行出现
-                if np.all(row == COLOR_F0F0F0):  # 背景行出现
+                if np.all(row >= 0xEE):  # 背景行出现
                     row_stat = 0  # 切换到背景行，下次循环开始等待色块
             else:  # 背景行，跳过背景，需要等待色块出现
-                if np.all(row == COLOR_F0F0F0):  # 跳过背景行
+                if np.all(row >= 0xEE):  # 跳过背景行
                     continue
 
                 # 记录当前列状态：0-背景列(边框)，1-棋盘列(色块)
@@ -194,21 +140,21 @@ class QueensSudokuHelper:
                 row_coords = []
                 x = 0
                 while x < width:
-                    pixel_tuple = tuple(row[x])
+                    pixel = row[x]
                     if col_stat == 1:  # 棋盘列，跳过色块，需要等待背景列出现
-                        if pixel_tuple == COLOR_F0F0F0:
+                        if np.all(pixel >= 0xEE):
                             # 连续 5 个 f0，判断是否为背景列
                             if x + 5 >= width:  # 超出边界，跳过
                                 break
                             # 检查是否为背景列
-                            if np.all(row[x : x + 5] == COLOR_F0F0F0):
+                            if np.all(row[x : x + 5] >= 0xEE):
                                 col_stat = 0  # 切换到背景列，下次循环开始等待色块
                                 x += 5
                                 continue
                         x += 1
                     else:  # 背景列，跳过背景，需要等待色块出现
                         # 跳过 f0
-                        if pixel_tuple == COLOR_F0F0F0:
+                        if np.all(pixel >= 0xEE):
                             x += 1
                             continue
 
@@ -238,8 +184,11 @@ class QueensSudokuHelper:
                             break
                         next_row = game_img[y + 2]
                         next_pixels_piece = next_row[x + 11 : x + 20]
+                        # if y1 + y == 1205:
+                        #     print(f"坐标: ({x1 + x}, {y1 + y})")
+                        #     print(next_pixels_piece)
                         current_color = tuple(next_pixels_piece[0])
-                        if current_color == COLOR_F0F0F0:
+                        if np.all(next_pixels_piece[0] >= 0xEE):
                             x += 1
                             continue
                         if not np.all(next_pixels_piece == next_pixels_piece[0]):
@@ -486,19 +435,10 @@ class QueensSudokuHelper:
         print()
 
     def mouse_doubleClick(self, x, y):
-        """双击鼠标 支持后台窗口"""
-        lparam = win32api.MAKELONG(x, y)
-        win32gui.PostMessage(
-            self.hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam
-        )
-        time.sleep(0.05)
-        win32gui.PostMessage(self.hwnd, win32con.WM_LBUTTONUP, 0, lparam)
+        """使用 adb 双击"""
+        self.device.shell(f"input tap {x} {y}")
         time.sleep(0.1)
-        win32gui.PostMessage(
-            self.hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lparam
-        )
-        time.sleep(0.05)
-        win32gui.PostMessage(self.hwnd, win32con.WM_LBUTTONUP, 0, lparam)
+        self.device.shell(f"input tap {x} {y}")
 
     def exec_solution(self):
         """执行数独游戏（每行2头牛） 支持后台窗口"""
@@ -512,8 +452,8 @@ class QueensSudokuHelper:
     def run(self, mode="1"):
         """运行完整流程"""
         try:
-            print("查找窗口...")
-            self.find_window()
+            print("查找移动端...")
+            self.find_device()
             print("截图...")
             self.capture_screenshot()
             print("定位游戏区域...")
