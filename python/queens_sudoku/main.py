@@ -509,7 +509,7 @@ class QueensSudokuHelper:
                 coord = self.grid_coords[row_idx][col_idx]
                 self.mouse_doubleClick(coord["x"], coord["y"])
 
-    def run(self, mode="1"):
+    def run(self, mode="1", exec_solution=False):
         """运行完整流程"""
         try:
             print("查找窗口...")
@@ -540,8 +540,9 @@ class QueensSudokuHelper:
                 return
             print("打印解...")
             self.print_solution()
-            print("执行解...")
-            self.exec_solution()
+            if exec_solution:
+                print("执行解...")
+                self.exec_solution()
             print("解完成")
 
         except Exception as e:
@@ -549,19 +550,32 @@ class QueensSudokuHelper:
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    # 解析命令行参数
-    mode = "1"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        "-m",
+        default="1",
+        choices=["1", "2"],
+        help="模式: 1-单牛[默认], 2-双牛",
+    )
+    parser.add_argument(
+        "--exec_solution",
+        "-e",
+        default="0",
+        choices=["0", "1"],
+        help="是否执行解: 0-否[默认], 1-是",
+    )
+    args = parser.parse_args()
 
-    for arg in sys.argv[1:]:
-        if arg == "--2":
-            mode = "2"
+    mode = args.mode
+    exec_solution = args.exec_solution == "1"
 
     # 正常运行模式
     try:
         helper = QueensSudokuHelper()
-        helper.run(mode)
+        helper.run(mode=mode, exec_solution=exec_solution)
     except Exception as e:
         print(f"错误：{e}")
         print("请确保游戏窗口'智商不够别点'已打开")

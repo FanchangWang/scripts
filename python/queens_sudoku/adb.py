@@ -52,8 +52,8 @@ class QueensSudokuHelper:
         image = Image.open(io.BytesIO(screencap))  # 用 PIL 解码 PNG 二进制数据
         # 转换为 numpy 数组 (H, W, C) 格式
         self.screenshot = np.array(image)
-        # if self.screenshot.shape[2] == 4:
-        #     self.screenshot = self.screenshot[:, :, :3]  # 只保留 RGB
+        if self.screenshot.shape[2] == 4:
+            self.screenshot = self.screenshot[:, :, :3]  # 只保留 RGB
         return self.screenshot
 
     def find_game_area(self):
@@ -65,30 +65,32 @@ class QueensSudokuHelper:
         start_x, end_x = 10, width - 10
         start_y, end_y = 10, height - 10
 
-        COLOR_Border = (0xFE, 0xFE, 0xFE, 0xFF)
-        COLOR_Game = (0xEF, 0xEF, 0xEF, 0xFF)
-
         for y in range(start_y, end_y):
             if self.game_area is None:  # 第一次匹配到为游戏的起始行
                 row = self.screenshot[y, start_x:end_x]
                 # 从左向右扫描，找到第一个非 边框 的像素
                 for x_offset, pixel in enumerate(row):
-                    pixel_tuple = tuple(pixel)
-                    if pixel_tuple != COLOR_Border:
+                    if not np.all((pixel == 0xFE) | (pixel == 0xFF)):
                         # 跳过第一个非 FF 的像素（因为不同 n*n 棋盘的边界颜色不同）
                         x1 = start_x + x_offset + 1
-                        if x1 >= width:  # 到达列末
+                        if x1 >= width * 0.2:  # 到达棋盘列的 1/5 位置
                             break
 
                         # 条件：第一个非 F0 右侧像素点颜色为 游戏背景
-                        if tuple(self.screenshot[y, x1]) != COLOR_Game:
+                        if not np.all(
+                            (self.screenshot[y, x1] == 0xEE)
+                            | (self.screenshot[y, x1] == 0xEF)
+                            | (self.screenshot[y, x1] == 0xF0)
+                        ):
                             # print(f"非 F0 右侧像素: {pixel_tuple} ({x1}, {y})")
                             break
 
                         x2 = width - x1
                         # 条件：本行排除左右 边框 后，全部为 游戏背景
                         row_f0 = self.screenshot[y, x1:x2]
-                        if not np.all(row_f0 == np.array(COLOR_Game)):
+                        if not np.all(
+                            (row_f0 == 0xEE) | (row_f0 == 0xEF) | (row_f0 == 0xF0)
+                        ):
                             # print(f"排除左右: {pixel_tuple} ({x1}, {y}) ({x2}, {y})")
                             break
 
@@ -98,7 +100,7 @@ class QueensSudokuHelper:
                         break
             else:
                 row_f0 = self.screenshot[y, self.game_area[0] : self.game_area[2]]
-                if np.all(row_f0 == np.array(COLOR_Game)):
+                if np.all((row_f0 == 0xEE) | (row_f0 == 0xEF) | (row_f0 == 0xF0)):
                     # print(f"条件4成功: {y} 更新 y2")
                     self.game_area[3] = y
 
@@ -114,9 +116,6 @@ class QueensSudokuHelper:
         game_img = self.screenshot[y1:y2, x1:x2]
         height, width, _ = game_img.shape
 
-        COLOR_Game = (0xEF, 0xEF, 0xEF, 0xFF)
-        COLOR_Game2 = (0xEE, 0xEF, 0xEF, 0xFF)
-
         # 收集所有色块颜色
         color_dict = {}
 
@@ -126,10 +125,10 @@ class QueensSudokuHelper:
         for y in range(height):
             row = game_img[y]
             if row_stat == 1:  # 棋盘行，跳过色块，需要等待背景行出现
-                if np.all(row >= 0xEE):  # 背景行出现
+                if np.all((row == 0xEE) | (row == 0xEF) | (row == 0xF0)):  # 背景行出现
                     row_stat = 0  # 切换到背景行，下次循环开始等待色块
             else:  # 背景行，跳过背景，需要等待色块出现
-                if np.all(row >= 0xEE):  # 跳过背景行
+                if np.all((row == 0xEE) | (row == 0xEF) | (row == 0xF0)):  # 跳过背景行
                     continue
 
                 # 记录当前列状态：0-背景列(边框)，1-棋盘列(色块)
@@ -142,19 +141,23 @@ class QueensSudokuHelper:
                 while x < width:
                     pixel = row[x]
                     if col_stat == 1:  # 棋盘列，跳过色块，需要等待背景列出现
-                        if np.all(pixel >= 0xEE):
+                        if np.all((pixel == 0xEE) | (pixel == 0xEF) | (pixel == 0xF0)):
                             # 连续 5 个 f0，判断是否为背景列
                             if x + 5 >= width:  # 超出边界，跳过
                                 break
                             # 检查是否为背景列
-                            if np.all(row[x : x + 5] >= 0xEE):
+                            if np.all(
+                                (row[x : x + 5] == 0xEE)
+                                | (row[x : x + 5] == 0xEF)
+                                | (row[x : x + 5] == 0xF0)
+                            ):
                                 col_stat = 0  # 切换到背景列，下次循环开始等待色块
                                 x += 5
                                 continue
                         x += 1
                     else:  # 背景列，跳过背景，需要等待色块出现
                         # 跳过 f0
-                        if np.all(pixel >= 0xEE):
+                        if np.all((pixel == 0xEE) | (pixel == 0xEF) | (pixel == 0xF0)):
                             x += 1
                             continue
 
@@ -188,7 +191,11 @@ class QueensSudokuHelper:
                         #     print(f"坐标: ({x1 + x}, {y1 + y})")
                         #     print(next_pixels_piece)
                         current_color = tuple(next_pixels_piece[0])
-                        if np.all(next_pixels_piece[0] >= 0xEE):
+                        if np.all(
+                            (next_pixels_piece[0] == 0xEE)
+                            | (next_pixels_piece[0] == 0xEF)
+                            | (next_pixels_piece[0] == 0xF0)
+                        ):
                             x += 1
                             continue
                         if not np.all(next_pixels_piece == next_pixels_piece[0]):
@@ -439,6 +446,8 @@ class QueensSudokuHelper:
         self.device.shell(f"input tap {x} {y}")
         time.sleep(0.1)
         self.device.shell(f"input tap {x} {y}")
+        time.sleep(0.1)
+        self.device.shell(f"input tap {x} {y}")
 
     def exec_solution(self):
         """执行数独游戏（每行2头牛） 支持后台窗口"""
@@ -449,7 +458,11 @@ class QueensSudokuHelper:
                 coord = self.grid_coords[row_idx][col_idx]
                 self.mouse_doubleClick(coord["x"], coord["y"])
 
-    def run(self, mode="1"):
+    def run(
+        self,
+        mode="1",
+        exec_solution=False,
+    ):
         """运行完整流程"""
         try:
             print("查找移动端...")
@@ -480,28 +493,42 @@ class QueensSudokuHelper:
                 return
             print("打印解...")
             self.print_solution()
-            print("执行解...")
-            self.exec_solution()
+            # 执行解
+            if exec_solution:
+                print("执行解...")
+                self.exec_solution()
             print("解完成")
 
-        except Exception as e:
+        except Exception:
             print_exception_with_line()
 
 
 if __name__ == "__main__":
-    import sys
+    import argparse
 
-    # 解析命令行参数
-    mode = "1"
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        "-m",
+        default="1",
+        choices=["1", "2"],
+        help="模式: 1-单牛[默认], 2-双牛",
+    )
+    parser.add_argument(
+        "--exec_solution",
+        "-e",
+        default="0",
+        choices=["0", "1"],
+        help="是否执行解: 0-否[默认], 1-是",
+    )
+    args = parser.parse_args()
 
-    for arg in sys.argv[1:]:
-        if arg == "--2":
-            mode = "2"
+    mode = args.mode
+    exec_solution = args.exec_solution == "1"
 
     # 正常运行模式
     try:
         helper = QueensSudokuHelper()
-        helper.run(mode)
+        helper.run(mode=mode, exec_solution=exec_solution)
     except Exception as e:
         print(f"错误：{e}")
-        print("请确保游戏窗口'智商不够别点'已打开")
