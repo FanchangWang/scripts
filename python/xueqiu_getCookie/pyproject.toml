@@ -1,0 +1,15 @@
+[project]
+name = "xueqiu-getcookie"
+version = "0.1.0"
+description = "雪球Cookie获取工具"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "PyQt6",
+    "PyQt6-WebEngine",
+    "pywin32>=311",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
