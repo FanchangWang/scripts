@@ -4,7 +4,7 @@ import sqlite3
 import sys
 
 import win32crypt
-from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PyQt6.QtWebEngineWidgets import QWebEngineView
