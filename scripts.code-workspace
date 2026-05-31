@@ -4,30 +4,39 @@
 			"path": "."
 		},
 		{
+            "name": "auto_run 开机自启动软件管理",
 			"path": "python/auto_run"
 		},
 		{
+            "name": "bjxd_getToken 北京现代APP获取 Token",
 			"path": "python/bjxd_getToken"
 		},
 		{
+            "name": "carwith_dexkit carwith Dex 分析工具",
 			"path": "python/carwith_dexkit"
 		},
 		{
+            "name": "process_pause 微信小程序暂停工具",
 			"path": "python/process_pause"
 		},
 		{
+            "name": "queens_sudoku 佛系消消消外挂",
 			"path": "python/queens_sudoku"
 		},
 		{
+            "name": "scrcpy 手机控制",
 			"path": "python/scrcpy"
 		},
 		{
+            "name": "stock_save 股票分钟线保存",
 			"path": "python/stock_save"
 		},
 		{
+            "name": "sublime_crack sublime破解补丁",
 			"path": "python/sublime_crack"
 		},
 		{
+            "name": "xueqiu_getCookie 雪球股票获取 cookie",
 			"path": "python/xueqiu_getCookie"
 		}
 	],
