@@ -1,12 +1,21 @@
-import sys
 import subprocess
-from PyQt6.QtWidgets import (QApplication, QDialog, QMessageBox,
-                             QListWidget, QVBoxLayout, QPushButton, QWidget, QAbstractItemView)
-from PyQt6.QtCore import Qt
+import sys
+
 from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QDialog,
+    QListWidget,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+)
+
 
 class DeviceSelector(QDialog):
     """设备选择对话框"""
+
     def __init__(self, devices, parent=None):
         super().__init__(parent)
         self.setWindowTitle("选择设备")
@@ -28,7 +37,9 @@ class DeviceSelector(QDialog):
         for device in devices:
             self.list_widget.addItem(device)
         # 在PyQt6中，使用QAbstractItemView中的SelectionMode枚举
-        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.list_widget.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
         if devices:
             self.list_widget.setCurrentRow(0)
 
@@ -57,19 +68,17 @@ class DeviceSelector(QDialog):
             self.selected_device = self.list_widget.selectedItems()[0].text().split()[0]
             self.accept()
 
+
 def get_connected_devices():
     """获取已连接的Android设备列表"""
     try:
         result = subprocess.run(
-            ["adb", "devices", "-l"],
-            capture_output=True,
-            text=True,
-            check=True
+            ["adb", "devices", "-l"], capture_output=True, text=True, check=True
         )
         output = result.stdout.strip()
         devices = []
         # 跳过第一行"List of devices attached"
-        for line in output.split('\n')[1:]:
+        for line in output.split("\n")[1:]:
             if line.strip():
                 # 分割行，检查状态是否为"device"（排除offline状态）
                 parts = line.strip().split()
@@ -82,27 +91,27 @@ def get_connected_devices():
         QMessageBox.critical(None, "错误", "未找到adb，请确保adb已添加到系统PATH中")
         sys.exit(1)
 
+
 def connect_to_device(ip_port):
     """连接到指定IP和端口的设备"""
     try:
         result = subprocess.run(
-            ["adb", "connect", ip_port],
-            capture_output=True,
-            text=True
+            ["adb", "connect", ip_port], capture_output=True, text=True
         )
         return "connected to" in result.stdout or "already connected" in result.stdout
     except Exception:
         return False
 
+
 def start_scrcpy(device_id=None, extra_args=None):
     """启动scrcpy"""
-    cmd = ["scrcpy.exe","--stay-awake"]
+    cmd = ["scrcpy.exe", "--stay-awake"]
     # 询问用户是否保持屏幕关闭
     reply = QMessageBox.question(
         None,
         "屏幕设置",
         "是否保持屏幕关闭？",
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
     )
     if reply == QMessageBox.StandardButton.Yes:
         cmd.append("--turn-screen-off")
@@ -119,16 +128,19 @@ def start_scrcpy(device_id=None, extra_args=None):
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE,
             text=True,
-            encoding='utf-8',
-            creationflags=subprocess.CREATE_NO_WINDOW  # Windows特定：不创建窗口
+            encoding="utf-8",
+            creationflags=subprocess.CREATE_NO_WINDOW,  # Windows特定：不创建窗口
         )
         return True
     except FileNotFoundError:
-        QMessageBox.critical(None, "错误", "未找到scrcpy.exe，请确保其已添加到系统PATH中")
+        QMessageBox.critical(
+            None, "错误", "未找到scrcpy.exe，请确保其已添加到系统PATH中"
+        )
         return False
     except Exception as e:
         QMessageBox.critical(None, "错误", f"启动scrcpy失败: {str(e)}")
         return False
+
 
 def main():
     # 确保中文显示正常
@@ -157,7 +169,7 @@ def main():
             None,
             "无设备已连接",
             "是否尝试连接 192.168.31.60:5555 ?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
         if reply == QMessageBox.StandardButton.Yes:
@@ -172,6 +184,7 @@ def main():
             else:
                 QMessageBox.warning(None, "警告", "连接失败")
         # 用户选择No或连接失败，退出
+
 
 if __name__ == "__main__":
     main()

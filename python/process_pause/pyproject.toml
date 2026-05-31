@@ -1,0 +1,15 @@
+[project]
+name = "process_pause"
+version = "1.0.0"
+description = "微信小程序暂停工具"
+requires-python = ">=3.8"
+dependencies = [
+    "psutil>=7.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.20.0",
+]
+
+

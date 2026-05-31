@@ -1,0 +1,35 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "python/auto_run"
+		},
+		{
+			"path": "python/bjxd_getToken"
+		},
+		{
+			"path": "python/carwith_dexkit"
+		},
+		{
+			"path": "python/process_pause"
+		},
+		{
+			"path": "python/queens_sudoku"
+		},
+		{
+			"path": "python/scrcpy"
+		},
+		{
+			"path": "python/stock_save"
+		},
+		{
+			"path": "python/sublime_crack"
+		},
+		{
+			"path": "python/xueqiu_getCookie"
+		}
+	],
+	"settings": {}
+}

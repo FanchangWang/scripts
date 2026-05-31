@@ -1,0 +1,8 @@
+[project]
+name = "bjxd_gettoken"
+version = "1.0.0"
+requires-python = ">=3.10"
+dependencies = [
+    "PyQt6>=6.9.1",
+    "PyQt6-WebEngine>=6.9.0",
+]

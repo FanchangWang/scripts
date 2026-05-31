@@ -1,0 +1,6 @@
+[project]
+name = "scrcpy"
+version = "0.1.0"
+description = "scrcpy GUI launcher with device selection"
+requires-python = ">=3.12"
+dependencies = ["PyQt6>=6.9.1"]

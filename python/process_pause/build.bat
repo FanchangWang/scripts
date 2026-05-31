@@ -9,13 +9,13 @@ echo.
 
 REM Step 1: Install dependencies
 echo 1. Installing dependencies...
-python -m pip install -r requirements.txt
-python -m pip install pyinstaller
+uv sync
+uv add pyinstaller --dev
 
 REM Step 2: Build executable
 echo.
 echo 2. Building executable...
-python -m PyInstaller --onefile --windowed --icon=NONE run.py
+uv run PyInstaller --onefile --windowed --icon=NONE main.py
 
 REM Step 3: Clean up temporary files
 echo.
