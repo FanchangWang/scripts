@@ -1,19 +1,29 @@
 FROM python:3.12-alpine
 
-# 设置工作目录
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
-# 合并 COPY 命令
-COPY requirements.txt stock_save_minute.py ./
+RUN apk add --no-cache supervisor tzdata \
+    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
-# 合并 RUN 命令：设置时区、安装依赖、创建目录、添加定时任务
-RUN apk add --no-cache tzdata && \
-    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
-    echo "Asia/Shanghai" > /etc/timezone && \
-    pip install --no-cache-dir -r requirements.txt && \
-    mkdir -p /app/data /app/log && \
-    echo "20 15 * * * python /app/stock_save_minute.py" > /var/spool/cron/crontabs/root && \
-    chmod 0600 /var/spool/cron/crontabs/root
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install uv --no-cache-dir
 
-# 启动 cron 服务
-CMD ["crond", "-f"]
+COPY pyproject.toml .
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --system --no-dev --frozen
+
+COPY supervisord.conf /etc/supervisord.conf
+COPY src/ /app/src/
+COPY static/ /app/static/
+
+RUN mkdir -p /app/data /app/config /app/log \
+    && echo "20 15 * * 1-5 cd /app && uv run cli >> /app/log/cron.log 2>&1" \
+    > /var/spool/cron/crontabs/root \
+    && chmod 0600 /var/spool/cron/crontabs/root
+
+EXPOSE 8000
+
+CMD ["supervisord", "-c", "/etc/supervisord.conf", "-n"]

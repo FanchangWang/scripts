@@ -1,0 +1,159 @@
+{% extends "base.html.jinja" %}
+{% block title %}数据曲线 - 股票数据服务{% endblock %}
+{% block extra_css %}
+html, body { height: 100%; overflow: hidden; }
+.container { max-width: none; width: 100%; padding: 0; height: calc(100vh - 48px); }
+.chart-wrapper {
+    width: 100%; height: 100%; padding: 8px;
+    position: relative;
+}
+canvas { display: block; width: 100% !important; height: 100% !important; }
+.loading, .error {
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    font-size: 18px; color: #666;
+}
+.error { color: #e74c3c; flex-direction: column; gap: 12px; }
+.error button {
+    padding: 8px 20px; background: #3498db; color: white;
+    border: none; border-radius: 4px; cursor: pointer; font-size: 14px;
+}
+{% endblock %}
+{% block content %}
+<div class="chart-wrapper">
+    <div class="loading" id="loading">加载数据中...</div>
+    <div class="error" id="error" style="display:none;">
+        <span id="errorMsg"></span>
+        <button onclick="fetchData()">重试</button>
+    </div>
+    <canvas id="stockChart" style="display:none;"></canvas>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="/static/chart.umd.min.js"></script>
+<script src="/static/hammerjs@2.0.8.min.js"></script>
+<script src="/static/chartjs-plugin-zoom.min.js"></script>
+<script>
+const COLORS = ['#e74c3c','#f39c12','#9b59b6','#3498db','#1abc9c','#e67e22','#34495e'];
+const WEEKDAYS = ['周一','周二','周三','周四','周五'];
+
+const TRADING_SLOTS = [];
+for (let d = 0; d < 5; d++) {
+    for (let h = 9; h <= 15; h++) {
+        for (let m = 0; m < 60; m++) {
+            if (h === 9 && m < 30) continue;
+            if (h === 11 && m > 30) continue;
+            if (h === 12) continue;
+            if (h === 15 && m > 0) continue;
+            TRADING_SLOTS.push(`${WEEKDAYS[d]} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+        }
+    }
+}
+
+let chart = null;
+const loadingEl = document.getElementById('loading');
+const errorEl = document.getElementById('error');
+const errorMsgEl = document.getElementById('errorMsg');
+const canvasEl = document.getElementById('stockChart');
+
+document.addEventListener('DOMContentLoaded', fetchData);
+
+async function fetchData() {
+    loadingEl.style.display = 'flex';
+    errorEl.style.display = 'none';
+    canvasEl.style.display = 'none';
+
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 15000);
+        const resp = await fetch('/api/stock-data', { signal: controller.signal });
+        clearTimeout(timer);
+        if (!resp.ok) throw new Error('网络请求失败');
+        const allData = await resp.json();
+        drawChart(prepareChartData(allData));
+    } catch (err) {
+        console.error('获取数据失败:', err);
+        showError(err.name === 'AbortError' ? '请求超时，请检查网络连接' : '获取数据失败，请检查服务器是否运行');
+    }
+}
+
+function prepareChartData(allData) {
+    const datasets = allData.weeks.map((week, i) => {
+        const color = COLORS[i % COLORS.length];
+        const data = TRADING_SLOTS.map(time => {
+            for (const day of week.days) {
+                const item = day.items.find(it => it.time === time);
+                if (item) return item.price;
+            }
+            return null;
+        });
+        return {
+            label: week.week_display,
+            data,
+            borderColor: color,
+            backgroundColor: color + '33',
+            tension: 0.1,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            pointHoverBackgroundColor: color,
+            pointHoverBorderColor: '#fff',
+            pointHoverBorderWidth: 2,
+        };
+    });
+    return { labels: TRADING_SLOTS, datasets };
+}
+
+function drawChart(chartData) {
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'none';
+    canvasEl.style.display = 'block';
+
+    if (chart) chart.destroy();
+
+    chart = new Chart(canvasEl.getContext('2d'), {
+        type: 'line',
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                tooltip: {
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    padding: 12,
+                    titleFont: { size: 14 },
+                    bodyFont: { size: 13 },
+                    callbacks: {
+                        label(ctx) {
+                            const label = ctx.dataset.label || '';
+                            return label ? `${label}: ${ctx.parsed.y?.toFixed(2)}` : '';
+                        }
+                    }
+                },
+                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 12, boxWidth: 12, font: { size: 11 } } },
+                zoom: {
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x',
+                        limits: { x: { min: 'original', max: 'original' }, y: { min: 0.1, max: 10 } }
+                    },
+                    pan: { enabled: true, mode: 'x', threshold: 5 }
+                }
+            },
+            scales: {
+                x: { title: { display: true, text: '交易时间' }, grid: { display: false } },
+                y: { title: { display: true, text: '价格 (元)' }, beginAtZero: false, grid: { color: 'rgba(0,0,0,0.05)' } }
+            }
+        }
+    });
+}
+
+function showError(msg) {
+    loadingEl.style.display = 'none';
+    canvasEl.style.display = 'none';
+    errorEl.style.display = 'flex';
+    errorMsgEl.textContent = msg;
+}
+</script>
+{% endblock %}

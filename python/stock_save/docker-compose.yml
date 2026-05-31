@@ -1,15 +1,16 @@
-version: '3.8'
-
 services:
-  stock-save-minute:
+  stock-save:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: stock-save-minute
+    container_name: stock-save
+    ports:
+      - "8810:8000"
     volumes:
       - ./data:/app/data
+      - ./config:/app/config
       - ./log:/app/log
-      - ./.env:/app/.env:ro  # 挂载 .env 文件（如果存在）
+      - ./.env:/app/.env:ro
     environment:
       - TZ=Asia/Shanghai
-    restart: always
+    restart: unless-stopped

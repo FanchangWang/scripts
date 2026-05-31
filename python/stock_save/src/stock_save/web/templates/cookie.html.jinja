@@ -1,0 +1,87 @@
+{% extends "base.html.jinja" %}
+{% block title %}Cookie 管理 - 股票数据服务{% endblock %}
+{% block content %}
+<div style="background:white;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);padding:28px;max-width:520px;margin:0 auto;">
+    <h2 style="color:#2c3e50;margin-bottom:20px;">🍪 雪球 Cookie 配置</h2>
+
+    <div style="margin-bottom:16px;">
+        <label style="display:block;margin-bottom:6px;font-size:14px;color:#555;">xq_a_token</label>
+        <input id="xq_a_token" type="text" placeholder="输入 xq_a_token" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:14px;">
+    </div>
+
+    <div style="margin-bottom:24px;">
+        <label style="display:block;margin-bottom:6px;font-size:14px;color:#555;">u</label>
+        <input id="u" type="text" placeholder="输入 u" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:14px;">
+    </div>
+
+    <div style="display:flex;gap:12px;">
+        <button id="saveBtn" style="flex:1;padding:10px;background:#3498db;color:white;border:none;border-radius:4px;font-size:15px;cursor:pointer;" onclick="saveCookie()">保存</button>
+        <button id="testBtn" style="flex:1;padding:10px;background:#2ecc71;color:white;border:none;border-radius:4px;font-size:15px;cursor:pointer;" onclick="testCookie()">测试</button>
+    </div>
+
+    <div id="result" style="margin-top:16px;padding:12px;border-radius:4px;display:none;"></div>
+</div>
+
+<script>
+function getVal(id) { return document.getElementById(id).value.trim(); }
+
+async function saveCookie() {
+    const body = {};
+    const xq = getVal('xq_a_token');
+    const u = getVal('u');
+    if (xq) body.xq_a_token = xq;
+    if (u) body.u = u;
+
+    const r = await fetch('/api/cookie', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    const el = document.getElementById('result');
+    el.style.display = 'block';
+    el.style.background = '#d4edda';
+    el.style.color = '#155724';
+    el.textContent = '保存成功';
+}
+
+async function testCookie() {
+    const btn = document.getElementById('testBtn');
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+    try {
+        const body = {};
+        const xq = getVal('xq_a_token');
+        const u = getVal('u');
+        if (xq) body.xq_a_token = xq;
+        if (u) body.u = u;
+
+        const r = await fetch('/api/cookie/test', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        const el = document.getElementById('result');
+        el.style.display = 'block';
+        if (d.valid) {
+            el.style.background = '#d4edda';
+            el.style.color = '#155724';
+            el.textContent = '✅ 有效，最新数据日期：' + d.date;
+        } else {
+            el.style.background = '#f8d7da';
+            el.style.color = '#721c24';
+            el.textContent = '❌ ' + (d.error || '无效');
+        }
+    } catch (e) {
+        const el = document.getElementById('result');
+        el.style.display = 'block';
+        el.style.background = '#f8d7da';
+        el.style.color = '#721c24';
+        el.textContent = '❌ 网络错误';
+    }
+    btn.disabled = false;
+    btn.textContent = '测试';
+}
+</script>
+{% endblock %}
