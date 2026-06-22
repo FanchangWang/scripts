@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from stock_save.cli import save_data_to_file
 from stock_save.config import get_cookie, get_settings, save_cookie
 from stock_save.models import CookieConfig, DayData, StockData, WeekData
 from stock_save.xueqiu import XueqiuClient
@@ -143,10 +144,21 @@ async def test_cookie(data: dict):
     xq = data.get("xq_a_token") or saved.xq_a_token
     u = data.get("u") or saved.u
     cfg = CookieConfig(xq_a_token=xq or "", u=u or "")
-    client = XueqiuClient(cfg)
+    settings = get_settings()
+    client = XueqiuClient(cfg, settings.stock_symbol)
     result = client.get_minute_data()
     if result and (items := result.get("data", {}).get("items")):
         ts = items[0]["timestamp"]
         dt = datetime.datetime.fromtimestamp(ts / 1000)
-        return {"valid": True, "date": dt.strftime("%Y-%m-%d")}
+        date_str = dt.strftime("%Y-%m-%d")
+
+        tz = datetime.timezone(datetime.timedelta(hours=8))
+        now = datetime.datetime.now(tz)
+        today_str = now.strftime("%Y-%m-%d")
+
+        save_status: str | None = None
+        if today_str != date_str or (today_str == date_str and now.hour >= 15):
+            save_status = save_data_to_file(result, settings)
+
+        return {"valid": True, "date": date_str, "save_status": save_status}
     return {"valid": False, "error": "Cookie 无效或网络错误"}

@@ -17,10 +17,10 @@ def _save_json(file_path: Path, data: dict) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def save_data_to_file(data: dict, settings: AppSettings) -> bool:
+def save_data_to_file(data: dict, settings: AppSettings) -> str:
     if not data or not (items := data.get("data", {}).get("items")):
         logger.error("无效的数据格式")
-        return False
+        return "保存失败"
 
     timestamp = items[0]["timestamp"]
     dt = datetime.datetime.fromtimestamp(timestamp / 1000)
@@ -43,7 +43,7 @@ def save_data_to_file(data: dict, settings: AppSettings) -> bool:
                 settings.wxpusher_app_token,
                 settings.wxpusher_uids,
             )
-            return True
+            return "已存在"
         logger.info(f"数据已存在但内容不同，覆盖: {file_path}")
 
     _save_json(file_path, data)
@@ -55,7 +55,7 @@ def save_data_to_file(data: dict, settings: AppSettings) -> bool:
         settings.wxpusher_app_token,
         settings.wxpusher_uids,
     )
-    return True
+    return "已覆盖" if exists_before else "保存成功"
 
 
 def main() -> None:

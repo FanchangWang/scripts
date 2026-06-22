@@ -68,6 +68,10 @@ async function testCookie() {
             el.style.background = '#d4edda';
             el.style.color = '#155724';
             el.textContent = '✅ 有效，最新数据日期：' + d.date;
+            if (d.save_status) {
+                msg += ' | 保存状态：' + d.save_status;
+            }
+            el.textContent = msg;
         } else {
             el.style.background = '#f8d7da';
             el.style.color = '#721c24';
