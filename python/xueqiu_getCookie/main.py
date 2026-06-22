@@ -1,7 +1,10 @@
+import json
 import os
 import shutil
 import sqlite3
 import sys
+import urllib.error
+import urllib.request
 
 import win32crypt
 from PyQt6.QtCore import Qt, QUrl
@@ -11,7 +14,9 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -137,29 +142,89 @@ class XueQiuCookieGetter(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle("雪球 Cookie 获取工具")
-        self.setFixedSize(400, 200)
+        self.setFixedSize(520, 300)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
         layout = QVBoxLayout(central_widget)
-        layout.addStretch()
 
         self.login_btn = QPushButton("登录雪球", self)
         self.login_btn.setStyleSheet(
-            "height: 48px; font-size: 16px; font-weight: bold; "
-            "background-color: #3b82f6; color: white; border: none; border-radius: 8px;"
+            "height: 40px; font-size: 15px; font-weight: bold; "
+            "background-color: #3b82f6; color: white; border: none; border-radius: 6px;"
         )
         self.login_btn.clicked.connect(self.open_login_window)
         layout.addWidget(self.login_btn)
 
+        copy_row = QHBoxLayout()
+        self.fetch_btn = QPushButton("获取 Cookie", self)
+        self.fetch_btn.setStyleSheet(
+            "height: 40px; font-size: 15px; font-weight: bold; "
+            "background-color: #10b981; color: white; border: none; border-radius: 6px;"
+        )
+        self.fetch_btn.clicked.connect(self.fetch_cookie)
+        copy_row.addWidget(self.fetch_btn)
+
         self.copy_btn = QPushButton("复制 Cookie", self)
         self.copy_btn.setStyleSheet(
-            "height: 48px; font-size: 16px; font-weight: bold; "
-            "background-color: #10b981; color: white; border: none; border-radius: 8px;"
+            "height: 40px; font-size: 15px; font-weight: bold; "
+            "background-color: #0891b2; color: white; border: none; border-radius: 6px;"
         )
         self.copy_btn.clicked.connect(self.copy_cookie)
-        layout.addWidget(self.copy_btn)
+        copy_row.addWidget(self.copy_btn)
+        layout.addLayout(copy_row)
+
+        token_row = QHBoxLayout()
+        token_row.addWidget(QLabel("xq_a_token:"))
+        self.token_input = QLineEdit()
+        self.token_input.setReadOnly(True)
+        token_row.addWidget(self.token_input, 1)
+        self.token_copy_btn = QPushButton("复制", self)
+        self.token_copy_btn.setStyleSheet(
+            "background-color: #6366f1; color: white; border: none; "
+            "border-radius: 4px; padding: 6px 14px;"
+        )
+        self.token_copy_btn.clicked.connect(self.copy_xq_a_token)
+        token_row.addWidget(self.token_copy_btn)
+        layout.addLayout(token_row)
+
+        u_row = QHBoxLayout()
+        u_row.addWidget(QLabel("u:"))
+        self.u_input = QLineEdit()
+        self.u_input.setReadOnly(True)
+        u_row.addWidget(self.u_input, 1)
+        self.u_copy_btn = QPushButton("复制", self)
+        self.u_copy_btn.setStyleSheet(
+            "background-color: #6366f1; color: white; border: none; "
+            "border-radius: 4px; padding: 6px 14px;"
+        )
+        self.u_copy_btn.clicked.connect(self.copy_u_value)
+        u_row.addWidget(self.u_copy_btn)
+        layout.addLayout(u_row)
+
+        api_row = QHBoxLayout()
+        api_row.addWidget(QLabel("API域名:"))
+        self.api_url_input = QLineEdit("http://192.168.31.50:8810")
+        api_row.addWidget(self.api_url_input, 1)
+        layout.addLayout(api_row)
+
+        btn_row = QHBoxLayout()
+        self.api_test_btn = QPushButton("cookie API test", self)
+        self.api_test_btn.setStyleSheet(
+            "height: 36px; font-size: 14px; background-color: #f59e0b; color: white; "
+            "border: none; border-radius: 6px; padding: 0 10px;"
+        )
+        self.api_test_btn.clicked.connect(self.api_test_cookie)
+        btn_row.addWidget(self.api_test_btn)
+        self.api_save_btn = QPushButton("cookie API save", self)
+        self.api_save_btn.setStyleSheet(
+            "height: 36px; font-size: 14px; background-color: #8b5cf6; color: white; "
+            "border: none; border-radius: 6px; padding: 0 10px;"
+        )
+        self.api_save_btn.clicked.connect(self.api_save_cookie)
+        btn_row.addWidget(self.api_save_btn)
+        layout.addLayout(btn_row)
 
         layout.addStretch()
 
@@ -167,18 +232,95 @@ class XueQiuCookieGetter(QMainWindow):
         login_window = LoginWindow()
         login_window.exec()
 
-    def copy_cookie(self):
+    def fetch_cookie(self):
         xq_a_token, u_value = get_cookie_from_db()
 
         if xq_a_token and u_value:
-            cookie_str = f'XUEQIU_COOKIE="xq_a_token={xq_a_token}; u={u_value}"'
-            clipboard = QApplication.clipboard()
-            clipboard.setText(cookie_str)
-            QMessageBox.information(self, "成功", "Cookie 已复制到剪贴板！")
+            self.token_input.setText(xq_a_token)
+            self.u_input.setText(u_value)
+            QMessageBox.information(self, "成功", "Cookie 已获取并填充到输入框！")
         else:
             QMessageBox.warning(
                 self, "提示", "未找到完整的 Cookie 信息，请先登录雪球网站"
             )
+
+    def copy_cookie(self):
+        xq_a_token = self.token_input.text()
+        u_value = self.u_input.text()
+        if xq_a_token and u_value:
+            cookie_str = f'XUEQIU_COOKIE="xq_a_token={xq_a_token}; u={u_value}"'
+            QApplication.clipboard().setText(cookie_str)
+            QMessageBox.information(self, "成功", "Cookie 已复制到剪贴板！")
+        else:
+            QMessageBox.warning(
+                self, "提示", "请先获取 Cookie"
+            )
+
+    def copy_xq_a_token(self):
+        text = self.token_input.text()
+        if text:
+            QApplication.clipboard().setText(text)
+            QMessageBox.information(self, "成功", "xq_a_token 已复制到剪贴板！")
+        else:
+            QMessageBox.warning(self, "提示", "xq_a_token 为空")
+
+    def copy_u_value(self):
+        text = self.u_input.text()
+        if text:
+            QApplication.clipboard().setText(text)
+            QMessageBox.information(self, "成功", "u 已复制到剪贴板！")
+        else:
+            QMessageBox.warning(self, "提示", "u 为空")
+
+    def api_test_cookie(self):
+        api_url = self.api_url_input.text().rstrip("/")
+        xq_a_token = self.token_input.text()
+        u_value = self.u_input.text()
+        if not xq_a_token or not u_value:
+            QMessageBox.warning(self, "提示", "请先获取 Cookie 后再测试")
+            return
+        data = json.dumps({"xq_a_token": xq_a_token, "u": u_value}).encode()
+        req = urllib.request.Request(
+            f"{api_url}/api/cookie/test", data=data, method="POST"
+        )
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read().decode())
+            if result.get("valid"):
+                msg = f"Cookie 有效！\n日期: {result.get('date', '未知')}"
+                save_status = result.get("save_status")
+                if save_status:
+                    msg += f"\n保存状态: {save_status}"
+                QMessageBox.information(self, "测试成功", msg)
+            else:
+                QMessageBox.warning(
+                    self, "测试失败", result.get("error", "Cookie 无效")
+                )
+        except Exception as e:
+            QMessageBox.critical(self, "请求错误", f"请求失败: {e}")
+
+    def api_save_cookie(self):
+        api_url = self.api_url_input.text().rstrip("/")
+        xq_a_token = self.token_input.text()
+        u_value = self.u_input.text()
+        if not xq_a_token or not u_value:
+            QMessageBox.warning(self, "提示", "请先获取 Cookie 后再保存")
+            return
+        data = json.dumps({"xq_a_token": xq_a_token, "u": u_value}).encode()
+        req = urllib.request.Request(
+            f"{api_url}/api/cookie", data=data, method="PUT"
+        )
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                result = json.loads(resp.read().decode())
+            if result.get("status") == "ok":
+                QMessageBox.information(self, "保存成功", "Cookie 已保存到服务器！")
+            else:
+                QMessageBox.warning(self, "保存失败", f"返回: {result}")
+        except Exception as e:
+            QMessageBox.critical(self, "请求错误", f"请求失败: {e}")
 
 
 if __name__ == "__main__":
