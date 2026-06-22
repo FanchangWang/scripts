@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">雪球Cookie</string>
+    <string name="login">登录雪球</string>
+    <string name="fetch_cookie">获取 Cookie</string>
+    <string name="copy_cookie">复制 Cookie</string>
+    <string name="xq_a_token">xq_a_token:</string>
+    <string name="u">u:</string>
+    <string name="copy">复制</string>
+    <string name="api_domain">API域名:</string>
+    <string name="cookie_api_test">Cookie API test</string>
+    <string name="cookie_api_save">Cookie API save</string>
+    <string name="login_hint">登录完成后关闭此窗口</string>
+    <string name="fetch_json">获取 JSON 数据</string>
+    <string name="recent_files">最近文件:</string>
+    <string name="default_api_url">http://192.168.31.50:8810</string>
+</resources>
