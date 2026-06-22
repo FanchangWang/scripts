@@ -67,7 +67,7 @@ async function testCookie() {
         if (d.valid) {
             el.style.background = '#d4edda';
             el.style.color = '#155724';
-            el.textContent = '✅ 有效，最新数据日期：' + d.date;
+            let msg = '✅ 有效，最新数据日期：' + d.date;
             if (d.save_status) {
                 msg += ' | 保存状态：' + d.save_status;
             }
@@ -82,7 +82,7 @@ async function testCookie() {
         el.style.display = 'block';
         el.style.background = '#f8d7da';
         el.style.color = '#721c24';
-        el.textContent = '❌ 网络错误';
+        el.textContent = '❌ 网络错误: ' + e.message;
     }
     btn.disabled = false;
     btn.textContent = '测试';
