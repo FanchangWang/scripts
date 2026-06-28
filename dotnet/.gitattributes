@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+*.cs text diff
+*.csproj text
+*.slnx text
+*.xml text
+*.json text
+*.manifest text
+*.resx text
+*.iss text
+
+*.ico binary
+*.exe binary
+*.dll binary
+*.pdb binary
