@@ -10,11 +10,10 @@ cron: 12 3 * * *
 """
 
 import os
-import random
+
 import requests
-import time
 from bs4 import BeautifulSoup
-from urllib3.exceptions import InsecureRequestWarning, InsecurePlatformWarning
+from urllib3.exceptions import InsecurePlatformWarning, InsecureRequestWarning
 
 # 禁用 SSL 警告
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -34,6 +33,7 @@ class Binmt:
         self.log_content: str = ""  # 日志内容
         self.initial_gold = 0  # 初始金币数量
         self.initial_points = 0  # 初始积分数量
+        self.sign_rank = None  # 签到排名
 
     def log(self, content: str, print_to_console: bool = True) -> None:
         """添加日志"""
@@ -112,7 +112,8 @@ class Binmt:
             return False
 
     def sign(self):
-        """签到方法"""
+        """签到方法，返回是否已签到"""
+        already_signed = False
         try:
             # 获取签到页面
             sign_page_response = self.session.get(f"{self.base_url}/k_misign-sign.html")
@@ -120,9 +121,11 @@ class Binmt:
             self.get_logout_url(soup)
             # 检查签到状态
             if "您的签到排名" in sign_page_response.text:
+                already_signed = True
                 # 获取签到排名
                 # <input type="hidden" class="hidnum" id="qiandaobtnnum" value="478">
                 qiandaobtnnum = soup.find("input", {"id": "qiandaobtnnum"})["value"]
+                self.sign_rank = qiandaobtnnum
                 self.log(f"✅ 您的签到排名：{qiandaobtnnum}")
                 # 获取签到信息
                 lxdays = soup.find("input", {"id": "lxdays"})["value"]
@@ -137,7 +140,7 @@ class Binmt:
                 sign_button = soup.find("a", {"id": "JD_sign"})
                 if not sign_button:
                     self.log("❌ 签到失败！未发现签到按钮")
-                    return
+                    return already_signed
                 sign_href = sign_button["href"]
                 sign_post_response = self.session.get(f"{self.base_url}/{sign_href}")
                 if "root" in sign_post_response.text:
@@ -152,6 +155,7 @@ class Binmt:
                 print(sign_page_response.text)
         except Exception as e:
             self.log(f"❌ 签到失败！{e}")
+        return already_signed
 
     def check_score_info(self):
         """检查并记录初始金币和积分信息"""
@@ -220,7 +224,7 @@ class Binmt:
             message = f"金币：{current_gold} (+{gold_increase}) 积分：{current_points} (+{points_increase})\n"
 
             # 添加积分记录
-            message += f"\n积分记录:\n"
+            message += "\n积分记录:\n"
             table_list = soup.find("table", {"class": "mtm"}).find_all("tr")
             n = 0
             for table_tr in table_list:
@@ -241,6 +245,7 @@ class Binmt:
 
         try:
             from dotenv import load_dotenv
+
             load_dotenv()
             print("✅ dotenv 成功加载 .env 文件")
         except ImportError:
@@ -254,8 +259,12 @@ class Binmt:
             return
         if self.login(username, password):
             self.check_score_info()  # 记录初始积分信息
-            self.sign()  # 签到
-            self.get_score_info()  # 获取并计算积分变化
+            already_signed = self.sign()  # 签到
+            if already_signed:
+                # 已签到：NAME 显示排名，不再获取积分变化
+                self.NAME = f"{self.NAME} 今日签到排名:{self.sign_rank}"
+            else:
+                self.get_score_info()  # 获取并计算积分变化
             self.logout()
 
         # 最后推送通知
