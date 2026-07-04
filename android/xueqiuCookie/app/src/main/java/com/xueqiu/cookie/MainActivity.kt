@@ -132,13 +132,15 @@ class MainActivity : AppCompatActivity() {
             addView(progressBar)
         }
 
+        @Suppress("DEPRECATION")
+        val adjustResize = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         AlertDialog.Builder(this)
             .setTitle("雪球登录")
             .setView(container)
             .setCancelable(true)
             .setPositiveButton("关闭") { _, _ -> }
             .show()
-            .window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            .window?.setSoftInputMode(adjustResize)
     }
 
     private fun fetchCookie() {
