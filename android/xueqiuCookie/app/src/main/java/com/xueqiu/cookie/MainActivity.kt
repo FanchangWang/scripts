@@ -7,19 +7,22 @@ import android.content.ClipboardManager
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.pm.PackageManager
-
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -85,7 +88,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLoginDialog() {
-        val webView = WebView(this).apply {
+        val progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleLarge).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+            )
+        }
+
+        val webView = object : WebView(this) {
+            override fun onCheckIsTextEditor(): Boolean = true
+        }.apply {
             @SuppressLint("SetJavaScriptEnabled")
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -94,17 +107,38 @@ class MainActivity : AppCompatActivity() {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     loginWebView = view
+                    progressBar.visibility = View.GONE
+                    this@apply.visibility = View.VISIBLE
                 }
             }
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnTouchListener { v, _ ->
+                v.requestFocusFromTouch()
+                false
+            }
+            visibility = View.GONE
             loadUrl("https://xueqiu.com/")
         }
         loginWebView = webView
+
+        val container = FrameLayout(this).apply {
+            addView(
+                webView, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+            addView(progressBar)
+        }
+
         AlertDialog.Builder(this)
             .setTitle("雪球登录")
-            .setView(webView)
+            .setView(container)
             .setCancelable(true)
             .setPositiveButton("关闭") { _, _ -> }
             .show()
+            .window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 
     private fun fetchCookie() {
