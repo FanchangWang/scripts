@@ -101,6 +101,7 @@ public partial class MainForm : Form
         AddSection(panel, "HKEY_CURRENT_USER", "registry_hkcu", registryGrids);
         AddSection(panel, "HKEY_LOCAL_MACHINE", "registry_hklm", registryGrids);
         AddSection(panel, "HKLM WOW6432Node", "registry_wow", registryGrids);
+        AddSection(panel, "UWP 应用", "registry_uwp", registryGrids);
         panel.Controls.Add(MakeRefreshBar());
     }
 
@@ -200,8 +201,8 @@ public partial class MainForm : Form
             DelaySeconds = dlg.DelaySeconds,
             RunAsAdmin = dlg.RunAsAdmin,
             SortOrder = maxOrder + 1,
-            Source = "manual",
-            SourceDetail = ""
+            Source = dlg.SourceType,
+            SourceDetail = dlg.SourceType == "uwp" ? dlg.AppPath.Split('!')[0] : ""
         });
 
         ConfigService.Save(config);
@@ -378,6 +379,9 @@ public partial class MainForm : Form
         {
             case "registry":
                 RegistryService.Enable(item.SourceKeyName, item.SourceDetail);
+                break;
+            case "uwp":
+                RegistryService.EnableUwp(item.SourceDetail, item.SourceKeyName);
                 break;
             case "startup_folder":
                 var backupType = item.SourceDetail.Contains("系统") ? "system" : "user";
@@ -584,6 +588,9 @@ public partial class MainForm : Form
             case "registry":
                 RegistryService.Disable(entry.SourceKeyName, entry.SourceDetail);
                 break;
+            case "uwp":
+                RegistryService.DisableUwp(entry.SourceDetail, entry.SourceKeyName);
+                break;
             case "startup_folder":
                 {
                     var backupType = entry.SourceDetail.Contains("系统") ? "system" : "user";
@@ -602,6 +609,9 @@ public partial class MainForm : Form
         {
             case "registry":
                 RegistryService.Enable(entry.SourceKeyName, entry.SourceDetail);
+                break;
+            case "uwp":
+                RegistryService.EnableUwp(entry.SourceDetail, entry.SourceKeyName);
                 break;
             case "startup_folder":
                 {
@@ -629,10 +639,12 @@ public partial class MainForm : Form
         try
         {
             var all = RegistryService.Enumerate();
+            var uwp = RegistryService.EnumerateUwp();
 
             PopulateStandardGrid(all.Where(e => e.SourceDetail.StartsWith("HKCU")), "registry_hkcu");
             PopulateStandardGrid(all.Where(e => e.SourceDetail.StartsWith("HKLM") && !e.SourceDetail.Contains("WOW")), "registry_hklm");
             PopulateStandardGrid(all.Where(e => e.SourceDetail.Contains("WOW")), "registry_wow");
+            PopulateStandardGrid(uwp, "registry_uwp");
         }
         catch (Exception ex)
         {
@@ -728,6 +740,7 @@ public partial class MainForm : Form
                 var d when d.StartsWith("HKLM") => "注册表 HKEY_LOCAL_MACHINE",
                 _ => item.SourceDetail
             },
+            "uwp" => "UWP 应用",
             "startup_folder" => item.SourceDetail.Contains("系统") ? "系统启动文件夹" : "用户启动文件夹",
             "scheduled_task" => "计划任务",
             "manual" => "手动添加",

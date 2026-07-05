@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Win32;
 using AutoRunManager.Models;
 
@@ -20,6 +22,9 @@ public class RegistryService
         ("HKLM", RegistryHive.LocalMachine, @"Software\Microsoft\Windows\CurrentVersion\Run", "HKEY_LOCAL_MACHINE"),
         ("HKLM", RegistryHive.LocalMachine, @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "HKLM WOW6432Node"),
     };
+
+    private const string UwpSystemAppDataPath =
+        @"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData";
 
     public static List<StartupEntry> Enumerate()
     {
@@ -52,6 +57,137 @@ public class RegistryService
         }
 
         return entries;
+    }
+
+    public static List<StartupEntry> EnumerateUwp()
+    {
+        var entries = new List<StartupEntry>();
+
+        using var baseKey = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64)
+            .OpenSubKey(UwpSystemAppDataPath);
+        if (baseKey == null) return entries;
+
+        foreach (var pkgFamilyName in baseKey.GetSubKeyNames())
+        {
+            using var pkgKey = baseKey.OpenSubKey(pkgFamilyName);
+            if (pkgKey == null) continue;
+
+            foreach (var taskId in pkgKey.GetSubKeyNames())
+            {
+                using var taskKey = pkgKey.OpenSubKey(taskId);
+                if (taskKey == null) continue;
+
+                var stateObj = taskKey.GetValue("State");
+                if (stateObj is not int state) continue;
+
+                var displayName = GetUwpDisplayName(pkgFamilyName);
+
+                entries.Add(new StartupEntry
+                {
+                    Name = string.IsNullOrEmpty(displayName) ? pkgFamilyName : displayName,
+                    Path = $"{pkgFamilyName}!{taskId}",
+                    Args = "",
+                    IsEnabled = state == 2,
+                    RunAsAdmin = false,
+                    Source = "uwp",
+                    SourceDetail = pkgFamilyName,
+                    SourceKeyName = taskId
+                });
+            }
+        }
+
+        return entries;
+    }
+
+    private static string GetUwpDisplayName(string packageFamilyName)
+    {
+        try
+        {
+            var splashPath = $@"{UwpSystemAppDataPath}\{packageFamilyName}\SplashScreen";
+            using var splashKey = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64)
+                .OpenSubKey(splashPath);
+            if (splashKey != null)
+            {
+                foreach (var aumid in splashKey.GetSubKeyNames())
+                {
+                    using var appKey = splashKey.OpenSubKey(aumid);
+                    var raw = appKey?.GetValue("AppName")?.ToString();
+                    if (string.IsNullOrEmpty(raw)) continue;
+                    return ResolveIndirectString(raw, packageFamilyName);
+                }
+            }
+        }
+        catch { }
+
+        var idx = packageFamilyName.IndexOf('_');
+        return idx > 0 ? packageFamilyName[..idx] : packageFamilyName;
+    }
+
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHLoadIndirectString(string pszSource, StringBuilder pszOutBuf, uint cchOutBuf, IntPtr ppvReserved);
+
+    private static string ResolveIndirectString(string source, string packageFamilyName)
+    {
+        if (string.IsNullOrEmpty(source) || !source.Contains("ms-resource://"))
+            return source;
+
+        // If already in @{...?ms-resource://...} format, try direct resolution
+        if (source.StartsWith("@{"))
+        {
+            var sb = new StringBuilder(1024);
+            var hr = SHLoadIndirectString(source, sb, (uint)sb.Capacity, IntPtr.Zero);
+            if (hr == 0)
+                return sb.ToString();
+        }
+
+        // For bare ms-resource:// URIs, find PackageFullName from MrtCache registry
+        // then construct @{PackageFullName?ms-resource://...} for SHLoadIndirectString
+        try
+        {
+            var mrtPath = @"Software\Classes\Local Settings\MrtCache";
+            using var mrtKey = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64)
+                .OpenSubKey(mrtPath);
+            if (mrtKey != null)
+            {
+                foreach (var encodedPath in mrtKey.GetSubKeyNames())
+                {
+                    var fullName = TryExtractFullName(encodedPath, packageFamilyName);
+                    if (fullName == null) continue;
+
+                    var indirect = $"@{{{fullName}?{source}}}";
+                    var sb = new StringBuilder(1024);
+                    var hr = SHLoadIndirectString(indirect, sb, (uint)sb.Capacity, IntPtr.Zero);
+                    if (hr == 0)
+                        return sb.ToString();
+                }
+            }
+        }
+        catch { }
+
+        return source;
+    }
+
+    private static string? TryExtractFullName(string encodedPath, string packageFamilyName)
+    {
+        try
+        {
+            var decoded = Uri.UnescapeDataString(encodedPath);
+            var match = System.Text.RegularExpressions.Regex.Match(
+                decoded, @"\\WindowsApps\\(.+?)\\resources\.pri$");
+            if (!match.Success) return null;
+
+            var fullName = match.Groups[1].Value;
+            var parts = packageFamilyName.Split('_');
+            var namePart = parts[0];
+            var pubId = parts[^1];
+
+            if (fullName.StartsWith(namePart, StringComparison.OrdinalIgnoreCase) &&
+                fullName.EndsWith("_" + pubId, StringComparison.OrdinalIgnoreCase))
+                return fullName;
+        }
+        catch { }
+
+        return null;
     }
 
     public static bool IsStartupApprovedDisabled(string valueName, bool isHklm, bool isWow = false)
@@ -131,6 +267,11 @@ public class RegistryService
         WriteStartupApproved(valueName, isHklm, isWow);
     }
 
+    public static void DisableUwp(string pkgFamilyName, string taskId)
+    {
+        SetUwpState(pkgFamilyName, taskId, 0);
+    }
+
     public static void Enable(string valueName)
     {
         using var approvedKey = RegistryKey.OpenBaseKey(
@@ -153,6 +294,19 @@ public class RegistryService
 
         if (!isHklm && !isWow)
             DeleteFromPath(HkcuApprovedPath, RegistryHive.CurrentUser, valueName);
+    }
+
+    public static void EnableUwp(string pkgFamilyName, string taskId)
+    {
+        SetUwpState(pkgFamilyName, taskId, 2);
+    }
+
+    private static void SetUwpState(string pkgFamilyName, string taskId, int state)
+    {
+        var path = Path.Combine(UwpSystemAppDataPath, pkgFamilyName, taskId);
+        using var key = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64)
+            .OpenSubKey(path, true);
+        key?.SetValue("State", state, RegistryValueKind.DWord);
     }
 
     private static void DeleteFromPath(string path, RegistryHive hive, string valueName)

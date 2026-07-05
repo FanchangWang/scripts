@@ -1,3 +1,5 @@
+using AutoRunManager.Services;
+
 namespace AutoRunManager.Forms;
 
 public class AddItemDialog : Form
@@ -30,12 +32,13 @@ public class AddItemDialog : Form
         }
     }
     public bool RunAsAdmin => runAsAdminCheck.Checked;
+    public string SourceType => runAsAdminCheck.Enabled ? "manual" : "uwp";
 
     public AddItemDialog()
     {
         Text = "手动添加延时启动";
-        Size = new Size(520, 310);
-        MinimumSize = new Size(480, 280);
+        Size = new Size(520, 340);
+        MinimumSize = new Size(480, 300);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
 
@@ -78,9 +81,13 @@ public class AddItemDialog : Form
                     nameTextBox.Text = Path.GetFileNameWithoutExtension(dlg.FileName);
             }
         };
+        var uwpBtn = new Button { Text = "UWP", Width = 42, Height = 24 };
+        uwpBtn.Left = cx + browseBtn.Width + 4; uwpBtn.Top = browseBtn.Top;
+        uwpBtn.Click += (_, _) => BrowseUwpApp();
         PathAdjustWidth();
-        Controls.Add(MakeLbl("路径:"));
+        Controls.Add(MakeLbl("路径/AUMID:"));
         Controls.Add(browseBtn);
+        Controls.Add(uwpBtn);
         Controls.Add(pathTextBox);
         y += rh + gap;
 
@@ -115,13 +122,64 @@ public class AddItemDialog : Form
 
         void PathAdjustWidth()
         {
-            var bw = browseBtn.Width + 6;
+            var bw = browseBtn.Width + uwpBtn.Width + 8;
             pathTextBox.Left = cx + bw;
             pathTextBox.Top = browseBtn.Top;
             pathTextBox.Width = ClientSize.Width - cx - bw - 12;
             pathTextBox.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
             pathTextBox.Height = 24;
         }
+    }
+
+    private void BrowseUwpApp()
+    {
+        var apps = RegistryService.EnumerateUwp();
+        if (apps.Count == 0)
+        {
+            MessageBox.Show(this, "未找到已注册启动任务的 UWP 应用。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dlg = new Form
+        {
+            Text = "选择 UWP 应用",
+            Size = new Size(500, 420),
+            StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            FormBorderStyle = FormBorderStyle.FixedDialog
+        };
+
+        var listBox = new ListBox
+        {
+            Dock = DockStyle.Fill,
+            DisplayMember = "Name",
+            ValueMember = "Path"
+        };
+        listBox.Items.AddRange(apps.Select(a => new { a.Name, a.Path }).ToArray());
+
+        var btnPanel = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft };
+        var okBtn = new Button { Text = "确定", Width = 80, Height = 28, DialogResult = DialogResult.OK, Enabled = false };
+        var cancelBtn = new Button { Text = "取消", Width = 80, Height = 28, DialogResult = DialogResult.Cancel };
+        btnPanel.Controls.Add(okBtn);
+        btnPanel.Controls.Add(cancelBtn);
+
+        listBox.SelectedIndexChanged += (_, _) => okBtn.Enabled = listBox.SelectedItem != null;
+        listBox.DoubleClick += (_, _) => { if (listBox.SelectedItem != null) { dlg.DialogResult = DialogResult.OK; dlg.Close(); } };
+
+        dlg.Controls.Add(listBox);
+        dlg.Controls.Add(btnPanel);
+
+        if (dlg.ShowDialog(this) != DialogResult.OK || listBox.SelectedItem == null) return;
+
+        dynamic selected = listBox.SelectedItem;
+        string name = selected.Name;
+        string aumid = selected.Path;
+
+        nameTextBox.Text = name;
+        pathTextBox.Text = aumid;
+        runAsAdminCheck.Checked = false;
+        runAsAdminCheck.Enabled = false;
     }
 
     protected override void OnVisibleChanged(EventArgs e)

@@ -16,6 +16,9 @@ public static partial class ProcessLauncher
                 return false;
             }
 
+            if (item.Source == "uwp")
+                return StartUwp(item.Path);
+
             if (!File.Exists(item.Path))
             {
                 var resolved = ResolveFromPath(item.Path);
@@ -41,6 +44,46 @@ public static partial class ProcessLauncher
         catch (Exception ex)
         {
             Logger.Write($"启动失败 [{item.Name}]: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool StartUwp(string aumid)
+    {
+        Logger.Write($"UWP 激活: {aumid}");
+
+        try
+        {
+            var clsid = new Guid("45BA127D-10A8-46A8-A3B7-9F08D39D9E1F");
+            var iid = new Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D");
+
+            var hr = CoCreateInstance(clsid, IntPtr.Zero, 1, iid, out var ppv);
+            if (hr != 0)
+            {
+                Logger.Write($"CoCreateInstance 失败: 0x{hr:X}");
+                return false;
+            }
+
+            try
+            {
+                var activationManager = (IApplicationActivationManager)Marshal.GetObjectForIUnknown(ppv);
+                hr = activationManager.ActivateApplication(
+                    aumid, null, 0, out _);
+                if (hr != 0)
+                {
+                    Logger.Write($"ActivateApplication 失败: 0x{hr:X}");
+                    return false;
+                }
+                return true;
+            }
+            finally
+            {
+                Marshal.Release(ppv);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"UWP 启动失败 [{aumid}]: {ex.Message}");
             return false;
         }
     }
@@ -158,6 +201,21 @@ public static partial class ProcessLauncher
     {
         var quoted = path.Contains(' ') ? $"\"{path}\"" : path;
         return string.IsNullOrWhiteSpace(args) ? quoted : $"{quoted} {args}";
+    }
+
+    [LibraryImport("ole32.dll")]
+    private static partial int CoCreateInstance(in Guid rclsid, IntPtr pUnkOuter, uint dwClsContext, in Guid riid, out IntPtr ppv);
+
+    [ComImport, Guid("2E941141-7F97-4756-BA1D-9DECDE894A3D")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IApplicationActivationManager
+    {
+        [PreserveSig]
+        int ActivateApplication(
+            [MarshalAs(UnmanagedType.LPWStr)] string appUserModelId,
+            [MarshalAs(UnmanagedType.LPWStr)] string? arguments,
+            uint options,
+            out uint processId);
     }
 
     [LibraryImport("wtsapi32.dll", SetLastError = true)]
