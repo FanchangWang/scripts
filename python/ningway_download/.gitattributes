@@ -1,0 +1,16 @@
+# 所有文本文件使用 LF
+* text=auto eol=lf
+
+# 视频/音频文件保持原始换行符
+*.mp4 binary
+*.m4a binary
+*.m4v binary
+*.avi binary
+*.mkv binary
+*.mov binary
+*.flv binary
+*.wav binary
+*.mp3 binary
+*.flac binary
+*.aac binary
+*.ogg binary

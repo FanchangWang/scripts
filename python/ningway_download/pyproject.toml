@@ -1,0 +1,60 @@
+[project]
+name = "ningway"
+version = "0.1.0"
+description = "ningway.com 音视频下载工具"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+update-data = "ningway.cli:cmd_update_data"
+download = "ningway.cli:cmd_download"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ningway"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.21",
+    "ty>=0.0.59",
+]
+
+[tool.uv]
+managed = true
+
+[tool.ty.environment]
+python = ".venv"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",   # 标准
+    "I",              # 导入
+    "UP", "RUF",      # 代码现代化
+    "B", "BLE", "T10", # Bug
+    "SIM", "C4", "PERF", "PIE", # 简化与性能
+    "N",              # 命名
+    "PTH",            # 路径
+    "PT",             # 测试
+    "TRY",            # 异常
+]
+ignore = [
+    "E501",
+    "TRY003",
+    "RUF001",  # 全角字符（中文文档需要）
+    "RUF002",  # 全角字符（中文文档需要）
+    "RUF003",  # 全角字符（中文注释需要）
+    "BLE001",  # 允许捕获 Exception
+    "SIM105",  # 不强制使用 contextlib.suppress
+]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
+docstring-code-format = true
