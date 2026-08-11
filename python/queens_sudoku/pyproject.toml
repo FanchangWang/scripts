@@ -11,7 +11,3 @@ dependencies = [
     "pyautogui>=0.9.54",
     "pywin32>=311",
 ]
-
-[[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true
