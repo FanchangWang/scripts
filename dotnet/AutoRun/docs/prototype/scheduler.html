@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Startup Delayer - 调度端进度面板原型</title>
+<style>
+/* ===== 基础重置 ===== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  background: #1a1a2e;
+  min-height: 100vh;
+  /* 模拟桌面壁纸背景 */
+  background-image:
+    radial-gradient(ellipse at 30% 60%, rgba(20, 60, 120, 0.4) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 30%, rgba(80, 40, 100, 0.3) 0%, transparent 50%);
+  background-size: cover;
+}
+
+/* ===== 窗口容器 — 固定右下角 ===== */
+.scheduler-window {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 420px;
+  min-height: 260px;
+  border-radius: 12px;
+  background: rgba(32, 32, 32, 0.92);
+  backdrop-filter: blur(60px) saturate(125%);
+  -webkit-backdrop-filter: blur(60px) saturate(125%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+  padding: 20px;
+  color: #fff;
+  /* 进入动画 */
+  animation: windowEnter 0.3s ease-out;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.scheduler-window.closing {
+  opacity: 0;
+  transform: translateY(20px) scale(0.98);
+}
+
+.scheduler-window.closed {
+  display: none;
+}
+
+@keyframes windowEnter {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ===== 自定义标题栏 ===== */
+.title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.title-bar-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #FFFFFF;
+  letter-spacing: 0.01em;
+}
+
+/* 关闭按钮 */
+.close-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 1);
+}
+
+.close-btn:active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ===== 条目列表 ===== */
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+/* 单行条目 */
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.item-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* 图标区域 32px */
+.item-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* 已启动 — 绿色圆勾 SVG */
+.item-icon .icon-success {
+  width: 20px;
+  height: 20px;
+  color: #4CAF50;
+}
+
+/* 等待中 — 旋转 ProgressRing */
+.item-icon .icon-pending {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 185, 0, 0.2);
+  border-top-color: #FFB900;
+  border-radius: 50%;
+  animation: spinRing 1s linear infinite;
+}
+
+@keyframes spinRing {
+  to { transform: rotate(360deg); }
+}
+
+/* 失败 — 红色叉号 SVG */
+.item-icon .icon-failed {
+  width: 20px;
+  height: 20px;
+  color: #E81123;
+}
+
+/* 应用名 */
+.item-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.4;
+  /* 省略溢出 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 状态文字（右对齐） */
+.item-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  transition: color 0.3s;
+}
+
+.item-status.pending {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.item-status.success {
+  color: #4CAF50;
+}
+
+.item-status.failed {
+  color: #E81123;
+}
+
+/* ===== 底部进度区域 ===== */
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 进度条 4px */
+.progress-bar-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: #005FB8;
+  transition: width 0.6s ease;
+}
+
+/* 进度文字 */
+.progress-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.3s;
+}
+
+/* 完成提示文字 */
+.completion-notice {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  animation: fadeInNotice 0.3s ease;
+}
+
+@keyframes fadeInNotice {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 面板关闭后的提示 */
+.closed-notice {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 420px;
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(32, 32, 32, 0.92);
+  backdrop-filter: blur(60px) saturate(125%);
+  -webkit-backdrop-filter: blur(60px) saturate(125%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  text-align: center;
+  animation: fadeInNotice 0.4s ease;
+  transition: opacity 1s ease 2s;
+}
+
+.closed-notice.fade-out {
+  opacity: 0;
+}
+</style>
+</head>
+<body>
+
+<!-- 调度端进度面板窗口 -->
+<div class="scheduler-window" id="schedulerWindow">
+
+  <!-- 自定义标题栏 -->
+  <div class="title-bar">
+    <span class="title-bar-text">Startup Delayer · 延迟启动进度</span>
+    <button class="close-btn" id="closeBtn" title="关闭">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- 条目列表 -->
+  <div class="item-list" id="itemList">
+    <!-- 条目通过 JS 动态生成 -->
+  </div>
+
+  <!-- 底部进度区域 -->
+  <div class="progress-section" id="progressSection">
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progressBarFill"></div>
+    </div>
+    <span class="progress-text" id="progressText">0/3 完成</span>
+    <div id="failureSummary" style="display: none; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+      <div id="failureText" style="color: rgba(255,255,255,0.8); font-size: 13px; text-align: center;"></div>
+      <div style="text-align: center; margin-top: 8px;">
+        <button onclick="viewLog()" style="padding: 5px 16px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); background: transparent; color: rgba(255,255,255,0.9); cursor: pointer; font-size: 12px; font-family: inherit;">查看错误日志</button>
+      </div>
+      <div id="closeHint" style="color: rgba(255,255,255,0.4); font-size: 11px; text-align: center; margin-top: 8px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 面板关闭后的提示（隐藏） -->
+<div class="closed-notice" id="closedNotice" style="display: none;">
+  窗口已关闭
+</div>
+
+<script>
+// ===== 模拟数据 =====
+const items = [
+  { id: 1, name: '微信',         delay: 3, status: 'pending', countdown: 3 },
+  { id: 2, name: 'PowerToys',   delay: 6, status: 'pending', countdown: 6 },
+  { id: 3, name: '翻译工具 (pot)', delay: 8, status: 'pending', countdown: 8 },
+];
+
+const total = items.length;
+let finishedCount = 0;
+let allDone = false;
+let closedByUser = false;
+let tickInterval = null;
+
+// ===== DOM 引用 =====
+const windowEl = document.getElementById('schedulerWindow');
+const itemListEl = document.getElementById('itemList');
+const progressBarFill = document.getElementById('progressBarFill');
+const progressText = document.getElementById('progressText');
+const progressSection = document.getElementById('progressSection');
+const failureSummary = document.getElementById('failureSummary');
+const failureText = document.getElementById('failureText');
+const closeHint = document.getElementById('closeHint');
+const closeBtn = document.getElementById('closeBtn');
+const closedNotice = document.getElementById('closedNotice');
+
+// ===== 渲染条目列表 =====
+function renderItems() {
+  itemListEl.innerHTML = '';
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    row.id = `item-${item.id}`;
+
+    // 图标
+    let iconHtml = '';
+    if (item.status === 'pending') {
+      iconHtml = '<div class="icon-pending"></div>';
+    } else if (item.status === 'success') {
+      iconHtml = `<svg class="icon-success" viewBox="0 0 20 20" fill="none">
+        <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"/>
+        <path d="M6 10l3 3 5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    } else if (item.status === 'failed') {
+      iconHtml = `<svg class="icon-failed" viewBox="0 0 20 20" fill="none">
+        <circle cx="10" cy="10" r="9" stroke="currentColor" stroke-width="1.5" fill="none"/>
+        <path d="M7 7l6 6M13 7l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>`;
+    }
+
+    // 状态文字
+    let statusHtml = '';
+    if (item.status === 'pending') {
+      statusHtml = `<span class="item-status pending">剩余 ${item.countdown}s</span>`;
+    } else if (item.status === 'success') {
+      statusHtml = '<span class="item-status success">已启动</span>';
+    } else if (item.status === 'failed') {
+      statusHtml = '<span class="item-status failed">启动失败</span>';
+    }
+
+    row.innerHTML = `
+      <div class="item-icon">${iconHtml}</div>
+      <span class="item-name">${item.name}</span>
+      ${statusHtml}
+    `;
+    itemListEl.appendChild(row);
+  });
+}
+
+// ===== 更新进度条 =====
+function getSuccessCount() {
+  return items.filter(i => i.status === 'success').length;
+}
+
+function updateProgress() {
+  const successCount = getSuccessCount();
+  progressBarFill.style.width = (successCount / total) * 100 + '%';
+  progressText.textContent = `${finishedCount}/${total} 完成`;
+}
+
+// ===== 每秒倒计时 =====
+function tick() {
+  if (allDone || closedByUser) return;
+
+  let changed = false;
+  items.forEach(item => {
+    if (item.status === 'pending' && item.countdown > 0) {
+      item.countdown--;
+      changed = true;
+
+      // 到点 — 判断成功/失败
+      if (item.countdown <= 0) {
+        // 第三个条目模拟失败
+        if (item.id === 3) {
+          item.status = 'failed';
+        } else {
+          item.status = 'success';
+        }
+        finishedCount++;
+        updateProgress();
+      }
+    }
+  });
+
+  renderItems();
+
+  // 检查是否全部完成
+  if (finishedCount >= total) {
+    allDone = true;
+    clearInterval(tickInterval);
+    onAllCompleted();
+  }
+}
+
+// ===== 全部完成后 =====
+function onAllCompleted() {
+  const failedItems = items.filter(i => i.status === 'failed');
+  const successCount = getSuccessCount();
+
+  if (failedItems.length === 0) {
+    // 全部成功 — 3 秒倒计时自动关闭
+    let countdown = 3;
+    progressText.textContent = `已全部启动，窗口将在 ${countdown} 秒后关闭`;
+    progressText.style.color = 'rgba(255, 255, 255, 0.7)';
+
+    const cdInterval = setInterval(() => {
+      if (closedByUser) {
+        clearInterval(cdInterval);
+        return;
+      }
+      countdown--;
+      if (countdown > 0) {
+        progressText.textContent = `已全部启动，窗口将在 ${countdown} 秒后关闭`;
+      } else {
+        clearInterval(cdInterval);
+        closeWindow();
+      }
+    }, 1000);
+  } else {
+    // 存在失败 — 不自动关闭，显示失败摘要
+    failureSummary.style.display = 'block';
+    failureText.textContent = `${successCount}/${total} 成功，${failedItems.length} 个启动失败`;
+    closeHint.textContent = '点击右上角 X 或下方按钮关闭窗口';
+    progressText.textContent = `${successCount}/${total} 完成`;
+  }
+}
+
+// ===== 查看错误日志（原型占位） =====
+function viewLog() {
+  alert('查看错误日志 — 原型演示');
+}
+
+// ===== 关闭窗口 =====
+function closeWindow() {
+  windowEl.classList.add('closing');
+  setTimeout(() => {
+    windowEl.classList.add('closed');
+    // 在原位置显示"窗口已关闭"提示
+    closedNotice.style.display = 'block';
+    // 2 秒后开始淡出，再 1 秒后隐藏
+    setTimeout(() => {
+      closedNotice.classList.add('fade-out');
+      setTimeout(() => {
+        closedNotice.style.display = 'none';
+      }, 1000);
+    }, 2000);
+  }, 400);
+}
+
+// ===== 关闭按钮事件 =====
+closeBtn.addEventListener('click', () => {
+  closedByUser = true;
+  if (tickInterval) clearInterval(tickInterval);
+  closeWindow();
+});
+
+// ===== 启动模拟 =====
+renderItems();
+updateProgress();
+
+// 每秒触发一次
+tickInterval = setInterval(tick, 1000);
+</script>
+
+</body>
+</html>

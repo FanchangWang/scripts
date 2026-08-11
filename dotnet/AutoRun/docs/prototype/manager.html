@@ -1,0 +1,2343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Startup Delayer</title>
+<style>
+/* ===== 重置与基础 ===== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  background: #E8E8E8;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  color: #1A1A1A;
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== 主窗口容器 ===== */
+.window {
+  width: 1200px;
+  height: 800px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.12);
+  /* Mica 背景模拟 */
+  background: rgba(243,243,243,0.85);
+  backdrop-filter: blur(40px);
+  position: relative;
+}
+
+/* ===== 标题栏 ===== */
+.titlebar {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  background: rgba(243,243,243,0.6);
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.titlebar-logo {
+  width: 20px;
+  height: 20px;
+  margin-right: 10px;
+  background: linear-gradient(135deg, #005FB8 0%, #00B4D8 100%);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.titlebar-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1A1A1A;
+}
+
+.titlebar-spacer {
+  flex: 1;
+}
+
+/* 标题栏搜索框 */
+.titlebar-search {
+  width: 240px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.6);
+  padding: 0 10px;
+  font-size: 12px;
+  color: #1A1A1A;
+  outline: none;
+  transition: border-color 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-search::placeholder {
+  color: #888;
+}
+
+.titlebar-search:focus {
+  border-color: #005FB8;
+  border-bottom: 2px solid #005FB8;
+}
+
+/* 窗口控制按钮 */
+.window-controls {
+  display: flex;
+  height: 48px;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls .ctrl-btn {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1A1A1A;
+  font-size: 10px;
+  transition: background 0.1s;
+}
+
+.window-controls .ctrl-btn:hover {
+  background: rgba(0,0,0,0.05);
+}
+
+.window-controls .ctrl-btn.close-btn:hover {
+  background: #C42B1C;
+  color: white;
+}
+
+/* ===== 主体区域 ===== */
+.main-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ===== 左侧 NavigationView ===== */
+.nav-view {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  background: rgba(249,249,249,0.5);
+  transition: width 0.25s ease;
+  overflow: hidden;
+}
+
+.nav-view.collapsed {
+  width: 48px;
+}
+
+.nav-header {
+  padding: 12px 16px 8px;
+  font-size: 12px;
+  color: #888;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.nav-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  margin-bottom: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.nav-item:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+.nav-item.active {
+  background: rgba(0,95,184,0.08);
+}
+
+.nav-item.active .nav-icon {
+  color: #005FB8;
+}
+
+.nav-item.active .nav-label {
+  color: #005FB8;
+  font-weight: 600;
+}
+
+.nav-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #555;
+}
+
+.nav-label {
+  margin-left: 12px;
+  font-size: 14px;
+  color: #1A1A1A;
+  overflow: hidden;
+}
+
+.nav-separator {
+  height: 1px;
+  background: rgba(0,0,0,0.06);
+  margin: 8px 16px;
+}
+
+/* 折叠按钮 */
+.nav-toggle {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  border-radius: 6px;
+  margin: 0 8px 8px;
+  transition: background 0.1s;
+}
+
+.nav-toggle:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+/* ===== 内容区域 ===== */
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 页面容器 */
+.page {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.page.active {
+  display: flex;
+}
+
+/* 页面头部 */
+.page-header {
+  padding: 20px 28px 12px;
+  flex-shrink: 0;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* 筛选栏 */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.filter-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.7);
+  cursor: pointer;
+  font-size: 13px;
+  color: #444;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filter-btn:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+.filter-btn.active {
+  background: #005FB8;
+  color: white;
+  border-color: #005FB8;
+}
+
+.filter-btn .arrow {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* Pivot Tab */
+.pivot-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid rgba(0,0,0,0.06);
+  margin: 0 28px;
+}
+
+.pivot-tab {
+  padding: 10px 18px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.pivot-tab:hover {
+  color: #1A1A1A;
+}
+
+.pivot-tab.active {
+  color: #005FB8;
+  border-bottom-color: #005FB8;
+  font-weight: 600;
+}
+
+/* ===== 列表滚动区域 ===== */
+.list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 28px 16px;
+}
+
+.list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.15);
+  border-radius: 3px;
+}
+
+/* ===== Expander 分组 ===== */
+.expander-group {
+  margin-bottom: 12px;
+}
+
+.expander-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.expander-header:hover {
+  background: rgba(0,0,0,0.03);
+}
+
+.expander-arrow {
+  font-size: 10px;
+  margin-right: 8px;
+  transition: transform 0.2s;
+  color: #666;
+}
+
+.expander-group.expanded .expander-arrow {
+  transform: rotate(90deg);
+}
+
+.expander-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1A1A1A;
+}
+
+.expander-count {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #888;
+  font-weight: 400;
+}
+
+.expander-body {
+  display: none;
+  padding: 4px 0 4px 20px;
+}
+
+.expander-group.expanded .expander-body {
+  display: block;
+}
+
+/* ===== 启动项卡片 ===== */
+.item-card {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.8);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  margin-bottom: 6px;
+  transition: box-shadow 0.15s;
+}
+
+.item-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+}
+
+.item-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: white;
+  font-weight: 700;
+}
+
+.item-info {
+  flex: 1;
+  margin-left: 0;
+  min-width: 0;
+}
+
+.item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1A1A1A;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-path {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* 状态 Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge.enabled {
+  background: #D4EDDA;
+  color: #155724;
+}
+
+.badge.disabled {
+  background: #F8D7DA;
+  color: #721C24;
+}
+
+.badge.delayed {
+  background: #CCE4F7;
+  color: #005FB8;
+}
+
+/* 操作按钮 */
+.item-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.8);
+  cursor: pointer;
+  font-size: 12px;
+  color: #444;
+  transition: all 0.15s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.btn:hover {
+  background: rgba(0,0,0,0.05);
+  border-color: rgba(0,0,0,0.15);
+}
+
+.btn:active {
+  background: rgba(0,0,0,0.08);
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: #005FB8;
+  color: white;
+  border-color: #005FB8;
+}
+
+.btn-primary:hover {
+  background: #004E99;
+  border-color: #004E99;
+}
+
+.btn-danger {
+  color: #C42B1C;
+  border-color: rgba(196,43,28,0.3);
+}
+
+.btn-danger:hover {
+  background: rgba(196,43,28,0.08);
+}
+
+.btn-sm {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+/* ===== 主页仪表盘 ===== */
+.home-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 28px 16px;
+}
+
+.home-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.home-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.15);
+  border-radius: 3px;
+}
+
+/* 总览卡片网格 */
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 20px;
+}
+
+.overview-card {
+  background: rgba(255,255,255,0.85);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  padding: 18px 16px;
+  transition: box-shadow 0.15s;
+}
+
+.overview-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+}
+
+.overview-number {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1A1A1A;
+  line-height: 1.1;
+}
+
+.overview-label {
+  font-size: 13px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.overview-card.accent .overview-number {
+  color: #005FB8;
+}
+
+.overview-card.success .overview-number {
+  color: #155724;
+}
+
+/* 区块标题 */
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1A1A1A;
+  margin-bottom: 12px;
+}
+
+/* 启动项分布 */
+.distribution-list {
+  background: rgba(255,255,255,0.85);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.dist-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.dist-row + .dist-row {
+  border-top: 1px solid rgba(0,0,0,0.04);
+}
+
+.dist-name {
+  width: 80px;
+  font-size: 13px;
+  color: #444;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.dist-name:hover {
+  color: #005FB8;
+}
+
+.dist-bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dist-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #005FB8, #00B4D8);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.dist-count {
+  width: 100px;
+  font-size: 12px;
+  color: #666;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* 快捷操作 */
+.quick-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+/* 最近操作 Timeline */
+.recent-timeline {
+  background: rgba(255,255,255,0.85);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  padding: 16px;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  position: relative;
+}
+
+.timeline-item + .timeline-item {
+  border-top: 1px solid rgba(0,0,0,0.04);
+}
+
+.timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #005FB8;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.timeline-dot.green {
+  background: #28A745;
+}
+
+.timeline-dot.red {
+  background: #C42B1C;
+}
+
+.timeline-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-text {
+  font-size: 13px;
+  color: #1A1A1A;
+}
+
+.timeline-time {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+}
+
+/* ===== UWP 应用页面 ===== */
+.uwp-search {
+  width: 320px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.7);
+  padding: 0 10px;
+  font-size: 13px;
+  color: #1A1A1A;
+  outline: none;
+  margin-top: 12px;
+  transition: border-color 0.15s;
+}
+
+.uwp-search::placeholder {
+  color: #888;
+}
+
+.uwp-search:focus {
+  border-color: #005FB8;
+  border-bottom: 2px solid #005FB8;
+}
+
+/* UWP 卡片特殊样式 */
+.uwp-card {
+  display: flex;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.8);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  margin-bottom: 8px;
+  transition: box-shadow 0.15s;
+}
+
+.uwp-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+}
+
+.uwp-info {
+  flex: 1;
+  margin-left: 12px;
+  min-width: 0;
+}
+
+.uwp-detail {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uwp-detail + .uwp-detail {
+  margin-top: 1px;
+}
+
+/* ===== 延时启动页面（分组+拖拽） ===== */
+.delay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px 12px;
+  flex-shrink: 0;
+}
+
+.delay-group {
+  margin-bottom: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 偶数组微灰背景 */
+.delay-group:nth-child(even) {
+  background: rgba(0,0,0,0.015);
+  padding: 8px 0;
+  margin: 0;
+  border-radius: 8px;
+}
+
+.delay-group-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.delay-group-header:hover {
+  background: rgba(0,0,0,0.03);
+}
+
+.delay-group-header .expander-arrow {
+  font-size: 10px;
+  margin-right: 8px;
+  transition: transform 0.2s;
+  color: #666;
+}
+
+.delay-group.expanded .delay-group-header .expander-arrow {
+  transform: rotate(90deg);
+}
+
+.delay-group-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1A1A1A;
+}
+
+.delay-group-count {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #888;
+  font-weight: 400;
+}
+
+.delay-group-body {
+  display: none;
+  padding: 4px 12px 8px;
+}
+
+.delay-group.expanded .delay-group-body {
+  display: block;
+}
+
+/* 延时卡片（可拖拽） */
+.delay-card {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.8);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  margin-bottom: 6px;
+  transition: box-shadow 0.15s, opacity 0.2s, transform 0.2s;
+  cursor: default;
+}
+
+.delay-card:last-child {
+  margin-bottom: 0;
+}
+
+.delay-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+}
+
+/* 拖拽手柄 */
+.drag-handle {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #999;
+  cursor: grab;
+  margin-right: 10px;
+  user-select: none;
+  transition: color 0.15s;
+  border-radius: 4px;
+}
+
+.drag-handle:hover {
+  color: #555;
+  background: rgba(0,0,0,0.04);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.delay-info {
+  flex: 1;
+  margin-left: 0;
+  min-width: 0;
+}
+
+.delay-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1A1A1A;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.delay-name-time {
+  font-size: 13px;
+  font-weight: 500;
+  color: #005FB8;
+  background: rgba(0,95,184,0.08);
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+
+.delay-meta {
+  font-size: 12px;
+  color: #666;
+  margin-top: 3px;
+  display: flex;
+  gap: 16px;
+}
+
+.delay-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.delay-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+/* 拖拽状态 */
+.delay-card.dragging {
+  opacity: 0.4;
+  transform: scale(0.98);
+}
+
+/* 拖拽插入指示线 */
+.drop-indicator {
+  height: 3px;
+  background: #005FB8;
+  border-radius: 2px;
+  margin: -1px 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.drop-indicator.visible {
+  opacity: 1;
+}
+
+/* 拖拽提示 */
+.drag-hint {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+  padding: 4px 0 2px;
+  margin-top: -4px;
+  margin-bottom: 4px;
+}
+
+/* ===== 设置页面 ===== */
+.settings-section {
+  padding: 20px 28px;
+}
+
+.settings-card {
+  background: rgba(255,255,255,0.8);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.settings-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1A1A1A;
+  margin-bottom: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid rgba(0,0,0,0.04);
+}
+
+.settings-label {
+  font-size: 14px;
+  color: #444;
+}
+
+.settings-desc {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.settings-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #155724;
+}
+
+.settings-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #28A745;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 延时预设 */
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 16px;
+  background: rgba(0,95,184,0.08);
+  color: #005FB8;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid rgba(0,95,184,0.2);
+  transition: all 0.15s;
+}
+
+.preset-chip .chip-remove {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: pointer;
+  color: #005FB8;
+  transition: background 0.15s;
+}
+
+.preset-chip .chip-remove:hover {
+  background: rgba(0,95,184,0.15);
+}
+
+.preset-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.preset-add-input {
+  width: 80px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.9);
+  padding: 0 10px;
+  font-size: 13px;
+  color: #1A1A1A;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.preset-add-input:focus {
+  border-color: #005FB8;
+  border-bottom: 2px solid #005FB8;
+}
+
+.preset-desc {
+  font-size: 12px;
+  color: #888;
+  margin-top: 8px;
+}
+
+/* ===== 状态栏 ===== */
+.statusbar {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  background: rgba(243,243,243,0.6);
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #666;
+  gap: 20px;
+}
+
+.statusbar-sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(0,0,0,0.1);
+}
+
+/* ===== ContentDialog ===== */
+.dialog-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog-overlay.show {
+  display: flex;
+}
+
+.dialog {
+  width: 480px;
+  background: #FFFFFF;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.24);
+  overflow: hidden;
+  animation: dialogIn 0.2s ease;
+}
+
+@keyframes dialogIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.dialog-title {
+  padding: 20px 24px 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1A1A1A;
+}
+
+.dialog-body {
+  padding: 0 24px 20px;
+}
+
+.dialog-field {
+  margin-bottom: 14px;
+}
+
+.dialog-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 4px;
+}
+
+.dialog-field-input {
+  width: 100%;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(255,255,255,0.9);
+  padding: 0 10px;
+  font-size: 13px;
+  color: #1A1A1A;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.dialog-field-input:focus {
+  border-color: #005FB8;
+  border-bottom: 2px solid #005FB8;
+}
+
+.dialog-field-input[readonly] {
+  background: rgba(0,0,0,0.03);
+  color: #666;
+}
+
+/* RadioButtons 组 */
+.radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.7);
+  cursor: pointer;
+  font-size: 13px;
+  color: #444;
+  transition: all 0.15s;
+}
+
+.radio-option:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+.radio-option.selected {
+  background: rgba(0,95,184,0.08);
+  border-color: #005FB8;
+  color: #005FB8;
+  font-weight: 600;
+}
+
+.radio-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #888;
+  margin-right: 8px;
+  position: relative;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+
+.radio-option.selected .radio-dot {
+  border-color: #005FB8;
+}
+
+.radio-option.selected .radio-dot::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #005FB8;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px 20px;
+}
+
+/* ===== SVG 图标内联 ===== */
+.icon-svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+</style>
+</head>
+<body>
+
+<!-- 主窗口 -->
+<div class="window">
+
+  <!-- 标题栏 -->
+  <div class="titlebar">
+    <div class="titlebar-logo"></div>
+    <span class="titlebar-text">Startup Delayer</span>
+    <div class="titlebar-spacer"></div>
+    <div class="window-controls">
+      <button class="ctrl-btn" title="最小化">
+        <svg width="10" height="1"><rect y="0" width="10" height="1" fill="currentColor"/></svg>
+      </button>
+      <button class="ctrl-btn" title="最大化">
+        <svg width="10" height="10"><rect x="0" y="0" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button class="ctrl-btn close-btn" title="关闭">
+        <svg width="10" height="10"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 主体 -->
+  <div class="main-body">
+
+    <!-- 左侧导航 -->
+    <div class="nav-view" id="navView">
+      <div class="nav-header">导航</div>
+      <div class="nav-list">
+        <!-- 主页 -->
+        <div class="nav-item active" data-page="page-home" onclick="switchPage(this)">
+          <div class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 9l7-7 7 7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 8v8h4v-5h4v5h4V8" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          </div>
+          <span class="nav-label">主页</span>
+        </div>
+        <!-- 注册表 -->
+        <div class="nav-item" data-page="page-registry" onclick="switchPage(this)">
+          <div class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 5h10M4 9h10M4 13h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <span class="nav-label">注册表</span>
+        </div>
+        <!-- 启动文件夹 -->
+        <div class="nav-item" data-page="page-folder" onclick="switchPage(this)">
+          <div class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 4h6l2 2h6v9H2V4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+          </div>
+          <span class="nav-label">启动文件夹</span>
+        </div>
+        <!-- 计划任务 -->
+        <div class="nav-item" data-page="page-tasks" onclick="switchPage(this)">
+          <div class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="1.4"/><path d="M9 5v4l3 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </div>
+          <span class="nav-label">计划任务</span>
+        </div>
+        <!-- UWP 应用 -->
+        <div class="nav-item" data-page="page-uwp" onclick="switchPage(this)">
+          <div class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="1" width="12" height="16" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 14h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </div>
+          <span class="nav-label">UWP 应用</span>
+        </div>
+        <!-- 延时启动 -->
+        <div class="nav-item" data-page="page-delay" onclick="switchPage(this)">
+          <div class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/><path d="M9 6v4h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M9 2V0M9 0l2 1.5L9 0 7 1.5z" fill="currentColor"/></svg>
+          </div>
+          <span class="nav-label">延时启动</span>
+        </div>
+        <div class="nav-separator"></div>
+        <!-- 设置 -->
+        <div class="nav-item" data-page="page-settings" onclick="switchPage(this)">
+          <div class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.3 3.3l1.4 1.4M13.3 13.3l1.4 1.4M3.3 14.7l1.4-1.4M13.3 4.7l1.4-1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          </div>
+          <span class="nav-label">设置</span>
+        </div>
+      </div>
+      <div class="nav-toggle" onclick="toggleNav()">
+        <div class="nav-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <span class="nav-label">折叠</span>
+      </div>
+    </div>
+
+    <!-- 内容区 -->
+    <div class="content-area">
+
+      <!-- ===== 页面: 主页 (仪表盘) ===== -->
+      <div class="page active" id="page-home">
+        <div class="page-header">
+          <div class="page-title">主页</div>
+          <div class="page-subtitle">启动项管理总览</div>
+        </div>
+        <div class="home-scroll">
+
+          <!-- 总览卡片 -->
+          <div class="overview-grid">
+            <div class="overview-card">
+              <div class="overview-number">12</div>
+              <div class="overview-label">启动项总计</div>
+            </div>
+            <div class="overview-card">
+              <div class="overview-number">3</div>
+              <div class="overview-label">已禁用</div>
+            </div>
+            <div class="overview-card accent">
+              <div class="overview-number">2</div>
+              <div class="overview-label">已延时</div>
+            </div>
+            <div class="overview-card success">
+              <div class="overview-number">&#10003;</div>
+              <div class="overview-label">调度端已安装</div>
+            </div>
+          </div>
+
+          <!-- 启动项分布 -->
+          <div class="section-title">启动项分布</div>
+          <div class="distribution-list">
+            <div class="dist-row">
+              <span class="dist-name" onclick="switchPage(document.querySelector('[data-page=page-registry]'))">注册表</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" style="width: 80%;"></div>
+              </div>
+              <span class="dist-count">8 项 (3 已延时)</span>
+            </div>
+            <div class="dist-row">
+              <span class="dist-name" onclick="switchPage(document.querySelector('[data-page=page-folder]'))">启动文件夹</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" style="width: 20%;"></div>
+              </div>
+              <span class="dist-count">2 项</span>
+            </div>
+            <div class="dist-row">
+              <span class="dist-name" onclick="switchPage(document.querySelector('[data-page=page-tasks]'))">计划任务</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" style="width: 30%;"></div>
+              </div>
+              <span class="dist-count">3 项</span>
+            </div>
+            <div class="dist-row">
+              <span class="dist-name" onclick="switchPage(document.querySelector('[data-page=page-uwp]'))">UWP 应用</span>
+              <div class="dist-bar-track">
+                <div class="dist-bar-fill" style="width: 20%;"></div>
+              </div>
+              <span class="dist-count">2 项 (1 已延时)</span>
+            </div>
+          </div>
+
+          <!-- 快捷操作 -->
+          <div class="section-title">快捷操作</div>
+          <div class="quick-actions">
+            <button class="btn btn-primary" onclick="openAddDialog()" style="padding: 8px 18px;">+ 添加延时启动项</button>
+            <button class="btn" style="padding: 8px 18px;">导入配置</button>
+            <button class="btn" style="padding: 8px 18px;">导出配置</button>
+          </div>
+
+          <!-- 最近操作 -->
+          <div class="section-title">最近操作</div>
+          <div class="recent-timeline">
+            <div class="timeline-item">
+              <span class="timeline-dot green"></span>
+              <div class="timeline-content">
+                <div class="timeline-text">微信 &rarr; 已加入延时启动 (30s)</div>
+                <div class="timeline-time">2 分钟前</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <span class="timeline-dot red"></span>
+              <div class="timeline-content">
+                <div class="timeline-text">Edge &rarr; 已禁用</div>
+                <div class="timeline-time">5 分钟前</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <span class="timeline-dot"></span>
+              <div class="timeline-content">
+                <div class="timeline-text">OneDrive &rarr; 已移出延时启动</div>
+                <div class="timeline-time">10 分钟前</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== 页面: 注册表 ===== -->
+      <div class="page" id="page-registry">
+        <div class="page-header">
+          <div class="page-title">注册表启动项</div>
+          <div class="page-subtitle">管理注册表中的开机启动项</div>
+        </div>
+        <div class="pivot-tabs">
+          <div class="pivot-tab active" onclick="switchPivot(this)">当前用户</div>
+          <div class="pivot-tab" onclick="switchPivot(this)">所有用户</div>
+          <div class="pivot-tab" onclick="switchPivot(this)">32 位程序</div>
+        </div>
+        <div class="list-scroll" style="padding-top: 16px;">
+          <!-- HKCU Pivot 内容 -->
+          <div class="item-card">
+            <div class="item-info">
+              <div class="item-name">
+                微信
+                <span class="badge enabled">启用</span>
+              </div>
+              <div class="item-path">HKCU\Software\Microsoft\Windows\CurrentVersion\Run &rarr; Weixin</div>
+              <div class="item-path" style="margin-top:1px;">C:\Program Files\Tencent\Weixin\Weixin.exe</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-primary" onclick="openDelayDialog('微信','C:\\Program Files\\Tencent\\Weixin\\Weixin.exe','','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run')">延时启动</button>
+              <button class="btn">禁用</button>
+            </div>
+          </div>
+          <div class="item-card">
+            <div class="item-info">
+              <div class="item-name">
+                Edge
+                <span class="badge disabled">禁用</span>
+              </div>
+              <div class="item-path">HKCU\Software\Microsoft\Windows\CurrentVersion\Run &rarr; Edge</div>
+              <div class="item-path" style="margin-top:1px;">C:\Program Files\Microsoft\Edge\Application\msedge.exe --background</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-primary" onclick="openDelayDialog('Edge','C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe','--background','HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run')">延时启动</button>
+              <button class="btn">启用</button>
+            </div>
+          </div>
+          <div class="item-card">
+            <div class="item-info">
+              <div class="item-name">
+                OneDrive
+                <span class="badge delayed">已延时</span>
+              </div>
+              <div class="item-path">HKCU\Software\Microsoft\Windows\CurrentVersion\Run &rarr; OneDrive</div>
+              <div class="item-path" style="margin-top:1px;">C:\Program Files\Microsoft OneDrive\OneDrive.exe</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-danger">移出延时</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面: 启动文件夹 ===== -->
+      <div class="page" id="page-folder">
+        <div class="page-header">
+          <div class="page-title">启动文件夹</div>
+          <div class="page-subtitle">管理启动文件夹中的快捷方式</div>
+        </div>
+        <div class="pivot-tabs">
+          <div class="pivot-tab active" onclick="switchPivot(this)">用户启动文件夹</div>
+          <div class="pivot-tab" onclick="switchPivot(this)">系统启动文件夹</div>
+        </div>
+        <div class="list-scroll" style="padding-top: 16px;">
+          <div class="item-card">
+            <div class="item-info">
+              <div class="item-name">
+                OneDrive
+                <span class="badge enabled">启用</span>
+              </div>
+              <div class="item-path">OneDrive.lnk</div>
+              <div class="item-path">目标: C:\Program Files\Microsoft OneDrive\OneDrive.exe</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-primary" onclick="openDelayDialog('OneDrive','C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe','','用户启动文件夹')">延时启动</button>
+              <button class="btn">禁用</button>
+            </div>
+          </div>
+          <div class="item-card">
+            <div class="item-info">
+              <div class="item-name">
+                Epson Scanner
+                <span class="badge delayed">已延时</span>
+              </div>
+              <div class="item-path">Epson Scanner.lnk</div>
+              <div class="item-path">目标: D:\Programs\epsonscan2.exe</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-danger">移出延时</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面: 计划任务 ===== -->
+      <div class="page" id="page-tasks">
+        <div class="page-header">
+          <div class="page-title">计划任务</div>
+          <div class="page-subtitle">管理登录或启动时触发的计划任务</div>
+        </div>
+        <div class="list-scroll" style="padding-top: 16px;">
+          <div class="item-card">
+            <div class="item-info">
+              <div class="item-name">
+                GoogleUpdate
+                <span class="badge enabled">启用</span>
+              </div>
+              <div class="item-path">C:\Program Files\Google\Update\GoogleUpdate.exe</div>
+              <div class="item-path" style="color: #888; font-size: 12px;">\Google\GoogleUpdate | 登录时 (OnLogon) | 用户 (Limited) | 延迟 0s</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-primary" onclick="openDelayDialog('GoogleUpdate','C:\\Program Files\\Google\\Update\\GoogleUpdate.exe','','计划任务: \\Google\\GoogleUpdate')">延时启动</button>
+              <button class="btn">禁用</button>
+            </div>
+          </div>
+          <div class="item-card">
+            <div class="item-info">
+              <div class="item-name">
+                OneDrive Reporting Task
+                <span class="badge enabled">启用</span>
+              </div>
+              <div class="item-path">C:\Program Files\Microsoft OneDrive\OneDriveStandaloneUpdater.exe</div>
+              <div class="item-path" style="color: #888; font-size: 12px;">\Microsoft\Windows\OneDrive | 登录时 (OnLogon) | 用户 (Limited) | 延迟 5 分钟</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-primary" onclick="openDelayDialog('OneDrive Reporting Task','C:\\Program Files\\Microsoft OneDrive\\OneDriveStandaloneUpdater.exe','','计划任务: \\Microsoft\\Windows\\OneDrive')">延时启动</button>
+              <button class="btn">禁用</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 页面: UWP 应用 ===== -->
+      <div class="page" id="page-uwp">
+        <div class="page-header">
+          <div class="page-title">UWP 应用</div>
+          <div class="page-subtitle">管理 UWP 应用的开机启动注册</div>
+        </div>
+        <div class="list-scroll" style="padding-top: 16px;">
+
+          <div class="uwp-card">
+            <div class="uwp-info">
+              <div class="item-name">
+                微信 (UWP)
+                <span class="badge enabled">启用</span>
+              </div>
+              <div class="uwp-detail">包名: Tencent.WeChat</div>
+              <div class="uwp-detail">AUMID: Tencent.WeChat.exe</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-primary" onclick="openDelayDialog('微信 (UWP)','','','UWP 应用: Tencent.WeChat')">延时启动</button>
+              <button class="btn">禁用</button>
+            </div>
+          </div>
+
+          <div class="uwp-card">
+            <div class="uwp-info">
+              <div class="item-name">
+                照片
+                <span class="badge enabled">启用</span>
+              </div>
+              <div class="uwp-detail">包名: Microsoft.Windows.Photos</div>
+              <div class="uwp-detail">AUMID: Microsoft.Windows.Photos_8wekyb3d8bbwe!App</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-primary" onclick="openDelayDialog('照片','','','UWP 应用: Microsoft.Windows.Photos')">延时启动</button>
+              <button class="btn">禁用</button>
+            </div>
+          </div>
+
+          <div class="uwp-card">
+            <div class="uwp-info">
+              <div class="item-name">
+                邮件
+                <span class="badge delayed">已延时</span>
+              </div>
+              <div class="uwp-detail">包名: Microsoft.Windows.Mail</div>
+              <div class="uwp-detail">AUMID: microsoft.windowscommunicationsapps_8wekyb3d8bbwe!microsoft.windowscommunications</div>
+            </div>
+            <div class="item-actions">
+              <button class="btn btn-danger">移出延时</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== 页面: 延时启动（按时间分组 + 拖拽排序） ===== -->
+      <div class="page" id="page-delay">
+        <div class="delay-header">
+          <div>
+            <div class="page-title">延时启动</div>
+            <div class="page-subtitle">管理延迟启动的应用程序</div>
+          </div>
+          <button class="btn btn-primary" onclick="openAddDialog()" style="padding: 8px 18px; font-size: 14px;">
+            + 手动添加
+          </button>
+        </div>
+        <div class="list-scroll">
+
+          <!-- 延时 10s 组 -->
+          <div class="delay-group expanded" data-delay="10">
+            <div class="delay-group-header" onclick="toggleDelayGroup(this)">
+              <span class="expander-arrow">&#9654;</span>
+              <span class="delay-group-title">延时 10s</span>
+              <span class="delay-group-count">&mdash; 2 项</span>
+            </div>
+            <div class="delay-group-body">
+
+              <div class="delay-card delay-draggable" draggable="true" data-id="1">
+                <span class="drag-handle" title="拖拽排序">&#11041;</span>
+                <div class="delay-info">
+                  <div class="delay-name">
+                    微信
+                    <span class="delay-name-time">10s</span>
+                  </div>
+                  <div class="delay-meta">
+                    <span>C:\Program Files\...\Weixin.exe</span>
+                    <span>来源: HKCU 注册表</span>
+                    <span>身份: 用户</span>
+                  </div>
+                </div>
+                <div class="delay-actions">
+                  <button class="btn btn-sm" onclick="openEditDialog()">编辑</button>
+                  <button class="btn btn-sm" style="background: #28A745; color: white; border-color: #28A745;">启动</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </div>
+              </div>
+              <div class="drop-indicator"></div>
+
+              <div class="delay-card delay-draggable" draggable="true" data-id="2">
+                <span class="drag-handle" title="拖拽排序">&#11041;</span>
+                <div class="delay-info">
+                  <div class="delay-name">
+                    OneDrive
+                    <span class="delay-name-time">10s</span>
+                  </div>
+                  <div class="delay-meta">
+                    <span>C:\...\OneDrive.exe</span>
+                    <span>来源: 注册表 (HKLM)</span>
+                    <span>身份: 用户</span>
+                  </div>
+                </div>
+                <div class="delay-actions">
+                  <button class="btn btn-sm" onclick="openEditDialog()">编辑</button>
+                  <button class="btn btn-sm" style="background: #28A745; color: white; border-color: #28A745;">启动</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </div>
+              </div>
+              <div class="drop-indicator"></div>
+
+            </div>
+            <div class="drag-hint">&#8597; 拖拽卡片可调整组内启动顺序</div>
+          </div>
+
+          <!-- 延时 30s 组 -->
+          <div class="delay-group expanded" data-delay="30">
+            <div class="delay-group-header" onclick="toggleDelayGroup(this)">
+              <span class="expander-arrow">&#9654;</span>
+              <span class="delay-group-title">延时 30s</span>
+              <span class="delay-group-count">&mdash; 2 项</span>
+            </div>
+            <div class="delay-group-body">
+
+              <div class="delay-card delay-draggable" draggable="true" data-id="3">
+                <span class="drag-handle" title="拖拽排序">&#11041;</span>
+                <div class="delay-info">
+                  <div class="delay-name">
+                    PT 翻译
+                    <span class="delay-name-time">30s</span>
+                  </div>
+                  <div class="delay-meta">
+                    <span>D:\Programs\pot.exe</span>
+                    <span>来源: 手动添加</span>
+                    <span>身份: 管理员</span>
+                  </div>
+                </div>
+                <div class="delay-actions">
+                  <button class="btn btn-sm" onclick="openEditDialog()">编辑</button>
+                  <button class="btn btn-sm" style="background: #28A745; color: white; border-color: #28A745;">启动</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </div>
+              </div>
+              <div class="drop-indicator"></div>
+
+              <div class="delay-card delay-draggable" draggable="true" data-id="4">
+                <span class="drag-handle" title="拖拽排序">&#11041;</span>
+                <div class="delay-info">
+                  <div class="delay-name">
+                    邮件 (UWP)
+                    <span class="delay-name-time">30s</span>
+                  </div>
+                  <div class="delay-meta">
+                    <span>AUMID: microsoft.windowscom...</span>
+                    <span>来源: UWP 应用</span>
+                    <span>身份: 用户</span>
+                  </div>
+                </div>
+                <div class="delay-actions">
+                  <button class="btn btn-sm" onclick="openEditDialog()">编辑</button>
+                  <button class="btn btn-sm" style="background: #28A745; color: white; border-color: #28A745;">启动</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </div>
+              </div>
+              <div class="drop-indicator"></div>
+
+            </div>
+            <div class="drag-hint">&#8597; 拖拽卡片可调整组内启动顺序</div>
+          </div>
+
+          <!-- 延时 60s 组 -->
+          <div class="delay-group expanded" data-delay="60">
+            <div class="delay-group-header" onclick="toggleDelayGroup(this)">
+              <span class="expander-arrow">&#9654;</span>
+              <span class="delay-group-title">延时 60s</span>
+              <span class="delay-group-count">&mdash; 1 项</span>
+            </div>
+            <div class="delay-group-body">
+
+              <div class="delay-card delay-draggable" draggable="true" data-id="5">
+                <span class="drag-handle" title="拖拽排序">&#11041;</span>
+                <div class="delay-info">
+                  <div class="delay-name">
+                    Epson Scanner
+                    <span class="delay-name-time">60s</span>
+                  </div>
+                  <div class="delay-meta">
+                    <span>D:\Programs\epsonscan2.exe</span>
+                    <span>来源: 启动文件夹</span>
+                    <span>身份: 用户</span>
+                  </div>
+                </div>
+                <div class="delay-actions">
+                  <button class="btn btn-sm" onclick="openEditDialog()">编辑</button>
+                  <button class="btn btn-sm" style="background: #28A745; color: white; border-color: #28A745;">启动</button>
+                  <button class="btn btn-sm btn-danger">删除</button>
+                </div>
+              </div>
+              <div class="drop-indicator"></div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===== 页面: 设置 ===== -->
+      <div class="page" id="page-settings">
+        <div class="page-header">
+          <div class="page-title">设置</div>
+          <div class="page-subtitle">配置调度端与导入导出</div>
+        </div>
+        <div class="list-scroll">
+          <div class="settings-section">
+
+            <!-- 延时预设 -->
+            <div class="settings-card">
+              <div class="settings-card-title">延时预设</div>
+              <div class="settings-label" style="margin-bottom: 10px;">可用的延时选项:</div>
+              <div class="preset-chips" id="presetChips">
+                <span class="preset-chip">0s</span>
+                <span class="preset-chip">10s<span class="chip-remove" onclick="removePresetChip(this)">&times;</span></span>
+                <span class="preset-chip">20s<span class="chip-remove" onclick="removePresetChip(this)">&times;</span></span>
+                <span class="preset-chip">30s<span class="chip-remove" onclick="removePresetChip(this)">&times;</span></span>
+                <span class="preset-chip">60s<span class="chip-remove" onclick="removePresetChip(this)">&times;</span></span>
+                <span class="preset-chip">120s<span class="chip-remove" onclick="removePresetChip(this)">&times;</span></span>
+              </div>
+              <div class="preset-add-row">
+                <button class="btn btn-sm">+ 添加预设</button>
+                <span style="font-size: 13px; color: #666;">秒数:</span>
+                <input type="number" class="preset-add-input" placeholder="如 90" min="0" />
+                <button class="btn btn-sm btn-primary">添加</button>
+              </div>
+              <div class="preset-desc">说明: 此处配置的延时选项将在各页面的"延时启动"弹窗中展示</div>
+            </div>
+
+            <!-- 调度端管理 -->
+            <div class="settings-card">
+              <div class="settings-card-title">调度端管理</div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">计划任务状态</div>
+                  <div class="settings-desc">StartupDelayer/Scheduler &mdash; onlogon 延迟 3s</div>
+                </div>
+                <div class="settings-status">
+                  <span class="dot"></span>
+                  已创建
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn-primary">创建计划任务</button>
+                <button class="btn btn-danger">删除计划任务</button>
+              </div>
+            </div>
+
+            <!-- 配置管理 -->
+            <div class="settings-card">
+              <div class="settings-card-title">配置管理</div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">配置文件</div>
+                  <div class="settings-desc">%LOCALAPPDATA%\StartupDelayer\config.json</div>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn-primary">导入配置</button>
+                <button class="btn">导出配置</button>
+              </div>
+            </div>
+
+            <!-- 关于 -->
+            <div class="settings-card">
+              <div class="settings-card-title">关于</div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">Startup Delayer</div>
+                  <div class="settings-desc">Windows 11 延迟启动管理器</div>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">版本</div>
+                </div>
+                <div style="font-size: 14px; color: #444;">1.0.0</div>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <div class="settings-label">框架</div>
+                </div>
+                <div style="font-size: 14px; color: #444;">.NET 10 WinForms</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content-area -->
+  </div><!-- /main-body -->
+
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span>12 个启动项</span>
+    <div class="statusbar-sep"></div>
+    <span>5 个已延时</span>
+    <div class="statusbar-sep"></div>
+    <span>调度端: <span style="color: #155724; font-weight: 600;">已安装</span></span>
+  </div>
+
+</div><!-- /window -->
+
+<!-- ===== 延时启动对话框 ===== -->
+<div class="dialog-overlay" id="delayDialog">
+  <div class="dialog">
+    <div class="dialog-title">添加延时启动</div>
+    <div class="dialog-body">
+      <div class="dialog-field">
+        <div class="dialog-field-label">应用名</div>
+        <input class="dialog-field-input" id="dlgName" readonly />
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">路径</div>
+        <input class="dialog-field-input" id="dlgPath" readonly />
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">参数</div>
+        <input class="dialog-field-input" id="dlgArgs" readonly />
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">延迟时间</div>
+        <div class="radio-group" id="delayRadios">
+          <div class="radio-option" onclick="selectRadio(this, 'delayRadios')">
+            <span class="radio-dot"></span>0s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'delayRadios')">
+            <span class="radio-dot"></span>10s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'delayRadios')">
+            <span class="radio-dot"></span>20s
+          </div>
+          <div class="radio-option selected" onclick="selectRadio(this, 'delayRadios')">
+            <span class="radio-dot"></span>30s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'delayRadios')">
+            <span class="radio-dot"></span>60s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'delayRadios')">
+            <span class="radio-dot"></span>120s
+          </div>
+        </div>
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">启动身份</div>
+        <div class="radio-group" id="identityRadios">
+          <div class="radio-option selected" onclick="selectRadio(this, 'identityRadios')">
+            <span class="radio-dot"></span>普通用户
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'identityRadios')">
+            <span class="radio-dot"></span>管理员
+          </div>
+        </div>
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">来源</div>
+        <input class="dialog-field-input" id="dlgSource" readonly />
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn" onclick="closeDialog('delayDialog')">取消</button>
+      <button class="btn btn-primary" onclick="closeDialog('delayDialog')">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 手动添加对话框 ===== -->
+<div class="dialog-overlay" id="addDialog">
+  <div class="dialog">
+    <div class="dialog-title">手动添加延时启动</div>
+    <div class="dialog-body">
+      <div class="dialog-field">
+        <div class="dialog-field-label">应用名</div>
+        <input class="dialog-field-input" placeholder="输入应用名称" />
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">路径</div>
+        <div style="display: flex; gap: 8px;">
+          <input class="dialog-field-input" placeholder="选择可执行文件" style="flex:1;" />
+          <button class="btn" style="white-space:nowrap;">浏览...</button>
+        </div>
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">参数</div>
+        <input class="dialog-field-input" placeholder="命令行参数（可选）" />
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">延迟时间</div>
+        <div class="radio-group" id="addDelayRadios">
+          <div class="radio-option" onclick="selectRadio(this, 'addDelayRadios')">
+            <span class="radio-dot"></span>0s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'addDelayRadios')">
+            <span class="radio-dot"></span>10s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'addDelayRadios')">
+            <span class="radio-dot"></span>20s
+          </div>
+          <div class="radio-option selected" onclick="selectRadio(this, 'addDelayRadios')">
+            <span class="radio-dot"></span>30s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'addDelayRadios')">
+            <span class="radio-dot"></span>60s
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'addDelayRadios')">
+            <span class="radio-dot"></span>120s
+          </div>
+        </div>
+      </div>
+      <div class="dialog-field">
+        <div class="dialog-field-label">启动身份</div>
+        <div class="radio-group" id="addIdentityRadios">
+          <div class="radio-option selected" onclick="selectRadio(this, 'addIdentityRadios')">
+            <span class="radio-dot"></span>普通用户
+          </div>
+          <div class="radio-option" onclick="selectRadio(this, 'addIdentityRadios')">
+            <span class="radio-dot"></span>管理员
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn" onclick="closeDialog('addDialog')">取消</button>
+      <button class="btn btn-primary" onclick="closeDialog('addDialog')">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 删除预设确认对话框 ===== -->
+<div class="dialog-overlay" id="presetDeleteDialog">
+  <div class="dialog">
+    <div class="dialog-title">无法删除预设</div>
+    <div class="dialog-body">
+      <div class="dialog-field" style="margin-bottom: 0;">
+        <div id="presetDeleteMsg" style="font-size: 14px; color: #444; line-height: 1.5;">当前有 2 个延时条目使用了 30s 延时，请先修改这些条目的延时时间后再删除</div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-primary" onclick="closeDialog('presetDeleteDialog')">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===== 导航切换 ===== */
+function switchPage(navItem) {
+  // 更新导航高亮
+  document.querySelectorAll('.nav-item').forEach(function(item) { item.classList.remove('active'); });
+  navItem.classList.add('active');
+
+  // 切换页面
+  var pageId = navItem.getAttribute('data-page');
+  document.querySelectorAll('.page').forEach(function(page) { page.classList.remove('active'); });
+  document.getElementById(pageId).classList.add('active');
+}
+
+/* ===== 导航折叠 ===== */
+function toggleNav() {
+  var nav = document.getElementById('navView');
+  nav.classList.toggle('collapsed');
+}
+
+/* ===== Expander 折叠/展开 ===== */
+function toggleExpander(header) {
+  var group = header.parentElement;
+  group.classList.toggle('expanded');
+}
+
+/* ===== 延时启动分组折叠/展开 ===== */
+function toggleDelayGroup(header) {
+  var group = header.parentElement;
+  group.classList.toggle('expanded');
+}
+
+/* ===== 筛选按钮切换 ===== */
+function toggleFilter(btn) {
+  btn.classList.toggle('active');
+}
+
+/* ===== Pivot Tab 切换 ===== */
+function switchPivot(tab) {
+  var tabs = tab.parentElement.querySelectorAll('.pivot-tab');
+  tabs.forEach(function(t) { t.classList.remove('active'); });
+  tab.classList.add('active');
+}
+
+/* ===== 对话框 ===== */
+function openDelayDialog(name, path, args, source) {
+  document.getElementById('dlgName').value = name;
+  document.getElementById('dlgPath').value = path;
+  document.getElementById('dlgArgs').value = args;
+  document.getElementById('dlgSource').value = source;
+  document.getElementById('delayDialog').querySelector('.dialog-title').textContent = '添加延时启动';
+  document.getElementById('delayDialog').classList.add('show');
+}
+
+function openAddDialog() {
+  document.getElementById('addDialog').classList.add('show');
+}
+
+function openEditDialog() {
+  // 复用延时启动对话框模拟编辑
+  document.getElementById('delayDialog').querySelector('.dialog-title').textContent = '编辑延时启动';
+  document.getElementById('delayDialog').classList.add('show');
+}
+
+function closeDialog(id) {
+  document.getElementById(id).classList.remove('show');
+  // 恢复标题
+  if (id === 'delayDialog') {
+    document.getElementById('delayDialog').querySelector('.dialog-title').textContent = '添加延时启动';
+  }
+}
+
+// 点击遮罩关闭对话框
+document.querySelectorAll('.dialog-overlay').forEach(function(overlay) {
+  overlay.addEventListener('click', function(e) {
+    if (e.target === this) {
+      this.classList.remove('show');
+    }
+  });
+});
+
+/* ===== RadioButton 选择 ===== */
+function selectRadio(option, groupId) {
+  var group = document.getElementById(groupId);
+  group.querySelectorAll('.radio-option').forEach(function(opt) { opt.classList.remove('selected'); });
+  option.classList.add('selected');
+}
+
+/* ===== HTML5 拖拽排序（同组内） ===== */
+(function() {
+  var dragSrcEl = null;  // 正在拖拽的元素
+  var indicators = document.querySelectorAll('.drop-indicator');
+
+  // 隐藏所有指示线
+  function hideAllIndicators() {
+    indicators.forEach(function(ind) { ind.classList.remove('visible'); });
+  }
+
+  // 为所有可拖拽卡片绑定事件
+  var cards = document.querySelectorAll('.delay-draggable');
+  cards.forEach(function(card) {
+    card.addEventListener('dragstart', function(e) {
+      dragSrcEl = this;
+      this.classList.add('dragging');
+      // 设置拖拽数据（使用 data-id 标识）
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', this.getAttribute('data-id'));
+    });
+
+    card.addEventListener('dragend', function() {
+      this.classList.remove('dragging');
+      hideAllIndicators();
+      dragSrcEl = null;
+    });
+
+    card.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      // 仅在同组内允许拖拽
+      if (!dragSrcEl || dragSrcEl.closest('.delay-group') !== this.closest('.delay-group')) {
+        return;
+      }
+
+      hideAllIndicators();
+
+      // 判断鼠标在卡片上半部分还是下半部分，决定指示线位置
+      var rect = this.getBoundingClientRect();
+      var midY = rect.top + rect.height / 2;
+      var indicator = this.nextElementSibling;
+      // 下一个兄弟可能是 drop-indicator 或其他元素
+      if (indicator && indicator.classList.contains('drop-indicator')) {
+        if (e.clientY < midY) {
+          // 在上方插入 — 找到当前卡片前面的 indicator
+          var prevIndicator = this.previousElementSibling;
+          if (prevIndicator && prevIndicator.classList.contains('drop-indicator')) {
+            prevIndicator.classList.add('visible');
+          }
+        } else {
+          // 在下方插入
+          indicator.classList.add('visible');
+        }
+      }
+    });
+
+    card.addEventListener('dragleave', function() {
+      hideAllIndicators();
+    });
+
+    card.addEventListener('drop', function(e) {
+      e.preventDefault();
+      hideAllIndicators();
+
+      if (!dragSrcEl || dragSrcEl === this) return;
+      // 仅在同组内交换
+      if (dragSrcEl.closest('.delay-group') !== this.closest('.delay-group')) return;
+
+      var group = this.closest('.delay-group-body');
+      var allCards = Array.from(group.querySelectorAll('.delay-draggable'));
+      var dragIdx = allCards.indexOf(dragSrcEl);
+      var dropIdx = allCards.indexOf(this);
+
+      // 判断插入位置（上方还是下方）
+      var rect = this.getBoundingClientRect();
+      var insertBefore = e.clientY < rect.top + rect.height / 2;
+
+      // 先移除拖拽源
+      var parent = dragSrcEl.parentNode;
+      // 同时移除拖拽源后面的指示线
+      var srcIndicator = dragSrcEl.nextElementSibling;
+      var srcRemoved = false;
+
+      if (insertBefore && dropIdx < dragIdx) {
+        // 向上移动：先插入目标位置，再删除原位置
+        parent.insertBefore(dragSrcEl, this);
+        // 移动对应的 indicator
+        if (srcIndicator && srcIndicator.classList.contains('drop-indicator')) {
+          parent.insertBefore(srcIndicator, dragSrcEl);
+        }
+        // 删除多余的 indicator
+        cleanOrphanIndicators(group);
+      } else if (!insertBefore && dropIdx > dragIdx) {
+        // 向下移动：先删除原位置，再在目标后面插入
+        if (srcIndicator && srcIndicator.classList.contains('drop-indicator')) {
+          parent.removeChild(srcIndicator);
+        }
+        var dropIndicator = this.nextElementSibling;
+        if (dropIndicator && dropIndicator.classList.contains('drop-indicator')) {
+          parent.insertBefore(dragSrcEl, dropIndicator);
+          // 创建新的 indicator 插入到 dragSrcEl 后面
+          var newIndicator = document.createElement('div');
+          newIndicator.className = 'drop-indicator';
+          parent.insertBefore(newIndicator, dragSrcEl.nextSibling);
+        } else {
+          parent.insertBefore(dragSrcEl, this.nextSibling);
+          var newIndicator2 = document.createElement('div');
+          newIndicator2.className = 'drop-indicator';
+          parent.insertBefore(newIndicator2, dragSrcEl.nextSibling);
+        }
+      } else {
+        // 其他情况（跨越等）：直接交换 DOM 位置
+        if (srcIndicator && srcIndicator.classList.contains('drop-indicator')) {
+          parent.removeChild(srcIndicator);
+        }
+        if (insertBefore) {
+          parent.insertBefore(dragSrcEl, this);
+          var newInd = document.createElement('div');
+          newInd.className = 'drop-indicator';
+          parent.insertBefore(newInd, dragSrcEl.nextSibling);
+        } else {
+          var dropInd = this.nextElementSibling;
+          if (dropInd && dropInd.classList.contains('drop-indicator')) {
+            parent.insertBefore(dragSrcEl, dropInd);
+          } else {
+            parent.insertBefore(dragSrcEl, this.nextSibling);
+          }
+          var newInd2 = document.createElement('div');
+          newInd2.className = 'drop-indicator';
+          parent.insertBefore(newInd2, dragSrcEl.nextSibling);
+        }
+      }
+
+      // 清理多余的或缺失的 indicator
+      cleanOrphanIndicators(group);
+    });
+  });
+
+  // 清理多余的指示线元素，确保每个卡片后面只有一个
+  function cleanOrphanIndicators(container) {
+    var children = Array.from(container.children);
+    var expectedCount = container.querySelectorAll('.delay-draggable').length;
+    var currentIndicators = container.querySelectorAll('.drop-indicator');
+
+    // 移除所有多余的 indicator（只保留与卡片等量的）
+    var diff = currentIndicators.length - expectedCount;
+    if (diff > 0) {
+      for (var i = 0; i < diff; i++) {
+        currentIndicators[currentIndicators.length - 1 - i].remove();
+      }
+    } else if (diff < 0) {
+      // 补充缺失的 indicator
+      var cardsInGroup = container.querySelectorAll('.delay-draggable');
+      cardsInGroup.forEach(function(c) {
+        if (!c.nextElementSibling || !c.nextElementSibling.classList.contains('drop-indicator')) {
+          var ind = document.createElement('div');
+          ind.className = 'drop-indicator';
+          if (c.nextElementSibling) {
+            container.insertBefore(ind, c.nextElementSibling);
+          } else {
+            container.appendChild(ind);
+          }
+        }
+      });
+    }
+  }
+})();
+
+/* ===== 延时预设删除保护 ===== */
+function removePresetChip(removeBtn) {
+  var chip = removeBtn.parentElement;
+  var presetText = chip.textContent.replace('×', '').trim();
+  // 模拟检查：假设 30s 预设下有 2 个条目，其他预设下无条目
+  var usageCount = { '30s': 2 };
+  if (usageCount[presetText]) {
+    document.getElementById('presetDeleteMsg').textContent =
+      '当前有 ' + usageCount[presetText] + ' 个延时条目使用了 ' + presetText + ' 延时，请先修改这些条目的延时时间后再删除';
+    document.getElementById('presetDeleteDialog').classList.add('show');
+  } else {
+    chip.remove();
+  }
+}
+</script>
+
+</body>
+</html>
