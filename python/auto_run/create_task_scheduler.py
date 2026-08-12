@@ -1,10 +1,8 @@
-import subprocess
-import os
 import ctypes
+import os
+import subprocess
 
-
-
-TASK_DIR = f"AutoRunManager"
+TASK_DIR = "AutoRunManager"
 TASK_NAME_ADMIN = f"{TASK_DIR}\\TaskAsAdmin"
 TASK_NAME_USER = f"{TASK_DIR}\\TaskAsUser"
 
@@ -19,17 +17,26 @@ def run_as_admin():
     """以管理员权限运行当前脚本"""
     # 获取当前脚本路径
     script_path = os.path.abspath(__file__)
-    # 使用ShellExecute提升权限
-    ctypes.windll.shell32.ShellExecuteW(
-        None, "runas", "python", f'"{script_path}"', None, 1
+    project_dir = os.path.dirname(script_path)
+    command = f'uv run python "{script_path}"'
+
+    ret = ctypes.windll.shell32.ShellExecuteW(
+        None,
+        "runas",
+        "cmd.exe",
+        f"/c {command}",
+        project_dir,
+        1
     )
+    if ret <= 32:
+        raise RuntimeError(f"管理员启动失败，错误码:{ret}")
 
 def create_task():
     """创建计划任务"""
     # 任务计划命令
     script_name = "auto_run_manager.py"
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    task_run_cmd = f'pythonw.exe "{script_dir}\\{script_name}"'
+    task_run_cmd = f'uv run pythonw.exe "{script_dir}\\{script_name}"'
     try:
         # 获取当前Windows登录的用户（兼容域账户）
         # 优先使用域\用户名格式，不存在域则使用本地用户名
@@ -75,7 +82,7 @@ def create_task():
 
         return True
     except Exception as e:
-        print(f"创建任务失败: {str(e)}")
+        print(f"创建任务失败: {e!s}")
         return False
 
 def delete_task():
@@ -100,7 +107,7 @@ def delete_task():
 
         return all_success
     except Exception as e:
-        print(f"删除任务失败: {str(e)}")
+        print(f"删除任务失败: {e!s}")
         return False
 
 def main():
