@@ -42,7 +42,21 @@
 		{
 			"name": "ningway_download 宁路视频下载",
 			"path": "python/ningway_download"
+		},
+		{
+			"name": "xiangqi-bot 象棋 AI",
+			"path": "python/xiangqi-bot"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python-envs.pythonProjects": [
+			{
+				"path": "python/xiangqi-bot",
+				"envManager": "ms-python.python:venv",
+				"packageManager": "ms-python.python:pip",
+				"workspace": "scripts"
+			}
+		],
+		"powershell.cwd": "xiangqi-bot 象棋 AI"
+	}
 }
