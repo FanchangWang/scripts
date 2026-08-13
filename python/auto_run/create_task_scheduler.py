@@ -1,5 +1,6 @@
 import ctypes
 import os
+import shutil
 import subprocess
 
 TASK_DIR = "AutoRunManager"
@@ -13,12 +14,31 @@ def is_admin():
     except:
         return False
 
+def get_uv_path():
+    """获取 uv 的完整路径"""
+    uv = shutil.which("uv")
+    if uv:
+        return uv
+    candidates = [
+        os.path.expanduser(r"~\.local\bin\uv.exe"),
+        os.path.expanduser(r"~\.cargo\bin\uv.exe"),
+        os.path.expanduser(r"~\.scripts\uv.exe"),
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    raise RuntimeError("未找到 uv，请先安装 uv 并将其加入 PATH")
+
 def run_as_admin():
     """以管理员权限运行当前脚本"""
     # 获取当前脚本路径
     script_path = os.path.abspath(__file__)
     project_dir = os.path.dirname(script_path)
-    command = f'uv run python "{script_path}"'
+    # 提升权限前（用户环境下 PATH 完整）先解析 uv 全路径，
+    # 并在提权后的 cmd 中手动补上 uv 所在目录，避免用户级环境变量丢失
+    uv_path = get_uv_path()
+    uv_dir = os.path.dirname(uv_path)
+    command = f'set "PATH={uv_dir};%PATH%" && "{uv_path}" run python "{script_path}"'
 
     ret = ctypes.windll.shell32.ShellExecuteW(
         None,
@@ -36,7 +56,7 @@ def create_task():
     # 任务计划命令
     script_name = "auto_run_manager.py"
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    task_run_cmd = f'uv run pythonw.exe "{script_dir}\\{script_name}"'
+    task_run_cmd = f'"{get_uv_path()}" run pythonw.exe "{script_dir}\\{script_name}"'
     try:
         # 获取当前Windows登录的用户（兼容域账户）
         # 优先使用域\用户名格式，不存在域则使用本地用户名
