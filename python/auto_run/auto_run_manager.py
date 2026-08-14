@@ -1,12 +1,12 @@
 import ctypes
 import logging
-from logging.handlers import TimedRotatingFileHandler
 import os
 import shlex
 import subprocess
 import sys
 import time
 import winreg
+from logging.handlers import TimedRotatingFileHandler
 
 # 配置日志，使用覆盖模式
 log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log')
@@ -65,7 +65,7 @@ class AutoRunManager:
             )
 
             if result.returncode != 0:
-                logging.error(f"PowerShell命令执行失败")
+                logging.error("PowerShell命令执行失败")
                 self._uwp_apps_cache = []
                 return self._uwp_apps_cache
 
@@ -130,7 +130,7 @@ class AutoRunManager:
             return self._uwp_apps_cache
 
         except Exception as e:
-            logging.error(f"获取UWP应用时发生错误: {str(e)}")
+            logging.error(f"获取UWP应用时发生错误: {e!s}")
             self._uwp_apps_cache = []
             return self._uwp_apps_cache
 
@@ -187,7 +187,7 @@ class AutoRunManager:
             time.sleep(2) # 等待程序启动完成
             return True
         except Exception as e:
-            logging.error(f"启动失败 ErrMsg: {str(e)}")
+            logging.error(f"启动失败 ErrMsg: {e!s}")
             return False
 
     def start_uwp(self, desc, package_name, app_id=""):
@@ -202,7 +202,7 @@ class AutoRunManager:
         # 查找匹配的UWP应用
         target_app = self._find_uwp_app(package_name, app_id)
         if not target_app:
-            logging.error(f"未找到应用")
+            logging.error("未找到应用")
             return False
 
         try:
@@ -223,7 +223,7 @@ class AutoRunManager:
             time.sleep(2)  # 等待程序启动完成
             return True
         except Exception as e:
-            logging.error(f"启动失败 ErrMsg: {str(e)}")
+            logging.error(f"启动失败 ErrMsg: {e!s}")
             return False
 
     def _get_environment_variable(self, is_system=False):
@@ -237,7 +237,7 @@ class AutoRunManager:
             winreg.CloseKey(key)
             return value
         except Exception as e:
-            logging.error(f"读取环境变量失败: {str(e)}")
+            logging.error(f"读取环境变量失败: {e!s}")
             return ""
 
     def _set_environment_variable(self, value, is_system=False):
@@ -258,7 +258,7 @@ class AutoRunManager:
             winreg.CloseKey(key)
             return True
         except Exception as e:
-            logging.error(f"写入环境变量失败: {str(e)}")
+            logging.error(f"写入环境变量失败: {e!s}")
             return False
 
     def _broadcast_environment_change(self):
@@ -353,7 +353,8 @@ class AutoRunManager:
 
             self.start_exe("Microsoft OneNote", r'C:\Program Files\Microsoft Office\root\Office16\ONENOTEM.EXE', '/tsr')
             self.start_exe("JetBrains Toolbox", r'C:\Users\guyue\AppData\Local\JetBrains\Toolbox\bin\jetbrains-toolbox.exe', '--minimize')
-            self.start_exe("FDM 下载器", r'C:\Users\guyue\AppData\Local\Programs\Softdeluxe\Free Download Manager\fdm.exe', '--hidden')
+            # self.start_exe("FDM 下载器", r'C:\Users\guyue\AppData\Local\Programs\Softdeluxe\Free Download Manager\fdm.exe', '--hidden')
+            self.start_exe("FluxDown", r'C:\Users\guyue\AppData\Local\Programs\FluxDown\flux_down.exe', '--silentStart')
             self.start_exe("UniGetUI", r'C:\Program Files\UniGetUI\UniGetUI.exe', '--daemon')
 
             self.start_exe("Epson Event Manager", r'C:\Program Files (x86)\Epson Software\Event Manager\EEventManager.exe')
