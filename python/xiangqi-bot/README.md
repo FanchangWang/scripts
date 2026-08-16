@@ -146,4 +146,4 @@ uv run python -m xiangqi_bot   # 运行脚本
 | `ENGINE_HASH_MB` | 2048 | 引擎哈希（MB） |
 | `ENGINE_MATE_PROBE_MS` | 200 | 绝杀探测短时限 |
 | `AUTO_DETECT_INTERVAL_MS` | 500 | 自动检测敌方走棋截图间隔 |
-| `AUTO_DETECT_MAX_COUNT` | 30 | 最大检测次数（30 x 0.5s = 15s） |
+| `AUTO_DETECT_MAX_COUNT` | 20 | 最大检测次数（20 x 0.5s = 10s） |

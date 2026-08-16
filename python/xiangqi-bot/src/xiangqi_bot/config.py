@@ -10,7 +10,7 @@ TEMPLATES_DIR = PROJECT_ROOT / "templates"  # 14 张 60x60 棋子模板所在目
 TARGET_RESOLUTION = (1080, 2400)  # 目标手机分辨率（宽 x 高），不匹配则脚本结束
 
 # 延时（毫秒）
-TAP_HOLD_INTERVAL_MS = 300  # 点起子 -> 点落子之间的间隔
+TAP_HOLD_INTERVAL_MS = 400  # 点起子 -> 点落子之间的间隔
 MOVE_SETTLE_MS = 500  # 落子后每次校验截图前的等待（3 次均 500ms）
 MOVE_VERIFY_COUNT = 3  # 走棋校验截图次数（全部失败才判定走棋失败）
 
@@ -22,7 +22,11 @@ ENGINE_MATE_PROBE_MS = 200  # 绝杀判断用的短时限探测（无着法会�
 
 # 自动检测敌方走棋（毫秒）
 AUTO_DETECT_INTERVAL_MS = 500  # 每 500ms 截图一次
-AUTO_DETECT_MAX_COUNT = 30  # 最大检测次数（30 次 x 0.5 秒 = 15 秒）
+AUTO_DETECT_MAX_COUNT = 20  # 最大检测次数（20 次 x 0.5 秒 = 10 秒）
+
+# 对局结束 / 敌方认输检测
+RESIGN_PIECE_DROP_THRESHOLD = 3  # 可识别棋子数比内存布局至少少几枚，判为对局结束画面
+RESIGN_CONFIRM_COUNT = 3  # 疑似对局结束画面需连续几帧稳定出现才确认（过滤瞬态误判）
 
 # 图片识别（像素）
 DIFF_WINDOW = 10  # 中心点 10x10 区域对比差异

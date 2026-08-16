@@ -24,6 +24,8 @@ from xiangqi_bot.config import (
     ENGINE_MATE_PROBE_MS,
     MOVE_SETTLE_MS,
     MOVE_VERIFY_COUNT,
+    RESIGN_CONFIRM_COUNT,
+    RESIGN_PIECE_DROP_THRESHOLD,
     TAP_HOLD_INTERVAL_MS,
 )
 
@@ -43,6 +45,7 @@ class App:
         self.auto_move = True
         self.auto_detect = True
         self.game_over = False
+        self._resign_streak = 0
 
     def run(self) -> None:
         if self._main_menu() == "q":
@@ -127,6 +130,7 @@ class App:
         self.game_over = False
         self.prev_screenshot = None
         self.my_side = None
+        self._resign_streak = 0
         self.board = make_empty_board()
         img = adb_client.screencap(self.device)
         if img is None:
@@ -177,6 +181,10 @@ class App:
             print("无历史截图，按初始化对局处理")
             self._init_from_screenshot(img)
             return
+        if self._detect_resignation(img):
+            print("[对局结束] 检测到对局结束画面，敌方可能已认输")
+            self.game_over = True
+            return
         changed = vision.diff_cells(self.prev_screenshot, img)
         changes: list[tuple[int, int, str | None, str | None]] = []
         for r, c in sorted(changed):
@@ -210,6 +218,7 @@ class App:
         """自动检测敌方走棋：每 500ms 截图一次，最多 20 次（10 秒）；未检测到则回菜单"""
         if self.prev_screenshot is None:
             return
+        self._resign_streak = 0  # 每个检测会话重新计数，避免上一会话残留帧导致误判
         for attempt in range(1, AUTO_DETECT_MAX_COUNT + 1):
             time.sleep(AUTO_DETECT_INTERVAL_MS / 1000)
             print(f"[自动检测敌方走棋] 第 {attempt}/{AUTO_DETECT_MAX_COUNT} 次检测……")
@@ -218,6 +227,10 @@ class App:
                 continue
             result = self._detect_enemy(img)
             if result == "moved":
+                return
+            if self._detect_resignation(img):
+                print("[对局结束] 检测到对局结束画面，敌方可能已认输")
+                self.game_over = True
                 return
             if result == "lifted":
                 print("[自动检测敌方走棋] 检测到敌方提起棋子但尚未放下，继续等待……")
@@ -229,18 +242,56 @@ class App:
             "请确认敌方走棋后执行“拉取新棋盘数据”"
         )
 
+    def _detect_resignation(self, img: ndarray) -> bool:
+        """检测对局结束/敌方认输画面。
+
+        可识别棋子数比内存布局少 ≥ RESIGN_PIECE_DROP_THRESHOLD、或将/帥缺失（且有
+        棋子减少）视为疑似对局结束；需连续 RESIGN_CONFIRM_COUNT 帧稳定出现才返回
+        True——单帧的敌方提子动画、棋子误识别等瞬态不判结束。
+        """
+        if self.my_side is None:
+            self._resign_streak = 0
+            return False
+        board_now = vision.analyze_board(img, self.templates)
+        my_general = "r_K" if self.my_side == "red" else "b_k"
+        enemy_general = "b_k" if self.my_side == "red" else "r_K"
+        has_my = any(my_general in row for row in board_now)
+        has_enemy = any(enemy_general in row for row in board_now)
+        expected = sum(cell is not None for row in self.board for cell in row)
+        actual = sum(cell is not None for row in board_now for cell in row)
+        dropped = expected - actual
+        if ((not has_my or not has_enemy) and dropped >= 1) or (
+            dropped >= RESIGN_PIECE_DROP_THRESHOLD
+        ):
+            self._resign_streak += 1
+        else:
+            self._resign_streak = 0
+        return self._resign_streak >= RESIGN_CONFIRM_COUNT
+
     def _detect_enemy(self, img: ndarray) -> str:
         """检测敌方是否走棋：'moved'（已走棋并已更新）/ 'lifted'（提起未放下）/ 'none'。
 
         己方走动过的格子（起止格）在棋盘布局中已反映，`_enemy_changes` 比较时
         `old == new` 会被自动忽略，只统计敌方棋子的变动。
+
+        可推断完整走棋、或出现新棋子（源格变化可能未被 diff 捕捉到）均视为
+        敌方已完成走棋；只有变化全是"有棋子->空"时才判为"提起未放下"。
         """
         if self.prev_screenshot is None:
             return "none"
         updates = self._enemy_changes(img)
         if not updates:
             return "none"
-        if self._infer_move(updates) is not None:
+        # 分离"自愈"变化（我方棋子重新识别出，如之前误判为空格）：只修正布局，不算敌方走棋
+        my_color = "red" if self.my_side == "red" else "black"
+        updates = self._apply_self_heal(updates, my_color)
+        if not updates:
+            return "none"
+        if self._infer_move(updates) is not None or any(
+            new is not None for _r, _c, _old, new in updates
+        ):
+            # 可推断完整走棋，或出现敌方新棋子（源格变化可能未被 diff 捕捉到）均视为
+            # 敌方已完成走棋；只有变化全是"有棋子->空"时才判为"提起未放下"。
             for r, c, _old, new in updates:
                 self.board[r][c] = new
             self.prev_screenshot = img
@@ -431,8 +482,13 @@ class App:
             self.prev_screenshot = img
             self._on_enemy_move(enemy)
             return
-        if self._infer_move(enemy) is not None:
+        # 分离"自愈"变化（我方棋子重新识别出，如之前误判为空格）：只修正布局，不算敌方走棋
+        enemy = self._apply_self_heal(enemy, piece_color(piece))
+        if self._infer_move(enemy) is not None or any(
+            new is not None for _r, _c, _old, new in enemy
+        ):
             # 我方走棋 + 敌方完整走棋：保存截图，分析走棋方案，自动走棋或显示菜单
+            # （含无法推断源格的走棋：出现敌方新棋子即视为敌方已完成走棋）
             for r, c, _old, new in enemy:
                 self.board[r][c] = new
             self.prev_screenshot = img
@@ -463,6 +519,22 @@ class App:
             if old != new:
                 changes.append((r, c, old, new))
         return changes
+
+    def _apply_self_heal(
+        self, changes: list[tuple[int, int, str | None, str | None]], my_color: str
+    ) -> list[tuple[int, int, str | None, str | None]]:
+        """把"我方棋子重新出现"的变化视为自愈（修正布局，不算敌方走棋），返回剩余敌方变化。
+
+        我方棋子可能被 `analyze_cell` 误判为空格而污染布局，后续截图重新识别出后
+        在此修正；这类变化不应触发"敌方走棋"的处理流程。
+        """
+        rest: list[tuple[int, int, str | None, str | None]] = []
+        for r, c, old, new in changes:
+            if new is not None and piece_color(new) == my_color:
+                self.board[r][c] = new
+            else:
+                rest.append((r, c, old, new))
+        return rest
 
     def _move_failed_menu(self, r1: int, c1: int, r2: int, c2: int, piece: str) -> None:
         while True:
