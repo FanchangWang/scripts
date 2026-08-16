@@ -38,6 +38,8 @@ ENGINE_MATE_PROBE_MS = 200  # 绝杀判断用的短时限探测（无着法会�
 AUTO_DETECT_INTERVAL_MS = (
     0  # 截图间隔延时；ADB 截图本身耗时，不再额外延时（无次数限制，直到用户中断）
 )
+ENEMY_RECHECK_WAIT_MS = 500  # 多格变动/无法构成完整一步（疑似瞬态噪声）时延时复检
+ENEMY_NOISY_MAX = 3  # 连续噪声帧上限，超过则按实际变动提交（避免永久卡住检测循环）
 
 # 对局结束 / 敌方认输检测
 RESIGN_PIECE_DROP_THRESHOLD = 3  # 可识别棋子数比内存布局至少少几枚，判为对局结束画面

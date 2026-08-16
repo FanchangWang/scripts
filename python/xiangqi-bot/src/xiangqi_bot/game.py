@@ -27,6 +27,8 @@ from xiangqi_bot.board import (
 from xiangqi_bot.config import (
     AUTO_DETECT_INTERVAL_MS,
     ENDGAME_PIECE_COUNT,
+    ENEMY_NOISY_MAX,
+    ENEMY_RECHECK_WAIT_MS,
     ENGINE_MATE_PROBE_MS,
     MOVE_SETTLE_MS,
     MOVE_VERIFY_COUNT,
@@ -70,6 +72,7 @@ class GameSession:
         self._running = False  # 自动对弈循环是否进行中
         self._resign_streak = 0
         self._lift_logged = False
+        self._noisy_count = 0
         self._highlight: list[tuple[int, int]] = []
         self._last_move: str | None = None
         self._interrupt = threading.Event()
@@ -157,10 +160,13 @@ class GameSession:
             return False
         self._last_move = move
         self._highlight = [(r1, c1), (r2, c2)]
+        captured = self.board[r2][c2]
+        capture_note = f"（吃{piece_label(captured)}）" if captured else ""
         self._log(
             "move",
             f"走棋 {move}：{piece_label(piece)} "
-            f"{grid_to_square(r1, c1, self.my_side)} -> {grid_to_square(r2, c2, self.my_side)}",
+            f"{grid_to_square(r1, c1, self.my_side)} -> "
+            f"{grid_to_square(r2, c2, self.my_side)}{capture_note}",
         )
         return self._attempt_move(r1, c1, r2, c2, piece)
 
@@ -197,6 +203,7 @@ class GameSession:
         self._running = False
         self._resign_streak = 0
         self._lift_logged = False
+        self._noisy_count = 0
         self._highlight = []
         self._last_move = None
 
@@ -392,6 +399,7 @@ class GameSession:
         if self.prev is None:
             return
         self._resign_streak = 0  # 每个检测会话重新计数，避免残留帧导致误判
+        self._noisy_count = 0
         self._lift_logged = False
         self._log("info", "检测敌方走棋")
         while self._running and not self._interrupt.is_set() and not self.game_over:
@@ -415,8 +423,32 @@ class GameSession:
                 if not self._lift_logged:
                     self._lift_logged = True
                     self._log("info", "检测到敌方提起棋子")
+                self._noisy_count = 0
             elif result == "none":
                 self._lift_logged = False
+                self._noisy_count = 0
+            elif result == "noisy":
+                # 多格变动/无法构成完整一步：疑似瞬态噪声（敌方手部遮挡等），延时复检；
+                # 连续多帧仍无法推断时按实际变动提交，避免永久卡住检测循环
+                self._lift_logged = False
+                self._noisy_count += 1
+                if self._noisy_count >= ENEMY_NOISY_MAX:
+                    if resign in ("suspect", "confirmed"):
+                        # 疑似/已确认对局结束画面：不按变动提交，交由认输判定连续确认收局，
+                        # 避免结束画面（大量棋子消失）被抢先按"实际变动"提交污染内存布局
+                        self._noisy_count = 0
+                    else:
+                        updates = self._analyze_enemy(corrected)
+                        if updates:
+                            self._log(
+                                "warn",
+                                f"连续 {ENEMY_NOISY_MAX} 帧无法推断敌方完整走法，按实际变动提交",
+                            )
+                            self._commit_enemy(updates, corrected)
+                            return
+                        self._noisy_count = 0
+                else:
+                    time.sleep(ENEMY_RECHECK_WAIT_MS / 1000)
         self._log("info", "已中断检测敌方走棋")
 
     def _finish_game(self, reason: str) -> None:
@@ -452,28 +484,46 @@ class GameSession:
             return "confirmed"
         return "suspect" if self._resign_streak > 0 else "none"
 
-    def _detect_enemy(self, corrected: ndarray) -> str:
-        """检测敌方是否走棋：'moved'（已走棋并已更新）/ 'lifted'（提起未放下）/ 'none'"""
+    def _analyze_enemy(self, corrected: ndarray) -> list[tuple[int, int, str | None, str | None]]:
+        """分析敌方变动（相对内存布局，已过滤/自愈我方棋子重识别），返回变动列表"""
         if self.prev is None:
-            return "none"
+            return []
         updates = self._enemy_changes(corrected)
         if not updates:
-            return "none"
+            return []
         my_color = "red" if self.my_side == "red" else "black"
-        updates = self._apply_self_heal(updates, my_color)
+        return self._apply_self_heal(updates, my_color)
+
+    def _commit_enemy(
+        self, updates: list[tuple[int, int, str | None, str | None]], corrected: ndarray
+    ) -> None:
+        """提交敌方变动到内存布局并保存截图、记录日志"""
+        for r, c, _old, new in updates:
+            self.board[r][c] = new
+        self.prev = corrected
+        self._on_enemy_move(updates)
+
+    def _detect_enemy(self, corrected: ndarray) -> str:
+        """检测敌方是否走棋。
+
+        返回 'moved'（可推断完整一步，已更新布局）/ 'lifted'（恰一枚敌方棋子被提起，未落子）/
+        'noisy'（多格变动或无法构成完整一步，疑似瞬态噪声，不提交）/ 'none'。
+        """
+        updates = self._analyze_enemy(corrected)
         if not updates:
             return "none"
-        if self._infer_move(updates) is not None or any(
-            new is not None for _r, _c, _old, new in updates
-        ):
-            for r, c, _old, new in updates:
-                self.board[r][c] = new
-            self.prev = corrected
-            self._on_enemy_move(updates)
+        if self._infer_move(updates) is not None:
+            self._commit_enemy(updates, corrected)
             return "moved"
-        if all(old is not None and new is None for _r, _c, old, new in updates):
+        my_color = "red" if self.my_side == "red" else "black"
+        if (
+            len(updates) == 1
+            and updates[0][2] is not None
+            and updates[0][3] is None
+            and piece_color(updates[0][2]) != my_color
+        ):
             return "lifted"
-        return "none"
+        return "noisy"
 
     def _enemy_changes(self, corrected: ndarray) -> list[tuple[int, int, str | None, str | None]]:
         changes: list[tuple[int, int, str | None, str | None]] = []
@@ -575,7 +625,9 @@ class GameSession:
         """走棋校验全部失败后的恢复流程（仅尝试一次）。
 
         1) 先判定对局是否已结束（如对方认输），结束则直接收局；
-        2) 否则按棋局相对走棋前是否变化分情况重试：
+        2) 否则取新帧确认走棋实际已成功（变动可推断为恰为我方这一步，含吃子），
+           成功则按成功处理；
+        3) 再按棋局相对走棋前是否变化分情况重试：
            - 未变化：整步重新点击（起子+落子）；
            - 仅我方原棋子被提起：延迟确认一次后只点落子；
            - 其它变化：无法恢复。
@@ -596,6 +648,17 @@ class GameSession:
             self._finish_game("检测到对局结束画面，敌方可能已认输")
             return True
         changes = self._enemy_changes(corrected)
+        moved = self._infer_move(changes)
+        if (
+            moved is not None
+            and moved[0] == (r1, c1)
+            and moved[1] == (r2, c2)
+            and moved[2] == piece
+        ):
+            # 校验期间瞬态识别失败，但实际已走棋成功（含吃子）
+            self._log("info", "校验延迟后确认走棋已成功")
+            self._apply_move_result(corrected, r1, c1, r2, c2, piece)
+            return True
         x1, y1 = vision.tap_xy(self._H, r1, c1)
         x2, y2 = vision.tap_xy(self._H, r2, c2)
         from_sq = grid_to_square(r1, c1, self.my_side)
@@ -632,6 +695,13 @@ class GameSession:
                 return False
         else:
             self._log("warn", "检测到棋局发生其它变化，无法恢复走棋")
+            for r, c, old, new in changes:
+                old_name = piece_label(old) if old else "空"
+                new_name = piece_label(new) if new else "空"
+                self._log(
+                    "warn",
+                    f"变化：{grid_to_square(r, c, self.my_side)} {old_name} -> {new_name}",
+                )
             return False
         if self._verify_move_loop(r1, c1, r2, c2, piece):
             return True
@@ -654,13 +724,37 @@ class GameSession:
     def _verify_our_move(
         self, corrected: ndarray, r1: int, c1: int, r2: int, c2: int, piece: str
     ) -> bool:
+        """校验我方走棋是否成功。
+
+        以走棋前的 prev 帧为基准分析变动：
+        - 变动可推断为恰为我方这一步（起点->终点，含吃子）-> 成功；
+        - 起点不再是我方棋子，且终点已是我方棋子 -> 成功；
+        - 起点已空且已有敌方棋子离开其源格（我方走棋已完成，对方正走棋
+          或已反吃终点）-> 成功；
+        - 仅我方棋子离开起点（途中/提起未落）-> 未成功，等待下一帧。
+        """
+        changes = self._enemy_changes(corrected)
+        if len(changes) > 4:
+            # 我方一步 + 敌方一步至多 4 格变动；更多格说明是结束画面/棋盘重置等非正常局面，
+            # 交给校验失败路径（绝杀探测 + 认输判定 + 恢复流程）处理，不误判为走棋成功
+            return False
+        moved = self._infer_move(changes)
+        if moved is not None:
+            (mr1, mc1), (mr2, mc2), mp, _ = moved
+            return (mr1, mc1) == (r1, c1) and (mr2, mc2) == (r2, c2) and mp == piece
         new_from = vision.analyze_cell(corrected, r1, c1, self.templates)
         new_to = vision.analyze_cell(corrected, r2, c2, self.templates)
         if new_from == piece:
             return False
         if new_to == piece:
             return True
-        return new_to is not None and new_to != self.board[r2][c2]
+        if not any(
+            r == r1 and c == c1 and old == piece and new is None for r, c, old, new in changes
+        ):
+            return False
+        return any(
+            (r, c) != (r1, c1) and old is not None and new is None for r, c, old, new in changes
+        )
 
     def _is_mate_by_move(self, r1: int, c1: int, r2: int, c2: int, piece: str) -> bool:
         """校验失败时预判：我方着法是否已绝杀对方（结束动画挡棋导致识别失败）"""
@@ -710,22 +804,68 @@ class GameSession:
         self.board[r2][c2] = vision.analyze_cell(corrected, r2, c2, self.templates)
         self._turn = "black" if self.my_side == "red" else "red"
         self._log("ok", "走动成功")
-        enemy = self._enemy_changes(corrected)
+        if self.board[r2][c2] != piece:
+            # 终点未识别为我方棋子：校验帧可能有多格变动导致终点瞬态误读
+            # （我方棋子其实已在终点），延时复检一次再判定，避免误报"被吃掉"污染内存布局
+            time.sleep(MOVE_SETTLE_MS / 1000)
+            recheck = self._capture()
+            if recheck is not None:
+                self.board[r1][c1] = vision.analyze_cell(recheck, r1, c1, self.templates)
+                self.board[r2][c2] = vision.analyze_cell(recheck, r2, c2, self.templates)
+                corrected = recheck
+                if self.board[r2][c2] == piece:
+                    self._log("info", "终点复检为我方棋子（校验帧为瞬态误读），按走动成功处理")
         if self.board[r2][c2] != piece:
             self._log(
                 "enemy",
                 f"对方吃掉了走到 {grid_to_square(r2, c2, side)} 的我方{piece_label(piece)}",
             )
+            self._resign_streak = 0
+            enemy = self._enemy_changes(corrected)
             enemy.append((r2, c2, piece, self.board[r2][c2]))
+            if self._infer_move(enemy) is None:
+                # 变动无法构成敌方完整一步（正常一步至多 2 格：起点+落点，含吃子）：
+                # 说明帧内存在瞬态误读（如手部遮挡使无关格子被误判为空，污染内存），
+                # 或对局已结束（大量棋子消失的结束画面），延时复检至多 ENEMY_NOISY_MAX
+                # 次确认后才提交
+                self._log("warn", "对方吃子变动无法构成完整一步，延时复检确认...")
+                for _ in range(ENEMY_NOISY_MAX):
+                    time.sleep(MOVE_SETTLE_MS / 1000)
+                    recheck = self._capture()
+                    if recheck is None:
+                        continue
+                    corrected = recheck
+                    self.board[r1][c1] = vision.analyze_cell(corrected, r1, c1, self.templates)
+                    self.board[r2][c2] = vision.analyze_cell(corrected, r2, c2, self.templates)
+                    if self._detect_resignation(corrected) == "confirmed":
+                        self._finish_game("检测到对局结束画面，敌方可能已认输")
+                        return
+                    enemy = self._enemy_changes(corrected)
+                    enemy.append((r2, c2, piece, self.board[r2][c2]))
+                    if self._infer_move(enemy) is not None:
+                        break
+                else:
+                    self._log(
+                        "warn",
+                        "对方吃子后的走棋变动始终无法构成完整一步，已暂停自动对弈，请「同步棋局」确认",
+                    )
+                    for r, c, old, new in enemy:
+                        old_name = piece_label(old) if old else "空"
+                        new_name = piece_label(new) if new else "空"
+                        self._log(
+                            "warn",
+                            f"变化：{grid_to_square(r, c, side)} {old_name} -> {new_name}",
+                        )
+                    self._running = False
+                    self._emit()
+                    return
             for r, c, _old, new in enemy:
                 self.board[r][c] = new
             self.prev = corrected
             self._on_enemy_move(enemy)
             return
-        enemy = self._apply_self_heal(enemy, piece_color(piece))
-        if self._infer_move(enemy) is not None or any(
-            new is not None for _r, _c, _old, new in enemy
-        ):
+        enemy = self._apply_self_heal(self._enemy_changes(corrected), piece_color(piece))
+        if self._infer_move(enemy) is not None:
             for r, c, _old, new in enemy:
                 self.board[r][c] = new
             self.prev = corrected

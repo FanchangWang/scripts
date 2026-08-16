@@ -148,6 +148,8 @@ uv run python scripts/detect_board_corners.py <截图> [--save-board]  # 探测�
 | `ENGINE_HASH_MB` | 2048 | 引擎哈希（MB） |
 | `ENGINE_MATE_PROBE_MS` | 200 | 绝杀探测短时限 |
 | `AUTO_DETECT_INTERVAL_MS` | 0 | 自动检测敌方走棋截图间隔（无额外延时，无次数限制） |
+| `ENEMY_RECHECK_WAIT_MS` | 500 | 多格变动/无法构成完整一步（疑似瞬态噪声）时延时复检 |
+| `ENEMY_NOISY_MAX` | 3 | 连续噪声帧上限，超过则按实际变动提交 |
 | `RESIGN_PIECE_DROP_THRESHOLD` | 3 | 可识别棋子数比内存布局少几枚判对局结束 |
 | `RESIGN_CONFIRM_COUNT` | 3 | 疑似结束画面需连续帧数 |
 | `RESIGN_SUSPECT_WAIT_MS` | 1000 | 单帧疑似结束时延时再采样（过滤瞬态误判） |
