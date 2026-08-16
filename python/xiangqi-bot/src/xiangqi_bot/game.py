@@ -658,7 +658,6 @@ class GameSession:
         trial[r2][c2] = piece
         opp = "black" if self.my_side == "red" else "red"
         fen = fen_of_board(trial, self.my_side, to_move=opp)
-        self._log("info", "校验失败，探测该着法是否绝杀对方...")
         try:
             mated = self.engine.is_mate(fen, ENGINE_MATE_PROBE_MS)
         except engine.EngineError:
@@ -678,7 +677,6 @@ class GameSession:
             return False
         opp = "black" if self.my_side == "red" else "red"
         fen = fen_of_board(self.board, self.my_side, to_move=opp)
-        self._log("info", "检测是否绝杀……")
         try:
             mated = self.engine.is_mate(fen, ENGINE_MATE_PROBE_MS)
         except engine.EngineError:
