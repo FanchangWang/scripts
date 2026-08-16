@@ -82,6 +82,19 @@ EMPTY_MATCH_THRESHOLD = 0.8  # TM_CCOEFF_NORMED 低于此值判为空格
 
 # 残局判断
 ENDGAME_PIECE_COUNT = 20  # 可识别棋子总数少于该值视为残局（轮次无法静态推断）
+
+# 自动下一局：对局结束后扫描结算文字并交互（晋级赛/重新挑战/再来一局/下一关/段位提升）。
+# 网页端「自动下一局」开关可实时修改（默认取此值），对局结束判定时取最新值
+AUTO_NEXT_GAME = True  # 对局结束后自动开始下一局
+GAMEOVER_SCAN_MAX = 20  # 扫描结算文字 / 等待摆棋完毕的截图次数上限
+GAMEOVER_SCAN_INTERVAL_MS = 1000  # 扫描间隔（毫秒）
+GAMEOVER_TEXT_THRESHOLD = 0.75  # 结算文字模板匹配 TM_CCOEFF_NORMED 阈值
+GAMEOVER_TEMPLATE_W = 1080  # 结算文字模板基准宽度（匹配前把原始截图等比缩放到该宽度）
+GAMEOVER_TAP_VERIFY_MS = 2000  # 点击结算按钮后的校验延时（动画未结束时点击可能无响应，等待后复检）
+GAMEOVER_TAP_RETRY_MAX = 2  # 同一结算按钮最多点击次数，仍不消失则中止自动下一局
+GAMEOVER_BUTTON_WORDS = ("下一关", "晋级赛", "重新挑战", "再来一局")
+# 按钮类（识别到即点击，按优先级排列）：「下一关」对话框同时含「重新挑战」按钮，须先处理下一关
+GAMEOVER_BACK_WORDS = ("段位提升",)  # 文字类：识别到即发送返回键（无按钮）
 ```
 
 ## 目录结构
@@ -106,10 +119,14 @@ xiangqi-bot/
 │   ├── pikafish-bmi2.exe          # 引擎（必须在其目录运行，依赖 pikafish.nnue）
 │   └── pikafish.nnue
 ├── templates/*.png                # 14 张 60x60 棋子模板（从矫正棋盘切割，勿改）
+├── templates/text/*.png           # 5 张结算文字模板（晋级赛/重新挑战/再来一局/下一关/段位提升，
+│                                  # 从原始结算截图切割，脚本 generate_text_templates 生成）
 ├── raw_screenshots/               # 原始开局截图（脚本数据源，文件名含分辨率）
 │                                  # 木/石 棋盘 × 红/黑 方（1080x2400）+ 高清（1440x3200）
+│                                  # + 结算截图（下一关/晋级赛/重新挑战/再来一局x3/段位提升）
 ├── scripts/                       # regenerate_templates / compare_piece_templates /
-│                                  # detect_board_corners（已有，勿改）
+│                                  # detect_board_corners（已有，勿改）/
+│                                  # generate_text_templates（结算文字模板生成，可重跑）
 ```
 
 ## 坐标体系（已用引擎实测验证）
@@ -196,6 +213,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `get_device(serial)`：按 serial 取 ppadb Device，不在线抛 `AdbError`
 - `screencap(device)`：`device.screencap()` + `cv2.imdecode`，失败返回 None，异常抛 `AdbError`
 - `tap(device, x, y)`：`device.input_tap(x, y)`，异常抛 `AdbError`
+- `keyevent(device, keycode)`：`device.shell(f"input keyevent {keycode}")`，异常抛 `AdbError`；`KEYCODE_BACK = 4`（自动下一局发返回键用）
 - `screen_size(device)`：解析 `wm size` 的 `Physical size: WxH`
 
 ### board.py — 棋盘状态与坐标转换
@@ -213,6 +231,9 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `analyze_board(corrected, templates)`：遍历 90 格
 - `diff_cells(prev, cur)`：每格中心 10x10 区域平均绝对差 > 阈值视为变化
 - `tap_xy(H, r, c)`：矫正格心经逆单应映射回原图，供点击
+- `load_gameover_text_templates()`：加载 `templates/text/*.png` 结算文字模板（灰度，带缓存）
+- `find_gameover_text(img, w, h)`：原始截图等比缩放到 `GAMEOVER_TEMPLATE_W` 宽后对全部结算文字模板做
+  TM_CCOEFF_NORMED，返回所有高于阈值的 `[(文字, 屏幕x, 屏幕y, 分)]`（中心点，按分降序）
 
 ### engine.py — pikafish UCI 长进程客户端
 
@@ -234,24 +255,38 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `_is_fresh_one_move()` / `_single_piece_moved()`：行棋严格交替，故「对方走一步、我方未走」等价于「我方全在默认格 + 对方偏离」；再要求总子数=32、对方恰 1 个默认格空出 + 1 个非默认格落子，杜绝已走多步/残局误判
 - `start()`：用当前棋盘数据直接开始对弈（不重新拉取棋盘）
 - `move()`：内存布局生成 FEN，命中 `pending_move` 缓存则直接用，否则引擎现算；`tap_xy` 点击，`_verify_move_loop` 校验（失败帧收集），成功分三类处理；失败进 `_recover_move_failure` 恢复流程（对局结束判定 + 一次重试），仍失败返回 False
-- `interrupt()` / `answer_turn(answer)`：线程安全，从任意线程可调（打断自动对弈 / 响应开始确认弹窗，answer 为 "start"/"no"）
-- `_flow()`：自动对弈主循环（我方走棋 <-> `_wait_for_enemy_move` 检测敌方走棋，无次数上限），直到中断或对局结束；**我方走棋后若敌方已在走棋校验期间走完（turn 回到我方），立即继续我方走棋，不进入敌方检测**
+- `interrupt()` / `answer_turn(answer)` / `set_auto_next(enable)`：线程安全，从任意线程可调（打断自动对弈 / 响应
+  开始确认弹窗，answer 为 "start"/"no" / 实时开关自动下一局并广播 state；`auto_next_game` 属性保存当前开关值，
+  对局结束判定时取最新值）
+- `_flow()`：自动对弈主循环（我方走棋 <-> `_wait_for_enemy_move` 检测敌方走棋，无次数上限），直到中断或对局结束；**我方走棋后若敌方已在走棋校验期间走完（turn 回到我方），立即继续我方走棋，不进入敌方检测**；对局结束后若 `self.auto_next_game`（实时开关）且未中断，调 `_auto_next_game()` 自动开始下一局（成功则继续对弈，失败/中止则结束本循环）
+- `_auto_next_game()`：对局结束后自动下一局。阶段A `_scan_gameover_interact()` 扫描结算文字并 adb 交互；
+  阶段B `_wait_for_board_setup()` 等待摆棋完毕；阶段C `_init_next_game()` 初始化并开始对弈。任一阶段超时/失败
+  返回 False（保持结束状态，可手动「同步棋局」）；流程期间 `self._auto_next` 置位（`_status()` 返回 `auto_next`），
+  网页端按钮状态保持不变
+- `_scan_gameover_interact()`：阶段A。扫描到按钮类 -> 点击后延时 `GAMEOVER_TAP_VERIFY_MS` 复检同一按钮是否仍在
+  页面（动画未结束时点击可能无响应），仍在则重试，同一按钮至多 `GAMEOVER_TAP_RETRY_MAX` 次仍不消失则中止；
+  扫描到文字类（段位提升）-> 发返回键后继续扫描；扫描超时中止
+- `_scan_gameover_text()`：原始截图模板匹配结算文字，返回 `(文字, 屏幕x, 屏幕y, 是否按钮)`；按钮类按
+  `GAMEOVER_BUTTON_WORDS` 优先级取第一个命中词，并在其全部命中中取最靠下者（按钮在标题下方，防点中标题）
+- `_wait_for_board_setup()`：截图分析棋子数，连续 2 帧数量稳定且相邻帧无格子变动判定摆棋完毕（防动画只摆部分棋子的误判）；残局模式棋子数可能少于普通对局，故不限数量；返回完成帧，超时返回 None
+- `_init_next_game(corrected)`：残局模式（棋子 < `ENDGAME_PIECE_COUNT`，如「下一关」）固定我方红方、轮到我方先走；常规新局按将/帥位置判红黑方、`_infer_turn()` 判轮次（红方已抢先走棋则给出黑方先走），重置 `pending_move`/高亮/认输计数后开始自动对弈
 - `_wait_for_enemy_move()`：每 `AUTO_DETECT_INTERVAL_MS` 截图一次，无限循环；每次检测会话只提示一次「检测敌方走棋」，敌方提起棋子仅提示一次「检测到敌方提起棋子」（复位当变化消失时）；多格伪变动延时 `ENEMY_RECHECK_WAIT_MS` 复检，连续 `ENEMY_NOISY_MAX` 帧仍无法推断则按实际变动提交并警告（疑似/已确认对局结束画面不提交，交由认输判定确认收局）
-- `_status()`：`idle`(未开始) / `red` / `black`（对弈中轮到哪方）/ `over`(绝杀/对局结束) / `stopped`(中断或待开始)
+- `_status()`：`idle`(未开始) / `red` / `black`（对弈中轮到哪方）/ `over`(绝杀/对局结束) / `stopped`(中断或待开始) /
+  `auto_next`(自动下一局中，网页端按钮状态保持不变)
 - `close()`：关引擎进程
 - 回调：`log(kind, msg)`、`on_state(state)`（含 board/highlight/my_side/turn/phase/status/game_over）、`ask_turn()`（无法静态推断轮次时触发网页弹窗确认是否开始）
 
 ### server.py — FastAPI + WebSocket
 
 - `Hub`：持有当前设备与会话；`post()` 把命令投递到**后台 worker 线程**串行执行（ADB/引擎阻塞调用），`broadcast()` 经 `run_coroutine_threadsafe` 跨线程推送
-- REST：`/api/devices`、`/api/connect`（serial 或 ip+port）、`/api/disconnect`、`/api/sync`、`/api/start`、`/api/interrupt`、`/api/answer_turn`
+- REST：`/api/devices`、`/api/connect`（serial 或 ip+port）、`/api/disconnect`、`/api/sync`、`/api/start`、`/api/interrupt`、`/api/answer_turn`、`/api/auto_next`（`{enable}` 实时开关自动下一局）
 - `/ws` WebSocket：广播 `log` / `state` / `prompt_turn` / `connected` / `disconnected`；新客户端连上先补发最新 state
 - 静态：`/pieces/<id>.png`（模板图）、`/`（`web/` 目录，`Cache-Control: no-cache`）
 
 ### web/ — 网页前端（原生 JS + Canvas）
 
 - 连接页：ADB 设备列表（一键连接）+ ip:port 手动连接（连接过程显示 loading 遮罩，失败在连接卡片内提示）
-- 主界面：Canvas 棋盘（900x1000 矫正比例 + 四边标注）、设备信息 + 断开设备、棋盘阶段/阵营信息、[同步棋局]、状态行、flow 按钮、日志面板
+- 主界面：Canvas 棋盘（900x1000 矫正比例 + 四边标注）、设备信息 + 断开设备、棋盘阶段/阵营信息、[同步棋局]、状态行（含**自动下一局开关**，对弈过程中可实时切换并同步服务端，切换不进入 busy）、flow 按钮、日志面板
 - **流程按钮互斥矩阵**（`btn-sync` 同步棋局 / `btn-flow` 开始或中断棋局）：
 
   | 状态 | 同步棋局 | 开始/中断棋局 |
@@ -259,6 +294,10 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
   | `idle`/`over`（刚连接/已结束） | 可用 | 禁用（开始棋局） |
   | `red`/`black`（对弈中） | 禁用 | 可用（中断棋局） |
   | `stopped`（残局已同步/中断后） | 可用 | 可用（开始棋局） |
+  | `auto_next`（自动下一局中） | 禁用 | 可用（中断棋局） |
+
+  对局结束后 `AUTO_NEXT_GAME` 开启时状态为 `auto_next`（按钮保持对弈中形态），自动下一局中止后才切到
+  `over`；期间点「中断棋局」可中止自动下一局。
 
   点击后进入 busy 状态：对应按钮置灰并禁止重复点击，客户端日志加一条命令日志；Python 执行完毕推送 `state` 事件后恢复（按矩阵逻辑，该禁用仍禁用）。
 - 棋盘标注随 `my_side` 翻转（红：列 a..i；黑：列 i..a），数字行为固定不翻转：上方 1-9、下方 九八七六五四三二一（左->右）
@@ -266,7 +305,8 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - **楚河汉界**：不绘制，棋盘为直接画满的 10x9 格子（11 横 × 9 竖线），棋子落子不受河界影响
 - 棋子绘制为**纯文字 + 圆圈**（楷体类字体），`PIECE_CHARS` 映射与 `board.PIECE_CN` 一致；走棋高亮：原位 = 格中心白点，落点 = 四角白色 90 度角标
 - 页面加载即绘制空棋盘（`drawBoard()`，未同步时 `board` 为 null 只画网格不画棋子）
-- 开始棋局确认弹窗：收到 `prompt_turn` 显示「是否开始棋局（我方开始走棋）？」；按钮**上下排列**，「不」(`prompt-no`，灰 #444d5c) / 「开始」(`prompt-start`，绿 #27ae60)，点击 -> `/api/answer_turn`（`turn: "no"/"start"`）
+- 开始棋局确认弹窗：收到 `prompt_turn` 显示「是否开始棋局（我方开始走棋）？」；按钮**水平左右排列**，
+  「不」(`prompt-no`，灰 #444d5c) 在左 / 「开始」(`prompt-start`，绿 #27ae60) 在右，点击 -> `/api/answer_turn`（`turn: "no"/"start"`）
 
 ### main.py — 入口
 
@@ -282,7 +322,8 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
    - 双方均偏离或残局（棋子 < 20）-> 默认我方走棋，网页弹窗确认是否开始
    - **开局**自动开始对弈；**刚开局局面**（全棋子、对方仅走一步、轮到已方）也自动开始对弈；其余**中局/残局**只载入棋盘（stopped），等用户点「开始棋局」
 5. 对弈中可「中断棋局」（暂停 flow），中断后「开始棋局」用当前棋盘数据恢复对弈
-6. 任一处绝杀/认输判定 -> `game_over`，主界面提示，可再「同步棋局」重开
+6. 任一处绝杀/认输判定 -> `game_over`，主界面提示；`AUTO_NEXT_GAME` 开启且未中断时自动扫描结算文字
+   （按钮类点击 / 段位提升发返回键）-> 等待摆棋完毕 -> 自动开始下一局；中止或失败后保持结束状态，可手动「同步棋局」重开
 
 ### 子流程 走棋结果分类（校验截图）
 

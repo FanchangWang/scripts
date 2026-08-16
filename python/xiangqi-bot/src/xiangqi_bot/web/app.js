@@ -11,6 +11,7 @@ const state = {
   gameOver: false,
   highlight: [],
   lastMove: null,
+  autoNext: true,
 };
 
 const STATUS_CN = {
@@ -19,6 +20,7 @@ const STATUS_CN = {
   black: "黑方走棋",
   over: "绝杀（棋局结束）",
   stopped: "中断",
+  auto_next: "自动下一局",
 };
 
 const PIECE_CHARS = {
@@ -62,6 +64,10 @@ function handleEvent(msg) {
       state.gameOver = s.game_over;
       state.highlight = s.highlight;
       state.lastMove = s.last_move;
+      if (typeof s.auto_next === "boolean") {
+        state.autoNext = s.auto_next;
+        document.getElementById("toggle-auto-next").checked = state.autoNext;
+      }
       busy = null; // 命令执行完毕，按逻辑恢复按钮
       renderStatus();
       drawBoard();
@@ -126,8 +132,12 @@ function applyButtons() {
   let syncDisabled = false;
   let flowDisabled = false;
   let flowText = "开始棋局";
-  if (state.status === "red" || state.status === "black") {
-    // 对弈进行中：仅可中断
+  if (
+    state.status === "red" ||
+    state.status === "black" ||
+    state.status === "auto_next"
+  ) {
+    // 对弈进行中（含自动下一局中）：仅可中断，按钮状态保持不变
     syncDisabled = true;
     flowText = "中断棋局";
   } else if (state.status === "stopped") {
@@ -418,13 +428,23 @@ function bindEvents() {
   });
 
   document.getElementById("btn-disconnect").addEventListener("click", () => post("disconnect"));
+  document.getElementById("toggle-auto-next").addEventListener("change", (ev) => {
+    const enable = ev.target.checked;
+    state.autoNext = enable;
+    post("auto_next", { enable });
+    appendLog(enable ? "info" : "warn", `自动下一局已${enable ? "开启" : "关闭"}（对局结束后生效）`);
+  });
   document.getElementById("btn-sync").addEventListener("click", () => {
     cmd("sync", "sync", "同步棋局...");
   });
   document.getElementById("btn-flow").addEventListener("click", () => {
     if (state.status === "stopped") {
       cmd("start", "flow", "开始棋局...");
-    } else if (state.status === "red" || state.status === "black") {
+    } else if (
+      state.status === "red" ||
+      state.status === "black" ||
+      state.status === "auto_next"
+    ) {
       cmd("interrupt", "flow", "中断棋局...");
     }
   });

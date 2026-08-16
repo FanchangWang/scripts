@@ -29,6 +29,10 @@ class TurnReq(BaseModel):
     turn: str | None = None
 
 
+class AutoNextReq(BaseModel):
+    enable: bool = True
+
+
 class Hub:
     """持有当前设备与会话，管理 WebSocket 客户端与后台 worker 线程。"""
 
@@ -127,6 +131,11 @@ class Hub:
         if self.session is not None:
             self.session.answer_turn(turn)
 
+    def set_auto_next(self, enable: bool) -> None:
+        """实时切换自动下一局开关（对弈过程中也允许修改）"""
+        if self.session is not None:
+            self.session.set_auto_next(enable)
+
 
 hub = Hub()
 
@@ -206,6 +215,12 @@ async def api_interrupt() -> dict:
 @app.post("/api/answer_turn")
 async def api_answer_turn(req: TurnReq) -> dict:
     hub.answer_turn(req.turn)
+    return {"ok": True}
+
+
+@app.post("/api/auto_next")
+async def api_auto_next(req: AutoNextReq) -> dict:
+    hub.set_auto_next(req.enable)
     return {"ok": True}
 
 

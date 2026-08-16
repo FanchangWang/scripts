@@ -11,6 +11,7 @@
 - **自动走棋**：预计算引擎着法，检测到对方走子后自动应棋
 - **自动检测敌方走棋**（常开）：连续截图比对，识别敌方落子后自动分析并走棋
 - **对局结束/认输检测**：棋子数骤降 + 连续帧确认，自动收局
+- **自动下一局**：对局结束后扫描结算文字（晋级赛/重新挑战/再来一局/下一关/段位提升），自动点击按钮或发返回键，等待摆棋完毕再自动开始对弈；网页端**开关**可随时切换（对局结束判定时取最新值）
 - **网页棋盘**：Canvas 绘制棋盘、走棋高亮、日志面板、同步/开始/中断棋局
 
 ## 运行环境
@@ -47,7 +48,9 @@ uv run python -m xiangqi_bot
    - **开局**（或刚开局局面：全棋子、对方仅走一步、轮到已方）→ **自动开始对弈**
    - 双方均偏离默认位或残局（棋子 < 20）→ 只载入棋盘，弹窗确认「是否开始棋局」
 4. 对弈中可「中断棋局」，中断后「开始棋局」用当前棋盘数据恢复对弈
-5. 任一处绝杀/认输判定 → 对局结束，可再「同步棋局」重开
+5. 任一处绝杀/认输判定 → 对局结束；「自动下一局」开关开启（默认）时自动扫描结算文字
+   （按钮类点击 / 段位提升发返回键）→ 等待摆棋完毕 → 自动开始下一局；开关可随时切换，
+   对局结束判定时取最新值，中止或失败可「同步棋局」重开
 
 ## 目录结构
 
@@ -70,9 +73,10 @@ xiangqi-bot/
 │   ├── pikafish-bmi2.exe       # 引擎（必须在其目录运行，依赖 pikafish.nnue）
 │   └── pikafish.nnue
 ├── templates/*.png             # 14 张 60x60 棋子模板（从矫正棋盘切割，勿改）
-├── raw_screenshots/            # 原始开局截图（脚本数据源，文件名含分辨率）
+├── templates/text/*.png        # 5 张结算文字模板（晋级赛/重新挑战/再来一局/下一关/段位提升）
+├── raw_screenshots/            # 原始开局截图 + 结算截图（脚本数据源，文件名含分辨率）
 └── scripts/                    # regenerate_templates / compare_piece_templates /
-                                # detect_board_corners
+                                # detect_board_corners / generate_text_templates
 ```
 
 ## 工作原理
@@ -120,7 +124,7 @@ xiangqi-bot/
 
 ## API
 
-- REST：`/api/devices`、`/api/connect`、`/api/disconnect`、`/api/sync`、`/api/start`、`/api/interrupt`、`/api/answer_turn`
+- REST：`/api/devices`、`/api/connect`、`/api/disconnect`、`/api/sync`、`/api/start`、`/api/interrupt`、`/api/answer_turn`、`/api/auto_next`（`{enable}` 实时开关自动下一局）
 - WebSocket：`/ws`（广播 `log` / `state` / `prompt_turn` / `connected` / `disconnected`）
 - 静态：`/pieces/<id>.png`（模板图）、`/`（网页前端）
 
@@ -131,6 +135,7 @@ uv run python -m xiangqi_bot   # 启动网页服务（端口 8900，自动开浏
 .\check.ps1                    # 一键 ruff format + ruff check + ty check
 uv run python scripts/regenerate_templates.py   # 从矫正棋盘重新切割模板
 uv run python scripts/detect_board_corners.py <截图> [--save-board]  # 探测四角坐标
+uv run python scripts/generate_text_templates.py  # 从结算截图重新生成结算文字模板
 ```
 
 ## 关键配置（config.py）
@@ -154,4 +159,13 @@ uv run python scripts/detect_board_corners.py <截图> [--save-board]  # 探测�
 | `RESIGN_CONFIRM_COUNT` | 3 | 疑似结束画面需连续帧数 |
 | `RESIGN_SUSPECT_WAIT_MS` | 1000 | 单帧疑似结束时延时再采样（过滤瞬态误判） |
 | `ENDGAME_PIECE_COUNT` | 20 | 可识别棋子数低于该值视为残局 |
+| `AUTO_NEXT_GAME` | True | 对局结束后自动开始下一局（网页端开关默认值，运行时可实时修改） |
+| `GAMEOVER_SCAN_MAX` | 20 | 扫描结算文字/等待摆棋完毕截图次数上限 |
+| `GAMEOVER_SCAN_INTERVAL_MS` | 1000 | 扫描间隔 |
+| `GAMEOVER_TEXT_THRESHOLD` | 0.75 | 结算文字模板匹配阈值 |
+| `GAMEOVER_TEMPLATE_W` | 1080 | 结算文字模板基准宽度（匹配前等比缩放） |
+| `GAMEOVER_TAP_VERIFY_MS` | 2000 | 点击结算按钮后的校验延时（动画未结束时点击可能无响应） |
+| `GAMEOVER_TAP_RETRY_MAX` | 2 | 同一结算按钮最多点击次数，仍不消失则中止自动下一局 |
+| `GAMEOVER_BUTTON_WORDS` | 下一关/晋级赛/重新挑战/再来一局 | 按钮类（点击）优先级 |
+| `GAMEOVER_BACK_WORDS` | 段位提升 | 文字类（发送返回键） |
 | `DIFF_THRESHOLD` / `MATCH_SEARCH_HALF` / `EMPTY_MATCH_THRESHOLD` | 8 / 10 / 0.8 | 图片识别阈值 |

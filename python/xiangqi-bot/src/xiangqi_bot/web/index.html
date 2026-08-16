@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
   <meta name="theme-color" content="#1e2227" />
-  <link rel="stylesheet" href="/style.css?v=6" />
+  <link rel="stylesheet" href="/style.css?v=7" />
 </head>
 <body>
   <div id="app">
@@ -57,6 +57,11 @@
           </div>
           <div class="status-line">
             <span>状态：<b id="flow-status" class="status-text">未开始</b></span>
+            <label class="switch" title="对局结束后自动开始下一局">
+              <input type="checkbox" id="toggle-auto-next" checked />
+              <span class="slider"></span>
+              <span class="switch-label">自动下一局</span>
+            </label>
           </div>
           <div class="log-title">日志</div>
           <div id="log" class="log"></div>
@@ -84,6 +89,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=6"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>

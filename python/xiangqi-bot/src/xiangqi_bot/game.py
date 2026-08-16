@@ -26,10 +26,17 @@ from xiangqi_bot.board import (
 )
 from xiangqi_bot.config import (
     AUTO_DETECT_INTERVAL_MS,
+    AUTO_NEXT_GAME,
     ENDGAME_PIECE_COUNT,
     ENEMY_NOISY_MAX,
     ENEMY_RECHECK_WAIT_MS,
     ENGINE_MATE_PROBE_MS,
+    GAMEOVER_BACK_WORDS,
+    GAMEOVER_BUTTON_WORDS,
+    GAMEOVER_SCAN_INTERVAL_MS,
+    GAMEOVER_SCAN_MAX,
+    GAMEOVER_TAP_RETRY_MAX,
+    GAMEOVER_TAP_VERIFY_MS,
     MOVE_SETTLE_MS,
     MOVE_VERIFY_COUNT,
     RECOVERY_WAIT_MS,
@@ -70,6 +77,8 @@ class GameSession:
         self.pending_move: tuple[str, str] | None = None
         self.game_over = False
         self._running = False  # 自动对弈循环是否进行中
+        self._auto_next = False  # 自动下一局流程进行中（网页端据此保持按钮状态不变）
+        self.auto_next_game = AUTO_NEXT_GAME  # 对局结束后是否自动下一局（网页开关可实时修改）
         self._resign_streak = 0
         self._lift_logged = False
         self._noisy_count = 0
@@ -90,6 +99,11 @@ class GameSession:
         """网页弹窗确认（answer 为 "start"/"no"）"""
         self._turn_answer = answer
         self._turn_event.set()
+
+    def set_auto_next(self, enable: bool) -> None:
+        """实时开关自动下一局（线程安全），对局结束判定时取最新值"""
+        self.auto_next_game = bool(enable)
+        self._emit()
 
     def close(self) -> None:
         self.engine.close()
@@ -178,17 +192,210 @@ class GameSession:
         self._flow()
 
     def _flow(self) -> None:
-        """自动对弈主循环：我方走棋 <-> 检测敌方走棋，直到中断或对局结束"""
-        while self._running and not self.game_over and not self._interrupt.is_set():
-            if self._turn != self.my_side:
-                self._wait_for_enemy_move()
-                continue
-            # 我方走棋后若敌方已在走棋校验期间走完（turn 回到我方），立即继续我方走棋
-            if not self.move():
-                self._running = False
-                self._log("info", "走棋失败，自动对弈已暂停，可点击「开始棋局」重试")
+        """自动对弈主循环：我方走棋 <-> 检测敌方走棋；对局结束后自动开始下一局，
+        直到中断或自动下一局中止"""
+        while self._running and not self._interrupt.is_set():
+            while self._running and not self.game_over and not self._interrupt.is_set():
+                if self._turn != self.my_side:
+                    self._wait_for_enemy_move()
+                    continue
+                # 我方走棋后若敌方已在走棋校验期间走完（turn 回到我方），立即继续我方走棋
+                if not self.move():
+                    self._running = False
+                    self._log("info", "走棋失败，自动对弈已暂停，可点击「开始棋局」重试")
+                    break
+            if not self.game_over or self._interrupt.is_set() or not self.auto_next_game:
+                break
+            if not self._auto_next_game():
                 break
         self._emit()
+
+    # ---------- 自动下一局 ----------
+
+    def _auto_next_game(self) -> bool:
+        """对局结束后自动开始下一局。
+
+        阶段A 扫描结算文字并 adb 交互（按钮点击须校验+重试，文字类发返回键后继续扫描），
+        阶段B 等待摆棋完毕（棋子数稳定且无格子变动，防动画误判），
+        阶段C 重新初始化并开始对弈。任一阶段超时/失败返回 False（保持结束状态）。
+        流程期间 self._auto_next 置位，网页端按钮状态保持不变（仍显示"中断棋局"）。
+        """
+        self._log("info", "检测到对局结束，开始自动下一局")
+        self._auto_next = True
+        try:
+            if not self._scan_gameover_interact():
+                return False
+            corrected = self._wait_for_board_setup()
+            if corrected is None:
+                self._log(
+                    "warn",
+                    f"{GAMEOVER_SCAN_MAX} 次截图未检测到摆棋完毕，中止自动下一局，请手动处理",
+                )
+                return False
+            return self._init_next_game(corrected)
+        finally:
+            self._auto_next = False
+            self._emit()
+
+    def _scan_gameover_interact(self) -> bool:
+        """阶段A：扫描结算文字并交互。
+
+        按钮类：点击后延时 GAMEOVER_TAP_VERIFY_MS 复检同一按钮是否仍在页面——
+        动画未结束时点击可能无响应，仍识别到则重试，同一按钮至多
+        GAMEOVER_TAP_RETRY_MAX 次，一直不消失则中止（返回 False）；
+        文字类（段位提升）：发送返回键后继续扫描。超时返回 False。
+        """
+        for _ in range(GAMEOVER_SCAN_MAX):
+            if self._interrupt.is_set():
+                return False
+            if not self.auto_next_game:
+                return False
+            hit = self._scan_gameover_text()
+            if hit is None:
+                time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
+                continue
+            word, x, y, is_button = hit
+            if not is_button:
+                self._log("info", f"识别到文字「{word}」（非按钮），发送返回键")
+                try:
+                    adb_client.keyevent(self.device, adb_client.KEYCODE_BACK)
+                except adb_client.AdbError as exc:
+                    self._log("error", f"自动下一局交互失败：{exc}")
+                    return False
+                time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
+                continue
+            for attempt in range(GAMEOVER_TAP_RETRY_MAX):
+                self._log(
+                    "move",
+                    f"识别到结算按钮「{word}」，点击 ({x},{y}) 开始下一局"
+                    f"（第 {attempt + 1}/{GAMEOVER_TAP_RETRY_MAX} 次）",
+                )
+                try:
+                    adb_client.tap(self.device, x, y)
+                except adb_client.AdbError as exc:
+                    self._log("error", f"自动下一局交互失败：{exc}")
+                    return False
+                time.sleep(GAMEOVER_TAP_VERIFY_MS / 1000)
+                if self._interrupt.is_set():
+                    return False
+                again = self._scan_gameover_text()
+                if again is None or again[0] != word:
+                    return True
+                self._log("warn", f"点击后仍识别到结算按钮「{word}」，延时复检后重试")
+            self._log(
+                "error",
+                f"结算按钮「{word}」点击 {GAMEOVER_TAP_RETRY_MAX} 次仍无响应，"
+                "中止自动下一局，请手动处理",
+            )
+            return False
+        self._log(
+            "warn",
+            f"{GAMEOVER_SCAN_MAX} 次截图未识别到结算文字，中止自动下一局，请手动处理",
+        )
+        return False
+
+    def _scan_gameover_text(self) -> tuple[str, int, int, bool] | None:
+        """原始截图模板匹配结算文字。
+
+        返回 (文字, 屏幕x, 屏幕y, 是否按钮)。按钮类按 GAMEOVER_BUTTON_WORDS 优先级
+        取第一个有命中的词，并在其全部命中中取最靠下者（按钮在标题下方，避免点中标题）；
+        无按钮类命中时返回文字类（段位提升 -> 返回键）。
+        """
+        try:
+            img = adb_client.screencap(self.device)
+        except adb_client.AdbError as exc:
+            self._log("error", str(exc))
+            return None
+        if img is None:
+            self._log("error", "截图失败")
+            return None
+        matches = vision.find_gameover_text(img, img.shape[1], img.shape[0])
+        for word in GAMEOVER_BUTTON_WORDS:
+            hits = [m for m in matches if m[0] == word]
+            if hits:
+                _w, x, y, _score = max(hits, key=lambda m: m[2])
+                return (word, x, y, True)
+        for word in GAMEOVER_BACK_WORDS:
+            hits = [m for m in matches if m[0] == word]
+            if hits:
+                _w, x, y, _score = max(hits, key=lambda m: m[3])
+                return (word, x, y, False)
+        return None
+
+    def _wait_for_board_setup(self) -> ndarray | None:
+        """等待下一局摆棋完毕：棋子数连续 2 帧稳定且相邻帧无格子变动。
+
+        摆棋动画期间格子必然持续变化，天然防"只摆了一部分棋子"的误判；
+        残局模式棋子数可能少于普通对局，故不限定具体数量。返回完成帧，超时返回 None。
+        """
+        prev_frame: ndarray | None = None
+        stable_count: int | None = None
+        stable_streak = 0
+        for _ in range(GAMEOVER_SCAN_MAX):
+            if self._interrupt.is_set():
+                return None
+            corrected = self._capture()
+            if corrected is None:
+                time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
+                continue
+            board_now = vision.analyze_board(corrected, self.templates)
+            count = sum(cell is not None for row in board_now for cell in row)
+            changed = (
+                count == 0
+                or prev_frame is None
+                or count != stable_count
+                or bool(vision.diff_cells(prev_frame, corrected))
+            )
+            if changed:
+                stable_count, stable_streak = count, 0
+            else:
+                stable_streak += 1
+            prev_frame = corrected
+            self._log("info", f"等待摆棋完毕：识别到 {count} 个棋子（稳定 {stable_streak}/2）")
+            if stable_streak >= 2:
+                return corrected
+            time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
+        return None
+
+    def _init_next_game(self, corrected: ndarray) -> bool:
+        """摆棋完毕后初始化下一局并开始对弈。
+
+        残局模式（下一关）固定为我方红方、轮到我方先走；常规新局按将/帥位置判断
+        红黑方，红方先行（若红方已抢先走棋，_infer_turn 会给出对方先走）。
+        """
+        board_now = vision.analyze_board(corrected, self.templates)
+        count = sum(cell is not None for row in board_now for cell in row)
+        self.board = board_now
+        self.prev = corrected
+        self.pending_move = None
+        self.game_over = False
+        self._resign_streak = 0
+        self._lift_logged = False
+        self._noisy_count = 0
+        self._highlight = []
+        self._last_move = None
+        if count < ENDGAME_PIECE_COUNT:
+            self.my_side = "red"
+            self._turn = "red"
+            self.phase = "残局"
+            self._log("info", "残局模式：我方为红方、轮到我方先走，开始自动对弈")
+        else:
+            side = self._detect_side()
+            if side is None:
+                self._log("error", "无法判断我方红黑方，中止自动下一局")
+                self._emit()
+                return False
+            self.my_side = side
+            self.phase = self._detect_phase()
+            self._turn = self._infer_turn() or "red"
+            side_cn = RED_CN if side == "red" else BLACK_CN
+            turn_cn = RED_CN if self._turn == "red" else BLACK_CN
+            self._log(
+                "info",
+                f"下一局开始：我方为{side_cn}方、{self.phase}，轮到{turn_cn}方，开始自动对弈",
+            )
+        self._emit()
+        return True
 
     # ---------- 内部流程 ----------
 
@@ -919,7 +1126,10 @@ class GameSession:
     # ---------- 状态回传 ----------
 
     def _status(self) -> str:
-        """状态：idle(未开始) / red(红方走棋) / black(黑方走棋) / over(绝杀) / stopped(中断)"""
+        """状态：idle(未开始) / red(红方走棋) / black(黑方走棋) / over(绝杀) /
+        stopped(中断) / auto_next(自动下一局中，按钮状态保持不变)"""
+        if self._auto_next:
+            return "auto_next"
         if self.game_over:
             return "over"
         if self._turn is None:
@@ -938,6 +1148,7 @@ class GameSession:
                 "phase": self.phase,
                 "game_over": self.game_over,
                 "status": self._status(),
+                "auto_next": self.auto_next_game,
                 "board": [list(row) for row in self.board],
                 "highlight": [[r, c] for r, c in self._highlight],
                 "last_move": self._last_move,

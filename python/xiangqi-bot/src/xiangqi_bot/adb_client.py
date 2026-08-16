@@ -17,6 +17,9 @@ class AdbError(RuntimeError):
     pass
 
 
+KEYCODE_BACK = 4  # Android 返回键
+
+
 def _client() -> AdbClient:
     return AdbClient(host="127.0.0.1", port=5037)
 
@@ -75,6 +78,14 @@ def tap(device: Device, x: int, y: int) -> None:
         device.input_tap(x, y)
     except (RuntimeError, OSError) as exc:
         raise AdbError(f"模拟点击失败：{exc}") from exc
+
+
+def keyevent(device: Device, keycode: int) -> None:
+    """发送按键事件（如返回键 KEYCODE_BACK=4），失败抛 AdbError"""
+    try:
+        device.shell(f"input keyevent {keycode}")
+    except (RuntimeError, OSError) as exc:
+        raise AdbError(f"模拟按键失败：{exc}") from exc
 
 
 def screen_size(device: Device) -> tuple[int, int] | None:
