@@ -1,0 +1,308 @@
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  background: #1e2227;
+  color: #e8e8e8;
+}
+
+#app {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 12px;
+}
+
+/* ---------- 连接页 ---------- */
+.screen h1 {
+  text-align: center;
+  font-size: 26px;
+  margin: 24px 0 4px;
+}
+
+.screen .sub {
+  text-align: center;
+  color: #9aa4b2;
+  margin: 0 0 20px;
+  font-size: 14px;
+}
+
+.card {
+  background: #262b33;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card h2 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+
+.device-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.device-list li {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #333a45;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  word-break: break-all;
+}
+
+.device-list .serial {
+  font-family: Consolas, monospace;
+}
+
+.device-list .empty {
+  color: #9aa4b2;
+  background: none;
+}
+
+.connect-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.connect-form input {
+  flex: 1 1 160px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #444d5c;
+  background: #333a45;
+  color: #e8e8e8;
+  font-size: 14px;
+}
+
+.connect-form input[type="number"] {
+  flex: 0 1 110px;
+}
+
+button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #3d6df2;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #5580f5;
+}
+
+button:active {
+  background: #2f5ad0;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 12px;
+  border: 3px solid #444d5c;
+  border-top-color: #3d6df2;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error {
+  color: #ff8b8b;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+/* ---------- 主界面 ---------- */
+.layout {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+#board-wrap {
+  flex: 0 1 680px;
+  width: 100%;
+}
+
+#board {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 10px;
+}
+
+.panel {
+  flex: 1 1 360px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.device-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  background: #262b33;
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.device-info {
+  font-family: Consolas, monospace;
+  font-size: 14px;
+  word-break: break-all;
+  color: #c8d0da;
+}
+
+.info-bar {
+  display: flex;
+  gap: 18px;
+  font-size: 14px;
+  background: #262b33;
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.info-bar b {
+  color: #fff;
+}
+
+.menu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.status-line {
+  font-size: 14px;
+  background: #262b33;
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.status-text {
+  color: #6fb6ff;
+}
+
+.log-title {
+  font-size: 14px;
+  color: #9aa4b2;
+}
+
+.log {
+  background: #11151a;
+  border-radius: 10px;
+  padding: 10px;
+  height: 320px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.7;
+  font-family: Consolas, monospace;
+}
+
+.log .entry {
+  word-break: break-all;
+  border-bottom: 1px solid #20252c;
+  padding: 1px 0;
+}
+
+.log .kind-info { color: #c8d0da; }
+.log .kind-ok { color: #7ce38b; }
+.log .kind-warn { color: #ffd479; }
+.log .kind-error { color: #ff8b8b; }
+.log .kind-move { color: #6fb6ff; }
+.log .kind-enemy { color: #d8b7ff; }
+.log .kind-gameover { color: #ff8b8b; font-weight: bold; }
+
+/* ---------- 弹窗 ---------- */
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: #262b33;
+  border-radius: 12px;
+  padding: 24px 28px;
+  text-align: center;
+  max-width: 90vw;
+}
+
+.modal p {
+  margin: 0 0 18px;
+  font-size: 16px;
+}
+
+.modal-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+}
+
+.modal-btns button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.no-btn { background: #444d5c; }
+.no-btn:hover { background: #57606f; }
+.ok-btn { background: #27ae60; }
+.ok-btn:hover { background: #2ecc71; }
+
+/* ---------- 响应式（手机） ---------- */
+@media (max-width: 820px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  #board-wrap {
+    flex: 1 1 auto;
+  }
+
+  .log {
+    height: 220px;
+  }
+}

@@ -7,26 +7,26 @@
 
 用 Python 编写中国象棋自动脚本：通过 ADB 控制 Android 手机（QQ/微信象棋等游戏）自动下棋。
 
-- 用 ADB 截图识别棋盘（OpenCV 模板匹配，固定 1080x2400 分辨率）
-- 用 pikafish 引擎（UCI 协议）计算下一步棋
+- 用 ADB 截图识别棋盘：已知四角坐标做透视矫正，再对 14 张模板做模板匹配
+- 用 pikafish 引擎（UCI 协议，长进程复用）计算下一步棋
 - 用 ADB 模拟点击落子
-- 终端用彩色文字打印当前棋局
+- **网页端**（FastAPI + 原生 JS/Canvas）显示棋盘、日志并操作；手机/PC 浏览器均可访问
 
 ## 运行环境与工具链
 
 - Windows 11，Python 3.12
 - 包管理：`uv`（禁止手写 pyproject.toml 的依赖；必须用 `uv init` 初始化、`uv add` 添加依赖）
 - 运行：一律 `uv run`，禁止 `python xxx.py`
-- 依赖：`pure-python-adb`、`opencv-python`、`numpy`
+- 依赖：`pure-python-adb`、`opencv-python`、`numpy`、`fastapi`、`uvicorn[standard]`
 - dev 依赖：`ruff`（格式/检查）、`ty`（类型检查）
 
 ## 常用命令
 
 ```powershell
 uv init --package          # 初始化项目（自动生成 pyproject.toml 等）
-uv add pure-python-adb opencv-python numpy
+uv add pure-python-adb opencv-python numpy fastapi "uvicorn[standard]"
 uv add --dev ruff ty
-uv run python -m xiangqi_bot   # 运行脚本
+uv run python -m xiangqi_bot   # 启动网页服务（自动打开浏览器，端口 8900）
 .\check.ps1                # 一键 ruff format + ruff check + ty check
 ```
 
@@ -41,8 +41,15 @@ uv run ty check .
 ## 关键常量与配置
 
 ```python
-# 设备
-TARGET_RESOLUTION = (1080, 2400)  # 不匹配则脚本结束
+# 透视矫正：四角格中心坐标按分辨率查表（矫正棋盘固定 900x1000，格边长 100）
+BOARD_CORNERS = {
+    (1080, 2400): ((76.0, 680.0), (1004.0, 680.0), (67.0, 1700.0), (1013.0, 1700.0)),
+    (1440, 3200): ((101.3, 906.7), (1338.7, 906.7), (89.3, 2266.7), (1350.7, 2266.7)),
+}  # 左上/右上/左下/右下 角格中心；3200 = 1080 等比 ×1.3333
+CORRECT_CELL = 100
+CORRECT_W = 900
+CORRECT_H = 1000  # 矫正棋盘尺寸
+CORRECT_TEMPLATE_SIZE = 60  # 矫正空间下的模板边长
 
 # 延时（毫秒）
 TAP_HOLD_INTERVAL_MS = 400  # 点起子 -> 点落子之间的间隔（勿设过小，否则第二次落子易失败）
@@ -56,41 +63,50 @@ ENGINE_HASH_MB = 2048  # setoption name Hash（MB）
 ENGINE_MATE_PROBE_MS = 200  # 绝杀判断用的短时限探测（无着法会立即返回 (none)）
 
 # 自动检测敌方走棋（毫秒）
-AUTO_DETECT_INTERVAL_MS = 500  # 每 500ms 截图一次
-AUTO_DETECT_MAX_COUNT = 20  # 最大检测次数（20 次 x 0.5 秒 = 10 秒）
+AUTO_DETECT_INTERVAL_MS = (
+    0  # 截图间隔延时；ADB 截图本身耗时，不再额外延时（无次数限制，直到用户中断）
+)
 
 # 对局结束 / 敌方认输检测
 RESIGN_PIECE_DROP_THRESHOLD = 3  # 可识别棋子数比内存布局至少少几枚，判为对局结束画面
 RESIGN_CONFIRM_COUNT = 3  # 疑似对局结束画面需连续几帧稳定出现才确认（过滤瞬态误判）
 
-# 图片识别
+# 图片识别（矫正棋盘空间，像素）
 DIFF_WINDOW = 10  # 中心点 10x10 区域对比差异
 DIFF_THRESHOLD = 8  # 10x10 区域平均绝对差超过此值视为"有变化"
 MATCH_SEARCH_HALF = 10  # 模板匹配时在中心点 ±10px 窗口内滑动
 EMPTY_MATCH_THRESHOLD = 0.8  # TM_CCOEFF_NORMED 低于此值判为空格
+
+# 残局判断
+ENDGAME_PIECE_COUNT = 20  # 可识别棋子总数少于该值视为残局（轮次无法静态推断）
 ```
 
-## 目录结构（目标）
+## 目录结构
 
 ```
 xiangqi-bot/
 ├── pyproject.toml
 ├── check.ps1                      # ruff/ty 一键检查
 ├── src/xiangqi_bot/
-│   ├── __init__.py
-│   ├── config.py                  # 常量、路径、阈值
-│   ├── console.py                 # 终端输入（EOF 容错）
-│   ├── adb_client.py              # ppadb 封装：设备选择、截图、点击、wm size
-│   ├── board.py                   # 网格坐标、记谱/FEN 转换、棋盘状态
-│   ├── vision.py                  # 模板匹配、整盘分析、两图对比
-│   ├── engine.py                  # pikafish UCI 客户端
-│   ├── printer.py                 # 终端彩色棋盘打印
-│   └── app.py                     # 主流程 / 菜单 / 子流程编排
+│   ├── __init__.py / __main__.py  # 入口委派 main
+│   ├── main.py                    # uvicorn 启动（0.0.0.0:8900，自动开浏览器）
+│   ├── server.py                  # FastAPI：静态托管 + REST API + WebSocket + 后台 worker
+│   ├── game.py                    # 对局状态机（同步/开始/中断/自动对弈）
+│   ├── config.py                  # 常量、路径、阈值、四角坐标
+│   ├── adb_client.py              # ppadb + adb.exe 封装（无终端交互）
+│   ├── board.py                   # 网格坐标、记谱/FEN 转换、开局默认格
+│   ├── vision.py                  # 透视矫正、模板匹配、两图对比
+│   ├── engine.py                  # pikafish UCI 长进程客户端
+│   └── web/                       # 网页前端（静态文件）
+│       ├── index.html / app.js / style.css
 ├── pikafish/
 │   ├── pikafish-bmi2.exe          # 引擎（必须在其目录运行，依赖 pikafish.nnue）
 │   └── pikafish.nnue
-├── templates/*.png                # 14 张 60x60 棋子模板（已提供，勿改）
-└── scripts/                       # visualize_grid.py / extract_piece_templates.py（已有，勿改）
+├── templates/*.png                # 14 张 60x60 棋子模板（从矫正棋盘切割，勿改）
+├── raw_screenshots/               # 原始开局截图（脚本数据源，文件名含分辨率）
+│                                  # 木/石 棋盘 × 红/黑 方（1080x2400）+ 高清（1440x3200）
+├── scripts/                       # regenerate_templates / compare_piece_templates /
+│                                  # detect_board_corners（已有，勿改）
 ```
 
 ## 坐标体系（已用引擎实测验证）
@@ -100,18 +116,18 @@ xiangqi-bot/
 | 表示 | 说明 |
 |---|---|
 | 网格 `(r, c)` | 固定于屏幕：`r` 行 0..9（0=屏幕最上，9=最下），`c` 列 0..8（0=最左）；`(0,0)` 恒为左上角格子 |
-| 屏幕坐标 `(x, y)` | `GRID_CENTERS_NP[r][c]`，浮点；与网格一一对应，永远不变 |
+| 屏幕坐标 `(x, y)` | 原始截图像素；点击用 `vision.tap_xy(H, r, c)`（逆透视映射） |
+| 矫正坐标 | 透视矫正后的 900x1000 棋盘；格心 = `(50+100c, 50+100r)`，模板匹配在此空间进行 |
 | 记谱 `a-i/0-9` | ICCS 绝对坐标系，与 pikafish UCI 方块一致；**不随红黑方变化**：`e9` 恒为黑将、`e0` 恒为红帥 |
 | FEN | 同记谱：ICCS 绝对坐标系（黑方在上）；**不随红黑方变化** |
 
-> 关键结论（用户确认）：网格与屏幕坐标永远固定；网格<->记谱的换算**受红黑方影响**；
+> 关键结论（用户确认）：网格/矫正/屏幕坐标永远固定（矫正只需按分辨率查表）；网格<->记谱的换算**受红黑方影响**；
 > 记谱<->FEN 的换算**不受红黑方影响**。从网格生成 FEN 需按红黑方处理行列翻转，
 > 但从记谱转 FEN 不需要。绘制棋盘时按红黑方决定下方棋子颜色，但 FEN/记谱不变。
 
 ### 转换公式（红方视角）
 
 ```python
-# 记谱 <-> 网格（红方，记谱 file/rank 与 pikafish UCI 方块完全一致，已实测 h2e2 走红右炮）
 c = ord(file) - ord("a")  # 记谱 -> 网格列
 r = 9 - rank  # 记谱 -> 网格行
 file = chr(ord("a") + c)  # 网格 -> 记谱
@@ -136,22 +152,17 @@ c = ord("i") - ord(file)
 # 红方：网格行 r -> FEN 第 (r+1) 行，网格列 c -> FEN 第 (c+1) 列
 ```
 
-# 屏幕坐标
-x, y = GRID_CENTERS_NP[r, c]  # np.float32 -> int(round(...)) 后用于点击/截图
-```
-
 ### 示例（已实测）
 
-- 初始棋局红右炮：网格 `(7, 7)` = 记谱 `h2` = FEN 第 8 行 8 列，屏幕 `GRID_CENTERS_NP[7,7]`
+- 初始棋局红右炮：网格 `(7, 7)` = 记谱 `h2` = FEN 第 8 行 8 列
 - 引擎着法 `h2e2`：红右炮从中路出到 `e2`，即网格 `(7,4)`
-- 引擎着法 `b2e2`：红左炮出中路，即网格 `(7,1) -> (7,4)`
-- 黑方（红方在屏幕上方）：红相走记谱 `g0 -> e2`，对应网格 `(0,2) -> (2,4)`（`grid_to_square(0,2,"black")="g0"`）
-- 黑方引擎着法（不变 FEN）：`b7e7` = 黑砲架中炮，对应网格 `(7,7) -> (7,4)`（`square_to_grid("b7","black")=(7,7)`，起点为黑砲）
+- 黑方（红方在屏幕上方）：红相走记谱 `g0 -> e2`，对应网格 `(0,2) -> (2,4)`
+- 黑方引擎着法（不变 FEN）：`b7e7` = 黑砲架中炮，对应网格 `(7,7) -> (7,4)`
 - 初始 FEN：`rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1`
 
 ## 棋子模板与字符映射
 
-模板在 `templates/`，60x60，命名带 `b_`/`r_` 前缀（黑小写/红大写）。
+模板在 `templates/`，60x60，命名带 `b_`/`r_` 前缀（黑小写/红大写），**从矫正棋盘切割**。
 
 | 模板 | 棋子 | 中文 | FEN 字符 |
 |---|---|---|---|
@@ -174,151 +185,122 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 
 ## 架构设计
 
-### adb_client.py — ADB 封装
+### adb_client.py — ADB 封装（API，无终端交互）
 
-基于 `pure-python-adb`（已实测）：
-
-```python
-from ppadb.client import Client as AdbClient
-
-client = AdbClient(host="127.0.0.1", port=5037)  # 默认即可
-devices = client.devices()  # -> [Device]，含 .serial
-device.screencap()  # -> PNG 字节（用 cv2.imdecode 解码）
-device.shell("wm size")  # -> "Physical size: 1080x2400"
-device.input_tap(x, y)  # -> 模拟点击
-```
-
-要点：
-- 截图统一用 `device.screencap()` + `cv2.imdecode`，不落盘
-- `wm size` 输出含 `Physical size: 1080x2400` 文本，需解析数字与 `TARGET_RESOLUTION` 比较
-- 多设备：列编号，用户输入数字选择（**仅数字，不用方向键**）
-- 无设备：提示后结束
+- `list_devices()` -> serial 列表（ppadb `Client.devices()`）
+- `connect(ip, port)`：调 `adb connect`（ppadb 无配对/连接命令），成功返回 `ip:port`
+- `disconnect(serial)`：调 `adb disconnect`（仅无线设备）
+- `get_device(serial)`：按 serial 取 ppadb Device，不在线抛 `AdbError`
+- `screencap(device)`：`device.screencap()` + `cv2.imdecode`，失败返回 None，异常抛 `AdbError`
+- `tap(device, x, y)`：`device.input_tap(x, y)`，异常抛 `AdbError`
+- `screen_size(device)`：解析 `wm size` 的 `Physical size: WxH`
 
 ### board.py — 棋盘状态与坐标转换
 
-- `GRID_CENTERS_NP`：直接复制 `scripts/visualize_grid.py` 中的 10x9 矩阵（固定值）
-- 记谱 <-> 网格（受红黑方影响）、FEN <-> 布局（互逆，按红黑方翻转）的转换函数
-- 布局对象：10x9 数组（网格固定于屏幕，每格一个棋子 ID 或空），支持序列化为 FEN
-  - FEN 每行：空格计数用数字，如 8 个空 = `8`；棋子直接写字符
-  - side to move 始终写我方颜色（红 `w` / 黑 `b`），剩余字段 `- - 0 1`
-  - FEN 恒为 ICCS 绝对坐标系（黑方在上）：我方为黑方时行列反转后写入
-- 我方颜色判定：整盘分析后，若 `r_K` 所在行 > 5 → 我方是红方；若 `b_k` 所在行 > 5 → 黑方；都找不到 → 报错并让用户初始化/退出
+- `START_SQUARES`：14 类棋子的开局默认格（用于轮次推断/自愈）
+- 记谱 <-> 网格（受红黑方影响）、FEN <-> 布局（互逆，按红黑方翻转）
+- `make_empty_board()` / `fen_of_board(board, side, to_move=...)`
+- `corrected_center(r, c)`：矫正空间格心（供脚本/调试）
 
-### vision.py — 图片识别
+### vision.py — 图片识别（矫正空间）
 
-- `analyze_cell(img, r, c)`：取中心点 ±`MATCH_SEARCH_HALF` 窗口，对 14 张模板各做一次 `cv2.matchTemplate(..., TM_CCOEFF_NORMED)`，取最大分；低于 `EMPTY_MATCH_THRESHOLD` 判空；返回最佳棋子 ID 或 None
-- `analyze_board(img)`：遍历 90 格，返回 10x9 布局
-- `diff_cells(prev_img, cur_img)`：对每格取中心点 `10x10` 区域（先 `int(round())`），算平均绝对差 > `DIFF_THRESHOLD` 视为变化，返回变化格子集合
-- 性能：90 格 × 14 模板 = 1260 次小窗口 matchTemplate，可接受
+- `homography(w, h)`：按分辨率查 `config.BOARD_CORNERS` 求矫正单应（带缓存），未知分辨率抛 RuntimeError
+- `correct_board(img)`：warpPerspective 到 900x1000
+- `analyze_cell(corrected, r, c, templates)`：中心点 ±10 窗口对 14 模板做 TM_CCOEFF_NORMED，低于阈值判空
+- `analyze_board(corrected, templates)`：遍历 90 格
+- `diff_cells(prev, cur)`：每格中心 10x10 区域平均绝对差 > 阈值视为变化
+- `tap_xy(H, r, c)`：矫正格心经逆单应映射回原图，供点击
 
-### engine.py — pikafish UCI 客户端
+### engine.py — pikafish UCI 长进程客户端
 
-- 每次走棋启动一个子进程（cwd = `pikafish/` 目录，引擎才能找到 `pikafish.nnue`）
-- 采用**交互式对话**（后台线程持续读 stdout）：一条条发指令并等待对应标记，**`quit` 必须等收到 `bestmove` 后再发**——若与 `go` 一起批量写入，引擎会立刻读到 `quit` 中断搜索，固定时限失效、只做浅层搜索，棋力骤降（实测只走兵）
-- 协议（已实测）：
-  - `uci` -> 等 `uciok`
-  - `setoption name Threads value 12`、`setoption name Hash value 2048`（增强固定时限下的棋力）
-  - `isready` -> 等 `readyok`
-  - `position fen <fen>`
-  - `go movetime 1000` -> 等 `bestmove`（红方开局出 `h2e2`、黑方开局出 `b7e7`）
-  - `quit`
-- 着法解析：`bestmove` 形如 `h2e2`（6 字符：4 字符起止格）。`(none)` 表示无着法（终局），打印提示
-- 注意 stdout 解码容错（`text=True`，UCI 输出为 ASCII）
+- 每局只启动一个引擎子进程（cwd = `pikafish/`，引擎才能找到 `pikafish.nnue`），线程安全
+- `start()` 幂等：`uci`->`uciok`、`setoption Threads/Hash`、`isready`->`readyok`
+- `best_move(fen, movetime_ms)`：`position fen` + `go movetime`，等 `bestmove`；`(none)`/超时返回 None
+- `is_mate(fen, movetime_ms)`：对方无路可走即返回 True（绝杀/困毙）
+- **`quit` 必须只在 close() 时发**，且所有 bestmove 均已返回；若与 `go` 批量写入会浅层搜索（棋力骤降）
+- 后台线程持续读 stdout（`text=True`），一条条发指令并等待对应标记
 
-### printer.py — 终端打印棋盘
+### game.py — 对局状态机
 
-- 每格内容为**单个全角汉字**，空格用全角空格 `　`，保证所有格子等宽、棋盘矩形规整
-- 红子用红色、黑子用蓝/青色（或黑子默认色），空格用默认色
-- 上、下边缘标注列 `a b c d e f g h i`；左、右边缘标注行号 `0..9`（上为 9，下为 0）。该标注即 ICCS 绝对坐标系（红方视角：红方在下、行 0 在下）。**屏幕下方即我方一侧，显示始终按网格第 0 行在上、第 9 行在下（我方在下方）；我方为黑方时仅翻转标注**：列从左到右变为 `i..a`，行号上为 0、下为 9
-- 列标注与棋子按显示宽度对齐：每格 = 全角子占 2 列 + 左右空格 = 4 列，格距 5（4 内容 + 1 竖线），列标注每格 5 列、字母居格中心；横线每段 4 个 `─`（`┌┬┐`/`├┼┤`/`└┴┘`），与竖线 `│` 逐列对齐
-- 可选高亮：传入起止格 `(r1,c1),(r2,c2)`，用反色/背景色标记棋子原位置与当前位置（着法如 `h2e2`）
-- Windows 终端需启用 VT 转义：`ctypes.windll.kernel32.SetConsoleMode` 开启 `ENABLE_VIRTUAL_TERMINAL_PROCESSING`（或用 `subprocess.run("", shell=True)` 兜底）
+构造参数：`GameSession(device, log, on_state, ask_turn)`，由 server 的**单个 worker 线程**调用。
 
-## 主流程（依 doc.md + 已确认的澄清）
+- 状态：`board`(10x9)、`prev`(上帧矫正图)、`my_side`、`_turn`、`phase`、`pending_move`、`game_over`、`_running`（自动对弈循环进行中）
+- `sync()`：无历史或已结束 -> `_reset` + `_init_from_corrected`（截图矫正 -> 全量分析 -> 判方（r_K/b_k 谁在 6..9 行）-> 判阶段/轮次）；否则 `_pull`（认输检测 -> diff_cells -> 重分析变化格 -> 敌方走棋处理）。**自动开始对弈**：`phase=="开局"`，或 `_is_fresh_one_move()` 成立（全 32 子在盘、仅对方相对默认格偏离且恰为一步移动、轮到已方）—— 后者即「刚开局红方只走了一步」的场景；其余中局/残局只载入棋盘，等用户点「开始棋局」
+- `_is_fresh_one_move()` / `_single_piece_moved()`：行棋严格交替，故「对方走一步、我方未走」等价于「我方全在默认格 + 对方偏离」；再要求总子数=32、对方恰 1 个默认格空出 + 1 个非默认格落子，杜绝已走多步/残局误判
+- `start()`：用当前棋盘数据直接开始对弈（不重新拉取棋盘）
+- `move()`：内存布局生成 FEN，命中 `pending_move` 缓存则直接用，否则引擎现算；`tap_xy` 点击，`_verify_move_loop` 校验（失败帧收集），成功分三类处理；失败进 `_recover_move_failure` 恢复流程（对局结束判定 + 一次重试），仍失败返回 False
+- `interrupt()` / `answer_turn(answer)`：线程安全，从任意线程可调（打断自动对弈 / 响应开始确认弹窗，answer 为 "start"/"no"）
+- `_flow()`：自动对弈主循环（我方走棋 <-> `_wait_for_enemy_move` 检测敌方走棋，无次数上限），直到中断或对局结束；**我方走棋后若敌方已在走棋校验期间走完（turn 回到我方），立即继续我方走棋，不进入敌方检测**
+- `_wait_for_enemy_move()`：每 `AUTO_DETECT_INTERVAL_MS` 截图一次，无限循环；每次检测会话只提示一次「检测敌方走棋」，敌方提起棋子仅提示一次「检测到敌方提起棋子」（复位当变化消失时）
+- `_status()`：`idle`(未开始) / `red` / `black`（对弈中轮到哪方）/ `over`(绝杀/对局结束) / `stopped`(中断或待开始)
+- `close()`：关引擎进程
+- 回调：`log(kind, msg)`、`on_state(state)`（含 board/highlight/my_side/turn/phase/status/game_over）、`ask_turn()`（无法静态推断轮次时触发网页弹窗确认是否开始）
 
-1. 连接 ADB，取设备列表
-   - 0 台：提示并结束
-   - 1 台：直接用
-   - 多台：列出编号，输入数字选择（仅数字）
-2. `wm size` 校验分辨率 == `1080x2400`，否则结束
-3. 主菜单：**初始化对局（默认回车）** / `1` 切换自动走棋（默认开） / `2` 切换自动检测敌方走棋（默认开） / `q` 退出
-4. 初始化对局（确定我方红/黑）
-5. 进入颜色对应的子菜单循环：
+### server.py — FastAPI + WebSocket
 
-**红方菜单（默认 走棋）**
-```
-走棋（默认，回车） / 拉取新棋盘数据 / 初始化对局 / q 退出
-```
+- `Hub`：持有当前设备与会话；`post()` 把命令投递到**后台 worker 线程**串行执行（ADB/引擎阻塞调用），`broadcast()` 经 `run_coroutine_threadsafe` 跨线程推送
+- REST：`/api/devices`、`/api/connect`（serial 或 ip+port）、`/api/disconnect`、`/api/sync`、`/api/start`、`/api/interrupt`、`/api/answer_turn`
+- `/ws` WebSocket：广播 `log` / `state` / `prompt_turn` / `connected` / `disconnected`；新客户端连上先补发最新 state
+- 静态：`/pieces/<id>.png`（模板图）、`/`（`web/` 目录，`Cache-Control: no-cache`）
 
-**黑方菜单（默认 拉取新棋盘数据）**
-```
-拉取新棋盘数据（默认，回车） / 走棋 / 初始化对局 / q 退出
-```
+### web/ — 网页前端（原生 JS + Canvas）
 
-> 说明（用户确认）：
-> - 自动走棋 / 自动检测敌方走棋为**会话级开关**（默认开），在主菜单按 `1`/`2` 切换，跨对局生效，初始化对局时不再询问
-> - 菜单默认项按 `has_moved` 状态切换：红方仅初始化后第一次默认“走棋”（红先手）；我方任一色**走动成功后**（`has_moved=True`）默认改为“拉取新棋盘数据”（等对方走棋）；拉取/走棋校验检测到对方走子后回到“走棋”默认
-> - **对局结束**（`game_over`）：`_side_loop` 顶部检测，不再显示子菜单，直接回到主菜单（只显示 初始化对局 / q 退出）；任一处（初始化自动走棋、走棋、拉取自动走棋）触发绝杀/困毙判定后都走此流程
-> - **自动检测敌方走棋**（`_wait_for_enemy_move`）：每 500ms 截图一次、最多 20 次（10 秒）；**每次检测会话开始前重置 `_resign_streak`**（避免上一会话残留帧导致新会话第 1 帧就误判）；比较时**忽略己方棋子变动**（己方起止格已反映在内存布局，`old == new` 自动跳过），只统计敌方棋子；**先分离“自愈”变化**（`_apply_self_heal`：我方棋子重新识别出，如之前被 `analyze_cell` 误判为空格，只修正布局、不算敌方走棋）；其余敌方变动**可推断完整着法、或出现敌方新棋子（源格变化可能未被 `diff_cells` 捕捉到）**即视为已走棋并分析走棋方案（`_on_enemy_move`）；只有变化全是“有棋子->空”才判为“提起未放下”；每次检测若**将/帥缺失（且有棋子减少）或可识别棋子数比内存布局少 ≥ `RESIGN_PIECE_DROP_THRESHOLD`，且连续 `RESIGN_CONFIRM_COUNT` 帧稳定出现**（`_detect_resignation` 用 `_resign_streak` 计数，过滤提子动画/单帧误识别等瞬态）→ 判敌方认输/对局结束，置 `game_over` 并返回
+- 连接页：ADB 设备列表（一键连接）+ ip:port 手动连接（连接过程显示 loading 遮罩，失败在连接卡片内提示）
+- 主界面：Canvas 棋盘（900x1000 矫正比例 + 四边标注）、设备信息 + 断开设备、棋盘阶段/阵营信息、[同步棋局]、状态行、flow 按钮、日志面板
+- **流程按钮互斥矩阵**（`btn-sync` 同步棋局 / `btn-flow` 开始或中断棋局）：
 
-### 子流程 初始化对局
+  | 状态 | 同步棋局 | 开始/中断棋局 |
+  |---|---|---|
+  | `idle`/`over`（刚连接/已结束） | 可用 | 禁用（开始棋局） |
+  | `red`/`black`（对弈中） | 禁用 | 可用（中断棋局） |
+  | `stopped`（残局已同步/中断后） | 可用 | 可用（开始棋局） |
 
-1. 清除内存历史：`prev_screenshot = None`，`my_side = None`，`has_moved = False`，`pending_move = None`（截图与状态**只存内存**，不落盘）；`auto_move`/`auto_detect` 为会话级开关，由主菜单切换，此处不询问
-2. `screencap()` 截图
-3. `analyze_board()` 分析全部 90 格
-4. 判断我方红/黑（`r_K`/`b_k` 哪个在下方，行 > 5）
-5. `prev_screenshot = 当前截图`
-6. 打印当前棋局
-7. **预计算**：我方为红方时立即调 pikafish 算出 `bestmove` 缓存到 `pending_move`（我方为黑方时红先手，暂无着法）
-8. **自动走棋**：预计算成功（存在着法）且 `auto_move` 开启 → 直接执行走棋；未开启 → 只回菜单
+  点击后进入 busy 状态：对应按钮置灰并禁止重复点击，客户端日志加一条命令日志；Python 执行完毕推送 `state` 事件后恢复（按矩阵逻辑，该禁用仍禁用）。
+- 棋盘标注随 `my_side` 翻转（红：列 a..i；黑：列 i..a），数字行为固定不翻转：上方 1-9、下方 九八七六五四三二一（左->右）
+- **左右两侧行号**：随红黑翻转，红方上到下 9-0、黑方 0-9；上/下坐标文字加大加粗（22px bold）
+- **楚河汉界**：不绘制，棋盘为直接画满的 10x9 格子（11 横 × 9 竖线），棋子落子不受河界影响
+- 棋子绘制为**纯文字 + 圆圈**（楷体类字体），`PIECE_CHARS` 映射与 `board.PIECE_CN` 一致；走棋高亮：原位 = 格中心白点，落点 = 四角白色 90 度角标
+- 页面加载即绘制空棋盘（`drawBoard()`，未同步时 `board` 为 null 只画网格不画棋子）
+- 开始棋局确认弹窗：收到 `prompt_turn` 显示「是否开始棋局（我方开始走棋）？」；按钮**上下排列**，「不」(`prompt-no`，灰 #444d5c) / 「开始」(`prompt-start`，绿 #27ae60)，点击 -> `/api/answer_turn`（`turn: "no"/"start"`）
 
-### 子流程 打印当前棋局
+### main.py — 入口
 
-- 彩色终端棋盘（见 printer.py），上下标 `a-i`、左右标 `0-9`，红黑异色；行列均有边框线（`┌┬┐`/`├┼┤`/`└┴┘`）
-- 若知道变化路径（如 `h2e2`）或用 `_infer_move()` 推断出走子，高亮起止两格；推断不出则高亮全部变化格子
+`uvicorn.run("xiangqi_bot.server:app", host="0.0.0.0", port=8900)`，打印本机/局域网地址并自动打开浏览器。
 
-### 子流程 拉取新棋盘数据
+## 主流程（网页版）
 
-1. `screencap()` 截图
-2. 无历史截图（`prev_screenshot is None`）→ 走“初始化对局”逻辑（全量分析 + 判方 + 存历史）
-3. 有历史截图 → 先 `_detect_resignation()`：将/帥缺失（且有棋子减少）或可识别棋子数比内存布局少 ≥ `RESIGN_PIECE_DROP_THRESHOLD`，且连续 `RESIGN_CONFIRM_COUNT` 帧稳定出现（`_resign_streak` 计数，过滤瞬态）→ 判敌方认输/对局结束，置 `game_over` 并返回
-4. 有历史截图 → `diff_cells()` 找出变化格子
-5. 对每个变化格子用 `analyze_cell()` 重新分析
-6. 更新布局、`prev_screenshot = 当前截图`
-7. 有变化（对方已走子，轮到我们）：
-   - 高亮起止两格（推断出走子）或全部变化格子（无法推断），再打印棋局
-   - `_infer_move()` 推断走子并打印日志：
-     - 2 格且满足"一格变空 + 另一格同棋子填入" → `黑方走炮：h7->e7` 这类日志（吃子则附 `（吃XX）`）
-     - 变化较多难以推断 → 只列逐格变化：`h7 黑炮->空`、`e7 空->黑炮`（格子用 `a2 b3` 记谱）
-   - **预计算**：立即调 pikafish 算出我方着法缓存到 `pending_move`
-   - **自动走棋**：`auto_move` 开启 → 直接执行走棋；未开启 → 只回菜单
-8. 无变化：打印"棋盘无变化"，不动 `pending_move`
+1. 启动服务，浏览器打开连接页
+2. `/api/devices` 列设备：USB 设备直接「使用」；无线设备输入已配对 `ip:port` 连接
+3. 连接成功进入主界面（自动走棋 / 自动检测敌方走棋**常开**，无开关）
+4. 「同步棋局」-> 服务端截图识别棋盘，无历史/已结束走全量初始化，否则增量拉取：
+   - 全默认位 -> 红先；仅红偏离 -> 黑走；仅黑偏离 -> 红走
+   - 双方均偏离或残局（棋子 < 20）-> 默认我方走棋，网页弹窗确认是否开始
+   - **开局**自动开始对弈；**刚开局局面**（全棋子、对方仅走一步、轮到已方）也自动开始对弈；其余**中局/残局**只载入棋盘（stopped），等用户点「开始棋局」
+5. 对弈中可「中断棋局」（暂停 flow），中断后「开始棋局」用当前棋盘数据恢复对弈
+6. 任一处绝杀/认输判定 -> `game_over`，主界面提示，可再「同步棋局」重开
 
-### 子流程 走棋
+### 子流程 走棋结果分类（校验截图）
 
-1. 用**内存布局**直接生成 FEN（side = 我方颜色），**不刷新截图**（用户确认：只按内存棋盘走棋）
-2. 若 `pending_move` 的 FEN 与当前一致 → 直接用缓存的 `bestmove`（节省引擎计算时间）；否则现场调 pikafish 计算
-3. 解析起止格，用 `GRID_CENTERS_NP` 取屏幕坐标
-4. 打印日志：棋子、原格子+屏幕坐标、目标格子+屏幕坐标
-5. `input_tap(起点)`，间隔 500ms，`input_tap(终点)`
-6. 校验（`_attempt_move`）：**3 次**截图、每次等待 500ms（`MOVE_SETTLE_MS`）；`_verify_our_move()` 判定本次截图走棋是否成功
-   - 起点已无我方棋子（可能被敌人移到别处或空）+（终点为我方棋子 或 终点已被敌人占据/改变）→ 成功
-   - 起点仍有我方棋子 → 本帧未成功（**不做重试点击**：截图+分析+重试耗时长，期间局面可能已进入自己的回合，重试点击反而会把已落子的棋子再次提起，故用增大 `TAP_HOLD_INTERVAL_MS` 来尽量避免第二次落子失败）
-   - 3 次全部未识别 → 先 `_is_mate_by_move()`：按内存布局假设该着法已生效，用引擎探测对方是否无着法（`(none)` = 绝杀/困毙）；确认绝杀则按走棋成功 + `game_over` 处理（结束动画会挡住棋子导致识别失败），否则走棋失败
-7. 成功：`_apply_move_result()` 先更新布局起止格，**再分离“自愈”变化**（`_apply_self_heal`：我方棋子重新识别出，只修正布局、不算敌方走棋），再按校验截图内容分三类处理
-   - 只我方走棋（无其它变化）→ 提示走棋成功、**保存截图**为历史，进入下一流程（自动检测敌方走棋或显示菜单）
-   - 我方走棋 + 敌方完整走棋（`_enemy_changes()` 变化可被 `_infer_move` 推断、或出现**敌方**新棋子——敌方源格变化可能未被 `diff_cells` 捕捉到）→ 提示走棋成功、**保存截图**、按“对方走棋”处理（打印日志、**立即预计算**下一手；`auto_move` 开启则继续自动走棋）
-   - 我方走棋 + 敌方提子未落子（变化不可推断）→ 提示走棋成功、**不保存截图**，进入下一流程（自动检测敌方走棋或显示菜单）
-   - 若终点被我方棋子走后又遭对方吃掉 → 额外打印“对方吃掉了走到 XX 的我方XX”（并按“敌方完整走棋”处理）
-   - 下一流程：`auto_detect` 开启 → `_wait_for_enemy_move()`；否则回菜单
-   - 我方走棋后 `_checkmate_probe()` 探测绝杀 → 确认则 `game_over`
-8. 失败：提示菜单
-   ```
-   重新走棋（默认，回车） / 拉取新棋盘数据 / 初始化对局 / q 退出
-   ```
-   - 重新走棋：重试同一着法的点击（布局未变）
-   - 拉取新棋盘数据：用户可能手动走棋了
-   - 初始化对局 / q：同前
+- 只我方走棋 -> 保存截图为历史，进入自动检测敌方走棋
+- 我方走棋 + 敌方完整走棋 -> 保存截图，按对方走棋处理（立即预计算并继续）
+- 我方走棋 + 敌方提子未落子 -> 不保存截图，进入自动检测
+- 终点被我方走后又被吃掉 -> 打印提示并按敌方完整走棋处理
+- 我方走棋后（含「敌方提子未落子」场景）`_checkmate_probe()` 探测绝杀 -> 确认则 `game_over`（提子截图不保存，FEN 用内存棋盘生成）
+- 3 次校验全失败 -> `_is_mate_by_move()` 确认绝杀则按成功+结束处理；否则进入 `_recover_move_failure()` 恢复流程：
+  1. 复用校验失败的截图帧判定对局是否结束（`_detect_resignation` 连续帧计数），结束则 `_finish_game` 收局
+  2. 未结束则对比走棋前棋局分情况重试**一次**（`RECOVERY_WAIT_MS` 为提起后二次确认延时）：
+     - 棋局未变化 -> 整步重新点击（起子+落子）重走
+     - 仅我方原棋子被提起（起点变空、终点未落子、无其它变化，`_only_piece_lifted`）-> 延迟确认一次后**只点落子**
+     - 其它变化 -> 无法恢复，中止
+  3. 重试后照常走 `_verify_move_loop` 校验；仍失败则中止自动对弈（可「开始棋局」重试）
+
+### 自动检测敌方走棋
+
+- 连续截图（无额外延时，仅受 ADB 截图耗时限制），无限循环（直到用户中断或对局结束）；每次检测会话开始前重置 `_resign_streak`，且只提示一次「检测敌方走棋」
+- 比较时忽略己方棋子变动；先分离"自愈"变化（我方棋子重新识别出，只修正布局）
+- 其余敌方变动可推断完整着法、或出现敌方新棋子 -> 视为已走棋并处理；全是"有棋子->空" -> 提起未放下（仅提示一次，变化消失时复位）
+- 将/帥缺失（且有棋子减少）或可识别棋子数比内存布局少 ≥ `RESIGN_PIECE_DROP_THRESHOLD`，
+  且连续 `RESIGN_CONFIRM_COUNT` 帧稳定出现 -> 判敌方认输/对局结束
 
 ## 编程规范
 
@@ -332,8 +314,11 @@ device.input_tap(x, y)  # -> 模拟点击
 ## 已实测的技术事实（勿重复验证）
 
 - pikafish-bmi2.exe 用 UCI；`position startpos moves h2e2` 走红右炮；`go depth 6` 输出 `bestmove b2e2 ponder b9c7`
-- **`go movetime 3000` 单独发时用满 3000ms（depth ~25），红方开局出 `h2e2`、黑方开局出 `b7e7`；若与 `quit` 批量写入，约 0.3s 就出 `bestmove`（只走兵，棋力骤降）**
-- FEN 恒为 ICCS 绝对坐标系（黑方在上），不随我方红黑变化：我方为黑方时 `fen_of_board` 行列反转，得到 `rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR b - - 0 1`，side to move = `b`，引擎照常计算黑方着法（已实测出 `b7e7`）
+- **长进程下 `go movetime 3000` 用满时限（depth ~25），红方开局出 `h2e2`、黑方开局出 `b7e7`；若与 `quit` 批量写入，约 0.3s 就出 `bestmove`（只走兵，棋力骤降）**
+- FEN 恒为 ICCS 绝对坐标系（黑方在上），不随我方红黑变化：我方为黑方时 `fen_of_board` 行列反转，side to move 相应为 `b`，引擎照常计算黑方着法（已实测出 `b7e7`）
 - 记谱与 pikafish 方块一致：文件 = 网格列，行号 = `9 - 行`
-- ppadb：`device.input_tap(x, y)`、`device.screencap()` 返回 PNG bytes、`device.shell("wm size")`
+- 矫正 + 模板匹配：raw_screenshots/ 下 6 张图（木/石 × 红/黑，含 1440x3200 高清）全部 90/90 格、32/32 棋子识别正确；矫正模板跨分辨率/跨红黑通用
+- 黑方截图（木_黑/石_黑，1080x2400）棋盘上下翻转，但棋子保持正立（不需旋转模板）
+- 3200 高清图 = 1080 图纯 1.3333x 缩放，BOARD_CORNERS 等比放大即可
 - 引擎在 `pikafish/` 目录启动才能加载 `pikafish.nnue`
+- ppadb 0.3.0-dev 无配对/连接命令（无线连接须调用本机 adb.exe）

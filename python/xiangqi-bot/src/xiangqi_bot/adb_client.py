@@ -1,85 +1,89 @@
-"""ADB 封装：设备选择、截图、点击、分辨率校验。"""
+"""ADB 封装：设备列表、无线连接、截图、点击。
+
+列表/截图/点击走 ppadb（127.0.0.1:5037）；无线连接（`adb connect`）调用本机
+platform-tools 的 adb.exe（ppadb 不支持配对/连接）。只支持已配对的设备。
+"""
 
 import re
+import subprocess
 
 import cv2
 import numpy as np
 from ppadb.client import Client as AdbClient
 from ppadb.device import Device
 
-from xiangqi_bot import config
-from xiangqi_bot.console import ask
+
+class AdbError(RuntimeError):
+    pass
 
 
-def select_device() -> Device | None:
-    """选择 ADB 设备，失败/无设备返回 None"""
-    client = AdbClient(host="127.0.0.1", port=5037)
-    error: str | None = None
+def _client() -> AdbClient:
+    return AdbClient(host="127.0.0.1", port=5037)
+
+
+def list_devices() -> list[str]:
+    """在线设备 serial 列表（USB 或已 connect 的无线设备）"""
     try:
-        devices = client.devices()
+        return [d.serial for d in _client().devices()]
     except (RuntimeError, OSError) as exc:
-        error = f"无法连接 ADB 服务（{exc}），请确认 adb server 已启动"
-    if error is not None:
-        print(error)
-        return None
-    if not devices:
-        print("未检测到 ADB 设备")
-        return None
-    if len(devices) == 1:
-        print(f"使用设备：{devices[0].serial}")
-        return devices[0]
-    print("检测到多台设备：")
-    for i, dev in enumerate(devices, 1):
-        print(f"  {i}. {dev.serial}")
-    while True:
-        raw = ask("请选择设备编号：").strip()
-        if raw.isdigit() and 1 <= int(raw) <= len(devices):
-            return devices[int(raw) - 1]
-        print("输入无效，请重新输入")
+        raise AdbError(f"无法连接 ADB 服务（{exc}）") from exc
 
 
-def check_resolution(device: Device) -> bool:
-    """校验设备分辨率是否为 1080x2400"""
-    error: str | None = None
-    try:
-        out = device.shell("wm size")
-    except (RuntimeError, OSError) as exc:
-        error = f"获取分辨率失败：{exc}"
-    if error is not None:
-        print(error)
-        return False
-    match = re.search(r"Physical size:\s*(\d+)x(\d+)", out)
-    if match and (int(match.group(1)), int(match.group(2))) == config.TARGET_RESOLUTION:
-        return True
-    print(
-        f"分辨率不符：需要 {config.TARGET_RESOLUTION[0]}x{config.TARGET_RESOLUTION[1]}，实际 {out.strip()}"
+def connect(ip: str, port: int) -> str:
+    """`adb connect ip:port`，成功返回 serial（形如 ip:port）"""
+    result = subprocess.run(
+        ["adb", "connect", f"{ip}:{port}"],
+        capture_output=True,
+        text=True,
+        timeout=20,
     )
-    return False
+    out = (result.stdout or "").strip()
+    if result.returncode != 0 or "connected" not in out.lower():
+        raise AdbError(out or f"adb connect 失败（{result.returncode}）")
+    return f"{ip}:{port}"
+
+
+def disconnect(serial: str) -> None:
+    subprocess.run(["adb", "disconnect", serial], capture_output=True, text=True, timeout=20)
+
+
+def get_device(serial: str) -> Device:
+    """按 serial 取在线设备"""
+    try:
+        for dev in _client().devices():
+            if dev.serial == serial:
+                return dev
+    except (RuntimeError, OSError) as exc:
+        raise AdbError(f"无法连接 ADB 服务（{exc}）") from exc
+    raise AdbError(f"设备 {serial} 不在线")
 
 
 def screencap(device: Device) -> np.ndarray | None:
     """截图并解码为 BGR 图像，失败返回 None"""
-    error: str | None = None
     try:
         data = device.screencap()
     except (RuntimeError, OSError) as exc:
-        error = f"截图失败：{exc}"
-    if error is not None:
-        print(error)
-        return None
+        raise AdbError(f"截图失败：{exc}") from exc
     if not data:
         return None
     return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
 
 
-def tap(device: Device, x: int, y: int) -> bool:
-    """模拟点击，失败返回 False"""
-    error: str | None = None
+def tap(device: Device, x: int, y: int) -> None:
+    """模拟点击，失败抛 AdbError"""
     try:
         device.input_tap(x, y)
     except (RuntimeError, OSError) as exc:
-        error = f"模拟点击失败：{exc}"
-    if error is not None:
-        print(error)
-        return False
-    return True
+        raise AdbError(f"模拟点击失败：{exc}") from exc
+
+
+def screen_size(device: Device) -> tuple[int, int] | None:
+    """`wm size` 解析出的物理分辨率 (宽, 高)"""
+    try:
+        out = device.shell("wm size")
+    except (RuntimeError, OSError) as exc:
+        raise AdbError(f"获取分辨率失败：{exc}") from exc
+    match = re.search(r"Physical size:\s*(\d+)x(\d+)", out)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return None

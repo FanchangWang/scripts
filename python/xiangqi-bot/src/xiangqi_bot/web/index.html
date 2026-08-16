@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>中国象棋 Bot</title>
+  <link rel="stylesheet" href="/style.css?v=6" />
+</head>
+<body>
+  <div id="app">
+    <!-- 设备连接页 -->
+    <section id="connect-screen" class="screen">
+      <h1>中国象棋 Bot</h1>
+      <p class="sub">通过 ADB 连接手机（USB 或已配对的无线调试）</p>
+      <div class="card">
+        <div class="card-title">
+          <h2>已检测到的设备</h2>
+          <button id="btn-refresh" type="button">刷新</button>
+        </div>
+        <ul id="device-list" class="device-list"></ul>
+      </div>
+      <div class="card">
+        <h2>无线连接（已配对）</h2>
+        <form id="connect-form" class="connect-form">
+          <input id="ip" type="text" placeholder="设备 IP，如 192.168.1.10" required />
+          <input id="port" type="number" placeholder="端口" value="5555" required />
+          <button id="btn-connect" type="submit">连接</button>
+        </form>
+        <div id="device-error" class="error" hidden></div>
+      </div>
+    </section>
+
+    <!-- 主界面 -->
+    <section id="main-screen" class="screen" hidden>
+      <div class="layout">
+        <div id="board-wrap">
+          <canvas id="board" width="1080" height="1180"></canvas>
+        </div>
+        <aside class="panel">
+          <div class="device-bar">
+            <span id="device-info" class="device-info">设备：-</span>
+            <button id="btn-disconnect" type="button">断开设备</button>
+          </div>
+          <div class="info-bar">
+            <span>棋盘：<b id="phase">-</b></span>
+            <span>阵营：<b id="side">-</b></span>
+          </div>
+          <div class="menu">
+            <button id="btn-sync" type="button">同步棋局</button>
+            <button id="btn-flow" type="button" disabled>开始棋局</button>
+          </div>
+          <div class="status-line">
+            <span>状态：<b id="flow-status" class="status-text">未开始</b></span>
+          </div>
+          <div class="log-title">日志</div>
+          <div id="log" class="log"></div>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <!-- 开始棋局确认弹窗 -->
+  <div id="prompt-mask" class="mask" hidden>
+    <div class="modal">
+      <p>无法自动判断当前轮到哪一方走，是否开始棋局（我方开始走棋）？</p>
+      <div id="prompt-btns" class="modal-btns">
+        <button id="prompt-no" type="button" class="no-btn">不</button>
+        <button id="prompt-start" type="button" class="ok-btn">开始</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 连接中遮罩 -->
+  <div id="loading-mask" class="mask" hidden>
+    <div class="modal">
+      <div class="spinner"></div>
+      <p>正在连接设备...</p>
+    </div>
+  </div>
+
+  <script src="/app.js?v=6"></script>
+</body>
+</html>

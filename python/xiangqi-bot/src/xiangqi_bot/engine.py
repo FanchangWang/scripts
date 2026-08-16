@@ -1,4 +1,8 @@
-"""pikafish UCI 客户端。"""
+"""pikafish UCI 客户端（长进程复用）。
+
+每局只启动一个引擎子进程，走棋之间复用连接（`position fen` + `go movetime`），
+避免反复重建进程的开销。`quit` 只在引擎结束前发送一次。
+"""
 
 import subprocess
 import threading
@@ -13,74 +17,101 @@ class EngineError(RuntimeError):
     pass
 
 
-def _write(stream: IO[str], line: str) -> None:
-    stream.write(line + "\n")
-    stream.flush()
+class Engine:
+    """pikafish 长进程 UCI 会话（线程安全：调用方需用同一线程串行，内部亦有锁）"""
 
+    def __init__(self) -> None:
+        self._proc: subprocess.Popen[str] | None = None
+        self._lines: list[str] = []
+        self._lock = threading.Lock()
 
-def _drain(stream: IO[str], lines: list[str]) -> None:
-    """后台线程持续读取引擎 stdout，避免管道写满阻塞"""
-    with suppress(OSError, ValueError):
-        lines.extend(stream)
+    def _write(self, stream: IO[str], line: str) -> None:
+        stream.write(line + "\n")
+        stream.flush()
 
+    def _drain(self, stream: IO[str]) -> None:
+        with suppress(OSError, ValueError):
+            self._lines.extend(stream)
 
-def _wait_for(lines: list[str], marker: str, timeout: float) -> None:
-    """等待某个标记出现在引擎输出中，超时抛 EngineError"""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if any(marker in ln for ln in lines):
-            return
-        time.sleep(0.02)
-    raise EngineError(f"引擎响应超时（等待 {marker}）")
+    def _wait_for(self, marker: str, timeout: float) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if any(marker in ln for ln in self._lines):
+                return
+            time.sleep(0.02)
+        raise EngineError(f"引擎响应超时（等待 {marker}）")
 
+    def start(self) -> None:
+        """启动引擎子进程并完成 UCI 初始化（幂等）"""
+        with self._lock:
+            if self._proc is not None:
+                return
+            if not config.PIKAFISH_EXE.exists():
+                raise EngineError(f"找不到引擎: {config.PIKAFISH_EXE}")
+            try:
+                proc = subprocess.Popen(
+                    [str(config.PIKAFISH_EXE)],
+                    cwd=str(config.PIKAFISH_DIR),
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except OSError as exc:
+                raise EngineError(f"启动引擎失败: {exc}") from exc
+            if proc.stdin is None or proc.stdout is None:
+                proc.kill()
+                raise EngineError("引擎管道初始化失败")
+            self._proc = proc
+            threading.Thread(target=self._drain, args=(proc.stdout,), daemon=True).start()
+            try:
+                self._write(proc.stdin, "uci")
+                self._wait_for("uciok", 15)
+                self._write(proc.stdin, f"setoption name Threads value {config.ENGINE_THREADS}")
+                self._write(proc.stdin, f"setoption name Hash value {config.ENGINE_HASH_MB}")
+                self._write(proc.stdin, "isready")
+                self._wait_for("readyok", 15)
+            except EngineError:
+                self._kill(proc)
+                self._proc = None
+                raise
 
-def best_move(fen: str, movetime_ms: int = config.ENGINE_MOVETIME_MS) -> str | None:
-    """向 pikafish 发送局面并返回 bestmove，无着法（终局）返回 None
+    def best_move(self, fen: str, movetime_ms: int = config.ENGINE_MOVETIME_MS) -> str | None:
+        """发送局面并返回 bestmove；无着法（终局）返回 None"""
+        self.start()
+        assert self._proc is not None
+        assert self._proc.stdin is not None
+        with self._lock:
+            self._lines.clear()
+            self._write(self._proc.stdin, f"position fen {fen}")
+            self._write(self._proc.stdin, f"go movetime {movetime_ms}")
+            self._wait_for("bestmove", movetime_ms / 1000 + 20)
+            for line in self._lines:
+                if line.startswith("bestmove"):
+                    tokens = line.split()
+                    if len(tokens) < 2:
+                        return None
+                    move = tokens[1]
+                    return None if move == "(none)" else move
+        raise EngineError("引擎未返回 bestmove")
 
-    注意：quit 必须在收到 bestmove 之后再发，否则会提前中断搜索导致棋力骤降。
-    """
-    if not config.PIKAFISH_EXE.exists():
-        raise EngineError(f"找不到引擎: {config.PIKAFISH_EXE}")
-    try:
-        proc = subprocess.Popen(
-            [str(config.PIKAFISH_EXE)],
-            cwd=str(config.PIKAFISH_DIR),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-    except OSError as exc:
-        raise EngineError(f"启动引擎失败: {exc}") from exc
-    if proc.stdin is None or proc.stdout is None:
-        proc.kill()
-        raise EngineError("引擎管道初始化失败")
-    stdin = proc.stdin
-    stdout = proc.stdout
-    lines: list[str] = []
-    threading.Thread(target=_drain, args=(stdout, lines), daemon=True).start()
-    try:
-        _write(stdin, "uci")
-        _wait_for(lines, "uciok", 15)
-        _write(stdin, f"setoption name Threads value {config.ENGINE_THREADS}")
-        _write(stdin, f"setoption name Hash value {config.ENGINE_HASH_MB}")
-        _write(stdin, "isready")
-        _wait_for(lines, "readyok", 15)
-        _write(stdin, f"position fen {fen}")
-        _write(stdin, f"go movetime {movetime_ms}")
-        _wait_for(lines, "bestmove", movetime_ms / 1000 + 20)
-    finally:
+    def is_mate(self, fen: str, movetime_ms: int = config.ENGINE_MATE_PROBE_MS) -> bool:
+        """对方在该局面是否无路可走（绝杀/困毙）"""
+        return self.best_move(fen, movetime_ms) is None
+
+    def _kill(self, proc: subprocess.Popen[str]) -> None:
         with suppress(OSError):
-            _write(stdin, "quit")
-        try:
-            proc.wait(timeout=5)
-        except (subprocess.TimeoutExpired, OSError):
-            proc.kill()
-    for line in lines:
-        if line.startswith("bestmove"):
-            tokens = line.split()
-            if len(tokens) < 2:
-                return None
-            move = tokens[1]
-            return None if move == "(none)" else move
-    raise EngineError("引擎未返回 bestmove")
+            if proc.stdin is not None:
+                self._write(proc.stdin, "quit")
+            try:
+                proc.wait(timeout=5)
+            except (subprocess.TimeoutExpired, OSError):
+                proc.kill()
+
+    def close(self) -> None:
+        """结束引擎进程（`quit` 只在收到所有 bestmove 后发出，避免浅层搜索）"""
+        with self._lock:
+            proc = self._proc
+            self._proc = None
+            if proc is not None:
+                self._kill(proc)

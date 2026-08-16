@@ -1,4 +1,4 @@
-from xiangqi_bot.app import main
+from xiangqi_bot.main import main
 
 if __name__ == "__main__":
     main()

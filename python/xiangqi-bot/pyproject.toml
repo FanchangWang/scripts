@@ -8,9 +8,11 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.141.1",
     "numpy>=2.5.2",
     "opencv-python>=5.0.0.93",
     "pure-python-adb>=0.3.0.dev0",
+    "uvicorn[standard]>=0.52.3",
 ]
 
 [project.scripts]
