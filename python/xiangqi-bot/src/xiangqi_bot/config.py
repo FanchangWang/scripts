@@ -42,6 +42,9 @@ AUTO_DETECT_INTERVAL_MS = (
 # 对局结束 / 敌方认输检测
 RESIGN_PIECE_DROP_THRESHOLD = 3  # 可识别棋子数比内存布局至少少几枚，判为对局结束画面
 RESIGN_CONFIRM_COUNT = 3  # 疑似对局结束画面需连续几帧稳定出现才确认（过滤瞬态误判）
+RESIGN_SUSPECT_WAIT_MS = (
+    1000  # 单帧疑似结束时延时再采样，避免快速连续截图把瞬态（敌方提子/手部遮挡）误判为结束
+)
 
 # 残局判断：可识别棋子总数少于该值视为残局（轮次无法静态推断，需用户确认）
 ENDGAME_PIECE_COUNT = 20

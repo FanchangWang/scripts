@@ -150,5 +150,6 @@ uv run python scripts/detect_board_corners.py <截图> [--save-board]  # 探测�
 | `AUTO_DETECT_INTERVAL_MS` | 0 | 自动检测敌方走棋截图间隔（无额外延时，无次数限制） |
 | `RESIGN_PIECE_DROP_THRESHOLD` | 3 | 可识别棋子数比内存布局少几枚判对局结束 |
 | `RESIGN_CONFIRM_COUNT` | 3 | 疑似结束画面需连续帧数 |
+| `RESIGN_SUSPECT_WAIT_MS` | 1000 | 单帧疑似结束时延时再采样（过滤瞬态误判） |
 | `ENDGAME_PIECE_COUNT` | 20 | 可识别棋子数低于该值视为残局 |
 | `DIFF_THRESHOLD` / `MATCH_SEARCH_HALF` / `EMPTY_MATCH_THRESHOLD` | 8 / 10 / 0.8 | 图片识别阈值 |

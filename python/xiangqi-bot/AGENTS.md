@@ -70,6 +70,7 @@ AUTO_DETECT_INTERVAL_MS = (
 # 对局结束 / 敌方认输检测
 RESIGN_PIECE_DROP_THRESHOLD = 3  # 可识别棋子数比内存布局至少少几枚，判为对局结束画面
 RESIGN_CONFIRM_COUNT = 3  # 疑似对局结束画面需连续几帧稳定出现才确认（过滤瞬态误判）
+RESIGN_SUSPECT_WAIT_MS = 1000  # 单帧疑似结束时延时再采样（见"自动检测敌方走棋"）
 
 # 图片识别（矫正棋盘空间，像素）
 DIFF_WINDOW = 10  # 中心点 10x10 区域对比差异
@@ -301,6 +302,9 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - 其余敌方变动可推断完整着法、或出现敌方新棋子 -> 视为已走棋并处理；全是"有棋子->空" -> 提起未放下（仅提示一次，变化消失时复位）
 - 将/帥缺失（且有棋子减少）或可识别棋子数比内存布局少 ≥ `RESIGN_PIECE_DROP_THRESHOLD`，
   且连续 `RESIGN_CONFIRM_COUNT` 帧稳定出现 -> 判敌方认输/对局结束
+- `_detect_resignation()` 返回 `"confirmed"`/`"suspect"`/`"none"`：单帧疑似（`suspect`）时先延时
+  `RESIGN_SUSPECT_WAIT_MS` 再采下一帧，让疑似状态跨足够真实时间间隔，避免快速连续截图把瞬态
+  （敌方提子时手部遮挡导致的棋子减少）误判为对局结束
 
 ## 编程规范
 

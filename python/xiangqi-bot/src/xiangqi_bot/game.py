@@ -33,6 +33,7 @@ from xiangqi_bot.config import (
     RECOVERY_WAIT_MS,
     RESIGN_CONFIRM_COUNT,
     RESIGN_PIECE_DROP_THRESHOLD,
+    RESIGN_SUSPECT_WAIT_MS,
     TAP_HOLD_INTERVAL_MS,
 )
 
@@ -247,7 +248,7 @@ class GameSession:
         """增量拉取：认输检测 -> 差异分析 -> 敌方走棋处理"""
         if self.prev is None:
             return
-        if self._detect_resignation(corrected):
+        if self._detect_resignation(corrected) == "confirmed":
             self._finish_game("检测到对局结束画面，敌方可能已认输")
             return
         changed = vision.diff_cells(self.prev, corrected)
@@ -402,9 +403,14 @@ class GameSession:
             result = self._detect_enemy(corrected)
             if result == "moved":
                 return
-            if self._detect_resignation(corrected):
+            resign = self._detect_resignation(corrected)
+            if resign == "confirmed":
                 self._finish_game("检测到对局结束画面，敌方可能已认输")
                 return
+            if resign == "suspect":
+                # 本帧疑似结束：延时再采样，让疑似状态跨足够真实时间间隔，
+                # 避免快速连续截图把瞬态（敌方提子/手部遮挡）误判为对局结束
+                time.sleep(RESIGN_SUSPECT_WAIT_MS / 1000)
             if result == "lifted":
                 if not self._lift_logged:
                     self._lift_logged = True
@@ -418,11 +424,16 @@ class GameSession:
         self._log("gameover", reason)
         self._emit()
 
-    def _detect_resignation(self, corrected: ndarray) -> bool:
-        """检测对局结束/敌方认输画面（需连续 RESIGN_CONFIRM_COUNT 帧稳定出现）"""
+    def _detect_resignation(self, corrected: ndarray) -> str:
+        """检测对局结束/敌方认输画面。
+
+        返回 "confirmed"（连续 RESIGN_CONFIRM_COUNT 帧稳定出现）/ "suspect"（本帧疑似）/ "none"。
+        调用方（自动检测循环）收到 "suspect" 时应延时 RESIGN_SUSPECT_WAIT_MS 再采下一帧，
+        使疑似状态跨足够真实时间间隔，过滤快速连续截图下的瞬态误判（如敌方提子时手部遮挡）。
+        """
         if self.my_side is None:
             self._resign_streak = 0
-            return False
+            return "none"
         board_now = vision.analyze_board(corrected, self.templates)
         my_general = "r_K" if self.my_side == "red" else "b_k"
         enemy_general = "b_k" if self.my_side == "red" else "r_K"
@@ -437,7 +448,9 @@ class GameSession:
             self._resign_streak += 1
         else:
             self._resign_streak = 0
-        return self._resign_streak >= RESIGN_CONFIRM_COUNT
+        if self._resign_streak >= RESIGN_CONFIRM_COUNT:
+            return "confirmed"
+        return "suspect" if self._resign_streak > 0 else "none"
 
     def _detect_enemy(self, corrected: ndarray) -> str:
         """检测敌方是否走棋：'moved'（已走棋并已更新）/ 'lifted'（提起未放下）/ 'none'"""
@@ -572,14 +585,14 @@ class GameSession:
             return False
         self._log("info", "校验失败：检测对局是否结束……")
         for frame in fail_frames:
-            if self._detect_resignation(frame):
+            if self._detect_resignation(frame) == "confirmed":
                 self._finish_game("检测到对局结束画面，敌方可能已认输")
                 return True
         self._log("info", "校验识别：检测棋局是否未发生变化……")
         corrected = self._capture()
         if corrected is None:
             return False
-        if self._detect_resignation(corrected):
+        if self._detect_resignation(corrected) == "confirmed":
             self._finish_game("检测到对局结束画面，敌方可能已认输")
             return True
         changes = self._enemy_changes(corrected)
