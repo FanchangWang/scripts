@@ -33,6 +33,7 @@ from xiangqi_bot.config import (
     ENGINE_MATE_PROBE_MS,
     GAMEOVER_BACK_WORDS,
     GAMEOVER_BUTTON_WORDS,
+    GAMEOVER_DISMISS_WORDS,
     GAMEOVER_SCAN_INTERVAL_MS,
     GAMEOVER_SCAN_MAX,
     GAMEOVER_TAP_RETRY_MAX,
@@ -222,6 +223,7 @@ class GameSession:
         """
         self._log("info", "检测到对局结束，开始自动下一局")
         self._auto_next = True
+        self._emit()  # 立即推送 auto_next 状态，网页端按钮保持不变（中断棋局）
         try:
             if not self._scan_gameover_interact():
                 return False
@@ -237,14 +239,69 @@ class GameSession:
             self._auto_next = False
             self._emit()
 
+    def _dismiss_overlay(self) -> bool:
+        """检查并消除悬浮遮罩（领取）。返回 True=无遮罩/已消除，False=卡住中止。
+
+        领取弹窗悬浮在结算按钮之上，直接点击按钮会被遮罩拦截，
+        须先发返回键消除遮罩。返回键后延时 GAMEOVER_TAP_VERIFY_MS 复检，
+        仍在则重试，至多 GAMEOVER_TAP_RETRY_MAX 次。
+        """
+        try:
+            img = adb_client.screencap(self.device)
+        except adb_client.AdbError as exc:
+            self._log("error", str(exc))
+            return False
+        if img is None:
+            self._log("error", "截图失败")
+            return False
+        matches = vision.find_gameover_text(img, img.shape[1], img.shape[0])
+        dismiss_hits = []
+        dismiss_word = ""
+        for word in GAMEOVER_DISMISS_WORDS:
+            dismiss_hits = [m for m in matches if m[0] == word]
+            if dismiss_hits:
+                dismiss_word = word
+                break
+        if not dismiss_hits:
+            return True  # 无遮罩
+        for attempt in range(GAMEOVER_TAP_RETRY_MAX):
+            if self._interrupt.is_set() or not self.auto_next_game:
+                return False
+            self._log(
+                "info",
+                f"识别到悬浮遮罩「{dismiss_word}」，发送返回键"
+                f"（第 {attempt + 1}/{GAMEOVER_TAP_RETRY_MAX} 次）",
+            )
+            try:
+                adb_client.keyevent(self.device, adb_client.KEYCODE_BACK)
+            except adb_client.AdbError as exc:
+                self._log("error", f"消除悬浮遮罩失败：{exc}")
+                return False
+            time.sleep(GAMEOVER_TAP_VERIFY_MS / 1000)
+            try:
+                recheck = adb_client.screencap(self.device)
+            except adb_client.AdbError:
+                return False
+            if recheck is None:
+                return False
+            recheck_matches = vision.find_gameover_text(recheck, recheck.shape[1], recheck.shape[0])
+            if not any(m[0] == dismiss_word for m in recheck_matches):
+                self._log("info", f"悬浮遮罩「{dismiss_word}」已消除")
+                return True
+        self._log(
+            "error",
+            f"悬浮遮罩「{dismiss_word}」点击 {GAMEOVER_TAP_RETRY_MAX} 次返回键仍无响应，"
+            "中止自动下一局，请手动处理",
+        )
+        return False
+
     def _scan_gameover_interact(self) -> bool:
         """阶段A：扫描结算文字并交互。
 
-        按钮类：点击后延时 GAMEOVER_TAP_VERIFY_MS 复检同一按钮是否仍在页面——
-        动画未结束时点击可能无响应，仍识别到则重试，同一按钮至多
-        GAMEOVER_TAP_RETRY_MAX 次，一直不消失则中止（返回 False）；
-        文字类（段位提升）：发送返回键后继续扫描。超时返回 False。
+        先检查并消除悬浮遮罩（领取），再进入扫描循环处理按钮类/文字类。
         """
+        if not self._dismiss_overlay():
+            return False
         for _ in range(GAMEOVER_SCAN_MAX):
             if self._interrupt.is_set():
                 return False
@@ -1031,6 +1088,10 @@ class GameSession:
             enemy = self._enemy_changes(corrected)
             enemy.append((r2, c2, piece, self.board[r2][c2]))
             if self._infer_move(enemy) is None:
+                h, w = corrected.shape[:2]
+                if vision.find_gameover_text(corrected, w, h):
+                    self._finish_game("检测到对局结束画面，敌方可能已认输")
+                    return
                 # 变动无法构成敌方完整一步（正常一步至多 2 格：起点+落点，含吃子）：
                 # 说明帧内存在瞬态误读（如手部遮挡使无关格子被误判为空，污染内存），
                 # 或对局已结束（大量棋子消失的结束画面），延时复检至多 ENEMY_NOISY_MAX
@@ -1051,6 +1112,10 @@ class GameSession:
                     enemy.append((r2, c2, piece, self.board[r2][c2]))
                     if self._infer_move(enemy) is not None:
                         break
+                    h, w = corrected.shape[:2]
+                    if vision.find_gameover_text(corrected, w, h):
+                        self._finish_game("检测到对局结束画面，敌方可能已认输")
+                        return
                 else:
                     self._log(
                         "warn",

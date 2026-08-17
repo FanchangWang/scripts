@@ -73,7 +73,7 @@ xiangqi-bot/
 │   ├── pikafish-bmi2.exe       # 引擎（必须在其目录运行，依赖 pikafish.nnue）
 │   └── pikafish.nnue
 ├── templates/*.png             # 14 张 60x60 棋子模板（从矫正棋盘切割，勿改）
-├── templates/text/*.png        # 5 张结算文字模板（晋级赛/重新挑战/再来一局/下一关/段位提升）
+├── templates/text/*.png        # 6 张结算文字模板（晋级赛/重新挑战/再来一局/下一关/段位提升/领取）
 ├── raw_screenshots/            # 原始开局截图 + 结算截图（脚本数据源，文件名含分辨率）
 └── scripts/                    # regenerate_templates / compare_piece_templates /
                                 # detect_board_corners / generate_text_templates

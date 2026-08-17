@@ -95,6 +95,9 @@ GAMEOVER_TAP_RETRY_MAX = 2  # 同一结算按钮最多点击次数，仍不消�
 GAMEOVER_BUTTON_WORDS = ("下一关", "晋级赛", "重新挑战", "再来一局")
 # 按钮类（识别到即点击，按优先级排列）：「下一关」对话框同时含「重新挑战」按钮，须先处理下一关
 GAMEOVER_BACK_WORDS = ("段位提升",)  # 文字类：识别到即发送返回键（无按钮）
+GAMEOVER_DISMISS_WORDS = (
+    "领取",
+)  # 悬浮遮罩文字：识别到须先发返回键消除，再处理按钮（直接点击会被遮罩拦截）
 ```
 
 ## 目录结构
@@ -119,7 +122,7 @@ xiangqi-bot/
 │   ├── pikafish-bmi2.exe          # 引擎（必须在其目录运行，依赖 pikafish.nnue）
 │   └── pikafish.nnue
 ├── templates/*.png                # 14 张 60x60 棋子模板（从矫正棋盘切割，勿改）
-├── templates/text/*.png           # 5 张结算文字模板（晋级赛/重新挑战/再来一局/下一关/段位提升，
+├── templates/text/*.png           # 6 张结算文字模板（晋级赛/重新挑战/再来一局/下一关/段位提升/领取，
 │                                  # 从原始结算截图切割，脚本 generate_text_templates 生成）
 ├── raw_screenshots/               # 原始开局截图（脚本数据源，文件名含分辨率）
 │                                  # 木/石 棋盘 × 红/黑 方（1080x2400）+ 高清（1440x3200）
@@ -263,9 +266,10 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
   阶段B `_wait_for_board_setup()` 等待摆棋完毕；阶段C `_init_next_game()` 初始化并开始对弈。任一阶段超时/失败
   返回 False（保持结束状态，可手动「同步棋局」）；流程期间 `self._auto_next` 置位（`_status()` 返回 `auto_next`），
   网页端按钮状态保持不变
-- `_scan_gameover_interact()`：阶段A。扫描到按钮类 -> 点击后延时 `GAMEOVER_TAP_VERIFY_MS` 复检同一按钮是否仍在
-  页面（动画未结束时点击可能无响应），仍在则重试，同一按钮至多 `GAMEOVER_TAP_RETRY_MAX` 次仍不消失则中止；
-  扫描到文字类（段位提升）-> 发返回键后继续扫描；扫描超时中止
+- `_scan_gameover_interact()`：阶段A。先调 `_dismiss_overlay()` 检查并消除悬浮遮罩（领取），
+  再进入扫描循环：按钮类识别到即点击（验证+重试）；文字类（段位提升）发返回键后继续扫描；扫描超时中止
+- `_dismiss_overlay()`：检查是否存在悬浮遮罩文字（领取），存在则先发返回键消除，延时 `GAMEOVER_TAP_VERIFY_MS`
+  复检，仍在则重试，同一遮罩至多 `GAMEOVER_TAP_RETRY_MAX` 次仍不消失则中止（直接点击按钮会被遮罩拦截）
 - `_scan_gameover_text()`：原始截图模板匹配结算文字，返回 `(文字, 屏幕x, 屏幕y, 是否按钮)`；按钮类按
   `GAMEOVER_BUTTON_WORDS` 优先级取第一个命中词，并在其全部命中中取最靠下者（按钮在标题下方，防点中标题）
 - `_wait_for_board_setup()`：截图分析棋子数，连续 2 帧数量稳定且相邻帧无格子变动判定摆棋完毕（防动画只摆部分棋子的误判）；残局模式棋子数可能少于普通对局，故不限数量；返回完成帧，超时返回 None
