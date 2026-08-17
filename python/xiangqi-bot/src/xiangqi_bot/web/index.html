@@ -89,6 +89,17 @@
     </div>
   </div>
 
+  <!-- 断线提示弹窗 -->
+  <div id="disconnect-mask" class="mask" hidden>
+    <div class="modal">
+      <p>与服务端的连接已断开（Python 可能已关闭或网络中断）</p>
+      <div class="modal-btns">
+        <button id="btn-reload" type="button" class="no-btn">刷新页面</button>
+        <button id="btn-close-page" type="button" class="ok-btn">关闭页面</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/app.js?v=7"></script>
 </body>
 </html>

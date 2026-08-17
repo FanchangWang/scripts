@@ -9,12 +9,12 @@ from numpy import ndarray
 from xiangqi_bot import adb_client, vision
 from xiangqi_bot.adb_client import Device
 from xiangqi_bot.config import (
-    ENDGAME_PIECE_COUNT,
+    ENDGAME_MODE_PIECE_COUNT,
     GAMEOVER_BACK_WORDS,
     GAMEOVER_BUTTON_WORDS,
+    GAMEOVER_RETRY_MAX,
     GAMEOVER_SCAN_INTERVAL_MS,
     GAMEOVER_SCAN_MAX,
-    GAMEOVER_TAP_RETRY_MAX,
     GAMEOVER_TAP_VERIFY_MS,
 )
 
@@ -73,22 +73,55 @@ class AutoNextMixin:
     def _scan_gameover_interact(self) -> bool:
         """阶段A：扫描结算文字并交互。
 
-        截图模板匹配结算文字，按钮类（下一关/晋级赛/重新挑战/再来一局）点击，
-        文字/遮罩类（段位提升/领取）发返回键。点击后校验+重试。
+        扁平循环：按钮点击、遮罩返回键共用同一层循环。
+        不同文字出现时自动重置计数器（无需分别跟踪按钮/遮罩）。
+        点击按钮后，下一帧若该按钮消失（无论出现其它按钮/遮罩/无内容），视为成功。
         """
         self._log("info", "开始扫描结算文字……")
+        last_word: str | None = None
+        retry_count = 0
+        just_clicked = False
         for _attempt in range(GAMEOVER_SCAN_MAX):
             if self._interrupt.is_set():
                 return False
             if not self.auto_next_game:
                 return False
             hit = self._scan_gameover_text()
+            if just_clicked:
+                just_clicked = False
+                if hit is None:
+                    return True
+                if retry_count >= GAMEOVER_RETRY_MAX:
+                    self._log(
+                        "error",
+                        f"结算按钮「{last_word}」点击 {GAMEOVER_RETRY_MAX} 次仍无响应，"
+                        "中止自动下一局，请手动处理",
+                    )
+                    return False
+                self._log(
+                    "warn",
+                    f"点击后仍识别到结算按钮「{last_word}」，延时复检后重试",
+                )
             if hit is None:
                 time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
                 continue
             word, x, y, is_button = hit
+            if word != last_word:
+                last_word = word
+                retry_count = 0
+            retry_count += 1
             if not is_button:
-                self._log("info", f"识别到文字「{word}」，发送返回键")
+                if retry_count > GAMEOVER_RETRY_MAX:
+                    self._log(
+                        "error",
+                        f"遮罩「{word}」发送返回键 {GAMEOVER_RETRY_MAX} 次仍无响应，"
+                        "中止自动下一局，请手动处理",
+                    )
+                    return False
+                self._log(
+                    "info",
+                    f"识别到文字「{word}」，发送返回键（第 {retry_count}/{GAMEOVER_RETRY_MAX} 次）",
+                )
                 try:
                     adb_client.keyevent(self.device, adb_client.KEYCODE_BACK)
                 except adb_client.AdbError as exc:
@@ -96,30 +129,25 @@ class AutoNextMixin:
                     return False
                 time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
                 continue
-            for retry in range(GAMEOVER_TAP_RETRY_MAX):
+            if retry_count > GAMEOVER_RETRY_MAX:
                 self._log(
-                    "move",
-                    f"识别到结算按钮「{word}」，点击 ({x},{y}) 开始下一局"
-                    f"（第 {retry + 1}/{GAMEOVER_TAP_RETRY_MAX} 次）",
+                    "error",
+                    f"结算按钮「{word}」点击 {GAMEOVER_RETRY_MAX} 次仍无响应，"
+                    "中止自动下一局，请手动处理",
                 )
-                try:
-                    adb_client.tap(self.device, x, y)
-                except adb_client.AdbError as exc:
-                    self._log("error", f"自动下一局交互失败：{exc}")
-                    return False
-                time.sleep(GAMEOVER_TAP_VERIFY_MS / 1000)
-                if self._interrupt.is_set():
-                    return False
-                again = self._scan_gameover_text()
-                if again is None or again[0] != word:
-                    return True
-                self._log("warn", f"点击后仍识别到结算按钮「{word}」，延时复检后重试")
+                return False
             self._log(
-                "error",
-                f"结算按钮「{word}」点击 {GAMEOVER_TAP_RETRY_MAX} 次仍无响应，"
-                "中止自动下一局，请手动处理",
+                "move",
+                f"识别到结算按钮「{word}」，点击 ({x},{y}) 开始下一局"
+                f"（第 {retry_count}/{GAMEOVER_RETRY_MAX} 次）",
             )
-            return False
+            try:
+                adb_client.tap(self.device, x, y)
+            except adb_client.AdbError as exc:
+                self._log("error", f"自动下一局交互失败：{exc}")
+                return False
+            just_clicked = True
+            time.sleep(GAMEOVER_TAP_VERIFY_MS / 1000)
         self._log(
             "warn",
             f"{GAMEOVER_SCAN_MAX} 次截图未识别到结算文字，中止自动下一局，请手动处理",
@@ -161,6 +189,8 @@ class AutoNextMixin:
             if corrected is None:
                 time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
                 continue
+            if self._interrupt.is_set():
+                return None
             board_now = vision.analyze_board(corrected, self.templates)
             count = sum(cell is not None for row in board_now for cell in row)
             changed = (
@@ -181,10 +211,11 @@ class AutoNextMixin:
         return None
 
     def _init_next_game(self, corrected: ndarray) -> bool:
-        """摆棋完毕后初始化下一局：判断红黑方/阶段/轮次，重置状态，开始对弈。
+        """摆棋完毕后初始化下一局：判断棋局模式/红黑方/轮次，重置状态，开始对弈。
 
-        残局模式（下一关）固定为我方红方、轮到我方先走；常规新局按将/帥位置判断
-        红黑方，红方先行（若红方已抢先走棋，_infer_turn 会给出对方先走）。
+        残局模式（棋子 < ENDGAME_MODE_PIECE_COUNT，如「下一关」）固定为我方红方、
+        轮到我方先走；常规新局（≥31 颗棋子）按将/帥位置判断红黑方，红方先行
+        （若红方已抢先走棋，_infer_turn 会给出对方先走）。
         """
         board_now = vision.analyze_board(corrected, self.templates)
         count = sum(cell is not None for row in board_now for cell in row)
@@ -197,7 +228,7 @@ class AutoNextMixin:
         self._noisy_count = 0
         self._highlight = []
         self._last_move = None
-        if count < ENDGAME_PIECE_COUNT:
+        if count < ENDGAME_MODE_PIECE_COUNT:
             self.my_side = "red"
             self._turn = "red"
             self.phase = "残局"

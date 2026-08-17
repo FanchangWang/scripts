@@ -231,6 +231,8 @@ async def api_auto_next(req: AutoNextReq) -> dict:
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     hub.clients.add(ws)
+    if hub.device_name is not None:
+        await ws.send_json({"type": "connected", "serial": hub.device_name})
     if hub._last_state is not None:
         await ws.send_json({"type": "state", "state": hub._last_state})
     try:

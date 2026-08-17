@@ -91,7 +91,7 @@ GAMEOVER_SCAN_INTERVAL_MS = 1000  # 扫描间隔（毫秒）
 GAMEOVER_TEXT_THRESHOLD = 0.75  # 结算文字模板匹配 TM_CCOEFF_NORMED 阈值
 GAMEOVER_TEMPLATE_W = 1080  # 结算文字模板基准宽度（匹配前把原始截图等比缩放到该宽度）
 GAMEOVER_TAP_VERIFY_MS = 2000  # 点击结算按钮后的校验延时（动画未结束时点击可能无响应，等待后复检）
-GAMEOVER_TAP_RETRY_MAX = 2  # 同一结算按钮最多点击次数，仍不消失则中止自动下一局
+GAMEOVER_RETRY_MAX = 3  # 同一按钮/遮罩连续操作上限（不同文字出现时重新计数）
 GAMEOVER_BUTTON_WORDS = ("下一关", "晋级赛", "重新挑战", "再来一局")
 # 按钮类（识别到即点击，按优先级排列）：「下一关」对话框同时含「重新挑战」按钮，须先处理下一关
 GAMEOVER_BACK_WORDS = ("段位提升",)  # 文字类：识别到即发送返回键（无按钮）
@@ -266,10 +266,9 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
   阶段B `_wait_for_board_setup()` 等待摆棋完毕；阶段C `_init_next_game()` 初始化并开始对弈。任一阶段超时/失败
   返回 False（保持结束状态，可手动「同步棋局」）；流程期间 `self._auto_next` 置位（`_status()` 返回 `auto_next`），
   网页端按钮状态保持不变
-- `_scan_gameover_interact()`：阶段A。先调 `_dismiss_overlay()` 检查并消除悬浮遮罩（领取），
-  再进入扫描循环：按钮类识别到即点击（验证+重试）；文字类（段位提升）发返回键后继续扫描；扫描超时中止
-- `_dismiss_overlay()`：检查是否存在悬浮遮罩文字（领取），存在则先发返回键消除，延时 `GAMEOVER_TAP_VERIFY_MS`
-  复检，仍在则重试，同一遮罩至多 `GAMEOVER_TAP_RETRY_MAX` 次仍不消失则中止（直接点击按钮会被遮罩拦截）
+- `_scan_gameover_interact()`：阶段A。按钮类识别到即点击（同一按钮连续操作超 `GAMEOVER_RETRY_MAX` 次则中止，不同按钮出现时重置计数）；
+  文字类（段位提升/铜钱/领取）发返回键（同一文字连续操作超 `GAMEOVER_RETRY_MAX` 次则中止，不同文字出现时重置计数）；
+  按钮与遮罩互相清零对方计数器，避免按钮与遮罩叠加时卡在中间状态
 - `_scan_gameover_text()`：原始截图模板匹配结算文字，返回 `(文字, 屏幕x, 屏幕y, 是否按钮)`；按钮类按
   `GAMEOVER_BUTTON_WORDS` 优先级取第一个命中词，并在其全部命中中取最靠下者（按钮在标题下方，防点中标题）
 - `_wait_for_board_setup()`：截图分析棋子数，连续 2 帧数量稳定且相邻帧无格子变动判定摆棋完毕（防动画只摆部分棋子的误判）；残局模式棋子数可能少于普通对局，故不限数量；返回完成帧，超时返回 None

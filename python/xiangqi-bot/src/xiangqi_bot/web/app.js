@@ -41,11 +41,25 @@ const H = 1000 + MARGIN * 2;
 let busy = null;
 
 // ---------- WebSocket ----------
+const WS_RECONNECT_MAX = 5;
+const WS_RECONNECT_INTERVAL_MS = 1000;
+let wsReconnectTimer = null;
+let wsReconnectCount = 0;
+
 function connectWs() {
+  clearTimeout(wsReconnectTimer);
   const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => {
+    wsReconnectCount = 0;
+  };
   ws.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
   ws.onclose = () => {
-    setTimeout(connectWs, 2000);
+    wsReconnectCount++;
+    if (wsReconnectCount >= WS_RECONNECT_MAX) {
+      document.getElementById("disconnect-mask").hidden = false;
+      return;
+    }
+    wsReconnectTimer = setTimeout(connectWs, WS_RECONNECT_INTERVAL_MS);
   };
 }
 
@@ -456,6 +470,13 @@ function bindEvents() {
   document.getElementById("prompt-start").addEventListener("click", () => {
     document.getElementById("prompt-mask").hidden = true;
     post("answer_turn", { turn: "start" });
+  });
+
+  document.getElementById("btn-reload").addEventListener("click", () => {
+    location.reload();
+  });
+  document.getElementById("btn-close-page").addEventListener("click", () => {
+    window.close();
   });
 }
 
