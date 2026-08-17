@@ -24,12 +24,17 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pytest>=9.1.1",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.16.2",
     "ty>=0.0.70",
 ]
 
 [tool.ty.environment]
 python = ".venv"
+
+[tool.ty.src]
+exclude = ["tests/**"]
 
 [tool.ruff]
 target-version = "py312"
@@ -53,8 +58,12 @@ ignore = [
     "RUF012", # 允许在类定义中定义可变对象属性 (非常适合 YAML/JSON 配置类)
     "RUF001", # 中文项目大量使用全角标点，不视为歧义
     "RUF002",
-    "RUF003",
+    "RUF003",  # 中文项目大量使用全角标点，不视为歧义
+    "PT018",   # 测试中复合断言保留单行（便于一眼看清多条件关系）
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["I001", "RUF046"]

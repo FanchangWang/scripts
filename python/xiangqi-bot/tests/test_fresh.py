@@ -1,0 +1,91 @@
+"""刚开局局面自动对弈（5 个）。"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from xiangqi_bot.board import START_SQUARES, make_empty_board
+from xiangqi_bot.game import session as game
+
+from .conftest import LogCollector, MockDevice
+
+
+def _full_board(side: str) -> list[list[str | None]]:
+    b = make_empty_board()
+    for pid, sqs in START_SQUARES.items():
+        for r, c in sqs:
+            tr, tc = (9 - r, c) if side == "black" else (r, c)
+            b[tr][tc] = pid
+    return b
+
+
+def _move_piece(b: list[list[str | None]], r1: int, c1: int, r2: int, c2: int) -> None:
+    b[r2][c2] = b[r1][c1]
+    b[r1][c1] = None
+
+
+def _make_session(
+    board: list[list[str | None]], side: str, collector: LogCollector
+) -> tuple[game.GameSession, list[int]]:
+    dev = MockDevice()
+    s = game.GameSession(dev, collector.log, collector.on_state, None)
+
+    def fake_init(corrected: np.ndarray) -> None:
+        s.board = [row[:] for row in board]
+        s.my_side = side
+        s.phase = s._detect_phase()
+        s._turn = s._infer_turn()
+        s.prev = corrected
+
+    s._capture = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
+    s._init_from_corrected = fake_init  # type: ignore[method-assign]
+    started: list[int] = []
+    s._start_flow = lambda: started.append(1)  # type: ignore[method-assign]
+    return s, started
+
+
+def test_fresh_one_move(collector: LogCollector) -> None:
+    """5 个刚开局场景顺序执行"""
+
+    # 场景1：我方黑方，红方（上方）只走一步 h2e2，应自动开局
+    b = _full_board("black")
+    _move_piece(b, 2, 7, 2, 4)
+    s, started = _make_session(b, "black", collector)
+    s.sync()
+    assert started, "场景1：对方走一步应自动开局"
+    assert any("刚开局局面" in m for m in collector.logs), collector.logs
+
+    # 场景2：我方红方，无人走棋（开局局面），应自动开局
+    collector.clear()
+    b = _full_board("red")
+    s, started = _make_session(b, "red", collector)
+    s.sync()
+    assert started, "场景2：开局局面应自动开局"
+
+    # 场景3：双方各走一步，不应自动开局
+    collector.clear()
+    b = _full_board("black")
+    _move_piece(b, 2, 7, 2, 4)
+    _move_piece(b, 7, 7, 7, 4)
+    s, started = _make_session(b, "black", collector)
+    s.sync()
+    assert not started, "场景3：双方各走一步不应自动开局"
+
+    # 场景4：残局（棋子 < 20），不应自动开局
+    collector.clear()
+    b = make_empty_board()
+    b[0][4] = "b_k"
+    b[9][4] = "r_K"
+    b[0][0] = "b_r"
+    b[9][0] = "r_R"
+    s, started = _make_session(b, "black", collector)
+    s.sync()
+    assert not started, "场景4：残局不应自动开局"
+
+    # 场景5：对方走了多步（偏离不止一格），不应自动开局
+    collector.clear()
+    b = _full_board("black")
+    _move_piece(b, 2, 7, 2, 4)
+    _move_piece(b, 0, 7, 2, 6)
+    s, started = _make_session(b, "black", collector)
+    assert s._is_fresh_one_move() is False, "场景5：对方走多步不满足刚开局"

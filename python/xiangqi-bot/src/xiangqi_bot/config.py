@@ -50,13 +50,13 @@ RESIGN_SUSPECT_WAIT_MS = (
 )
 
 # 残局判断：可识别棋子总数少于该值视为残局（轮次无法静态推断，需用户确认）
-ENDGAME_PIECE_COUNT = 20
+ENDGAME_PIECE_COUNT = 24
 
 # 自动下一局：对局结束后扫描结算文字（晋级赛/重新挑战/再来一局/下一关/段位提升）并交互，
 # 等待下一局摆棋完毕后再自动开始对弈
 AUTO_NEXT_GAME = True  # 对局结束后自动开始下一局
 GAMEOVER_SCAN_MAX = 20  # 扫描结算文字 / 等待摆棋完毕的截图次数上限
-GAMEOVER_SCAN_INTERVAL_MS = 1000  # 扫描间隔（毫秒）
+GAMEOVER_SCAN_INTERVAL_MS = 500  # 扫描间隔（毫秒）
 GAMEOVER_TEXT_THRESHOLD = 0.75  # 结算文字模板匹配 TM_CCOEFF_NORMED 阈值
 GAMEOVER_TEMPLATE_W = 1080  # 结算文字模板基准宽度（匹配前把原始截图等比缩放到该宽度）
 GAMEOVER_TAP_VERIFY_MS = 2000  # 点击结算按钮后的校验延时（动画未结束时点击可能无响应，等待后复检）
@@ -67,10 +67,10 @@ GAMEOVER_BUTTON_WORDS = (
     "重新挑战",
     "再来一局",
 )  # 按钮类（点击）：按优先级排列——「下一关」对话框同时含「重新挑战」按钮，必须先处理下一关
-GAMEOVER_BACK_WORDS = ("段位提升",)  # 文字类：识别到即发送返回键（无按钮）
-GAMEOVER_DISMISS_WORDS = (
+GAMEOVER_BACK_WORDS = (
+    "段位提升",
     "领取",
-)  # 悬浮遮罩文字：识别到须先发返回键消除，再处理按钮（直接点击按钮会被遮罩拦截）
+)  # 文字/遮罩类：识别到即发送返回键（无按钮或悬浮遮罩拦截）
 
 # 图片识别（矫正棋盘空间，像素）
 DIFF_WINDOW = 10  # 中心点 10x10 区域对比差异

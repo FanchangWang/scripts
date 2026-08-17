@@ -120,13 +120,17 @@ def load_gameover_text_templates() -> dict[str, np.ndarray]:
     return _gameover_text_cache
 
 
-def find_gameover_text(img: np.ndarray, w: int, h: int) -> list[tuple[str, int, int, float]]:
+def find_gameover_text(
+    img: np.ndarray, w: int = 0, h: int = 0
+) -> list[tuple[str, int, int, float]]:
     """在原始截图上模板匹配结算文字。
 
     游戏 UI 随分辨率线性缩放（3200 = 1080 等比 x1.3333），故先把截图等比缩放到
     GAMEOVER_TEMPLATE_W 宽度再匹配，坐标还原到源分辨率。返回所有高于阈值的
     [(文字, 屏幕x, 屏幕y, 匹配分)]（中心点坐标），按分降序。
     """
+    if w == 0 or h == 0:
+        h, w = img.shape[:2]
     templates = load_gameover_text_templates()
     if not templates:
         return []
