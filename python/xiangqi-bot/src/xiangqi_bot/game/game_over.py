@@ -18,9 +18,12 @@ class GameOverMixin:
         """检测对局结束/敌方认输画面。
 
         返回值：
-        - "confirmed"：连续 RESIGN_CONFIRM_COUNT 帧稳定出现 / 双方将/帥同时缺失
+        - "confirmed"：连续 RESIGN_CONFIRM_COUNT 帧稳定出现
         - "suspect"：本帧疑似（调用方应延时 RESIGN_SUSPECT_WAIT_MS 再采下一帧）
         - "none"：无嫌疑
+
+        将/帥永远不会被吃掉：双方同时缺失大概率是结束画面（需多帧确认），
+        只有一方缺失是走棋动画遮挡（不计入 streak，直接重置）。
         """
         if self.my_side is None:
             self._resign_streak = 0
@@ -30,17 +33,18 @@ class GameOverMixin:
         has_my = any(my_general in row for row in board_now)
         enemy_general = "b_k" if self.my_side == "red" else "r_K"
         has_enemy = any(enemy_general in row for row in board_now)
-        # 快判：双方将/帥同时缺失 → 一帧即确认（游戏结束画面）
-        if not has_my and not has_enemy:
-            self._resign_streak = RESIGN_CONFIRM_COUNT
-            return "confirmed"
         expected = sum(cell is not None for row in self.board for cell in row)
         actual = sum(cell is not None for row in board_now for cell in row)
         dropped = expected - actual
-        # 疑似条件：缺失一方将/帥且棋子有减少，或棋子大幅减少（>=3枚）
-        if ((not has_my or not has_enemy) and dropped >= 1) or (
-            dropped >= RESIGN_PIECE_DROP_THRESHOLD
-        ):
+        # 一方将/帥缺失 → 走棋动画遮挡，不计入 streak
+        if not has_my or not has_enemy:
+            if not has_my and not has_enemy:
+                # 双方将/帥同时缺失 → 疑似结束画面，需连续帧确认
+                self._resign_streak += 1
+            else:
+                self._resign_streak = 0
+        elif dropped >= RESIGN_PIECE_DROP_THRESHOLD:
+            # 棋子大幅减少（≥3枚）→ 疑似结束画面，需连续帧确认
             self._resign_streak += 1
         else:
             self._resign_streak = 0
