@@ -31,11 +31,12 @@ const PIECE_CHARS = {
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
 
-// 画布尺寸：矫正棋盘 900x1000 + 四周 90px 标注边距（上/下各两行坐标 + 左/右行号）
+// 画布尺寸：10 横线 × 9 竖线交叉点棋盘 800x900
 const CELL = 100;
-const MARGIN = 90;
-const W = 900 + MARGIN * 2;
-const H = 1000 + MARGIN * 2;
+const MT = 105;
+const ML = 75;
+const W = 800 + ML * 2;
+const H = 900 + MT * 2;
 
 // 命令忙状态：null / "sync" / "flow"（命令执行期间禁用对应按钮）
 let busy = null;
@@ -92,6 +93,7 @@ function handleEvent(msg) {
       document.getElementById("device-info").textContent = `设备：${msg.serial}`;
       document.getElementById("connect-screen").hidden = true;
       document.getElementById("main-screen").hidden = false;
+      applyButtons();
       break;
     case "disconnected":
       state.connected = false;
@@ -141,9 +143,7 @@ function renderStatus() {
 }
 
 function applyButtons() {
-  const syncBtn = document.getElementById("btn-sync");
   const flowBtn = document.getElementById("btn-flow");
-  let syncDisabled = false;
   let flowDisabled = false;
   let flowText = "开始棋局";
   if (
@@ -151,19 +151,9 @@ function applyButtons() {
     state.status === "black" ||
     state.status === "auto_next"
   ) {
-    // 对弈进行中（含自动下一局中）：仅可中断，按钮状态保持不变
-    syncDisabled = true;
     flowText = "中断棋局";
-  } else if (state.status === "stopped") {
-    // 已同步未开始（如残局加载完成/中断后）：可同步可开始
-    flowDisabled = false;
-  } else {
-    // idle / over：未同步或已结束，仅可同步
-    flowDisabled = true;
   }
-  if (busy === "sync") syncDisabled = true;
   if (busy === "flow") flowDisabled = true;
-  syncBtn.disabled = syncDisabled;
   flowBtn.disabled = flowDisabled;
   flowBtn.textContent = flowText;
 }
@@ -173,6 +163,7 @@ function drawBoard() {
   ctx.clearRect(0, 0, W, H);
   drawFrame();
   drawGrid();
+  drawStarPoints();
   drawCoordinates();
   drawHighlight();
   if (state.board) {
@@ -185,43 +176,103 @@ function drawFrame() {
   ctx.fillRect(0, 0, W, H);
   ctx.strokeStyle = "#6b4a1f";
   ctx.lineWidth = 3;
-  ctx.strokeRect(MARGIN - 6, MARGIN - 6, 900 + 12, 1000 + 12);
+  ctx.strokeRect(ML - 6, MT - 6, 800 + 12, 900 + 12);
 }
 
 function drawGrid() {
   ctx.strokeStyle = "#5a3a17";
   ctx.lineWidth = 1.5;
 
-  // 横向线：11 条，无楚河汉界，直接画满
-  for (let i = 0; i <= 10; i++) {
-    const y = MARGIN + i * CELL;
+  // 横向线：10 条
+  for (let i = 0; i <= 9; i++) {
+    const y = MT + i * CELL;
     ctx.beginPath();
-    ctx.moveTo(MARGIN, y);
-    ctx.lineTo(MARGIN + 900, y);
+    ctx.moveTo(ML, y);
+    ctx.lineTo(ML + 800, y);
     ctx.stroke();
   }
 
-  // 竖向线：9 列全部连续
+  // 竖向线：9 条，最外侧画满，中间楚河汉界处断开
   for (let j = 0; j <= 8; j++) {
-    const x = MARGIN + j * CELL;
-    ctx.beginPath();
-    ctx.moveTo(x, MARGIN);
-    ctx.lineTo(x, MARGIN + 1000);
-    ctx.stroke();
+    const x = ML + j * CELL;
+    if (j === 0 || j === 8) {
+      ctx.beginPath();
+      ctx.moveTo(x, MT);
+      ctx.lineTo(x, MT + 9 * CELL);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x, MT);
+      ctx.lineTo(x, MT + 4 * CELL);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, MT + 5 * CELL);
+      ctx.lineTo(x, MT + 9 * CELL);
+      ctx.stroke();
+    }
   }
 
-  const x0 = MARGIN + 3 * CELL;
-  const x1 = MARGIN + 5 * CELL;
+  // 九宫 X（交叉点）
+  const ix0 = ML + 3 * CELL;
+  const ix1 = ML + 5 * CELL;
+  const iy0 = MT + 0 * CELL;
+  const iy2 = MT + 2 * CELL;
+  const iy7 = MT + 7 * CELL;
+  const iy9 = MT + 9 * CELL;
   ctx.beginPath();
-  ctx.moveTo(x0, MARGIN);
-  ctx.lineTo(x1, MARGIN + 2 * CELL);
-  ctx.moveTo(x1, MARGIN);
-  ctx.lineTo(x0, MARGIN + 2 * CELL);
-  ctx.moveTo(x0, MARGIN + 1000);
-  ctx.lineTo(x1, MARGIN + 800);
-  ctx.moveTo(x1, MARGIN + 1000);
-  ctx.lineTo(x0, MARGIN + 800);
+  ctx.moveTo(ix0, iy0);
+  ctx.lineTo(ix1, iy2);
+  ctx.moveTo(ix1, iy0);
+  ctx.lineTo(ix0, iy2);
+  ctx.moveTo(ix0, iy7);
+  ctx.lineTo(ix1, iy9);
+  ctx.moveTo(ix1, iy7);
+  ctx.lineTo(ix0, iy9);
   ctx.stroke();
+
+  // 楚河汉界
+  const riverY = MT + 4.5 * CELL;
+  ctx.fillStyle = "#5a3a17";
+  ctx.font = "bold 36px 'KaiTi', 'STKaiti', '楷体', 'Microsoft YaHei', serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("楚  河", ML + 2 * CELL, riverY);
+  ctx.fillText("汉  界", ML + 6 * CELL, riverY);
+}
+
+function drawStarPoints() {
+  const points = [
+    [2, 1], [2, 7],
+    [3, 0], [3, 2], [3, 4], [3, 6], [3, 8],
+    [7, 1], [7, 7],
+    [6, 0], [6, 2], [6, 4], [6, 6], [6, 8],
+  ];
+  ctx.strokeStyle = "#5a3a17";
+  ctx.lineWidth = 1.5;
+  const gap = 5;
+  const len = 12;
+  for (const [r, c] of points) {
+    const x = ML + c * CELL;
+    const y = MT + r * CELL;
+    ctx.beginPath();
+    if (c > 0) {
+      ctx.moveTo(x - gap - len, y - gap);
+      ctx.lineTo(x - gap, y - gap);
+      ctx.lineTo(x - gap, y - gap - len);
+      ctx.moveTo(x - gap - len, y + gap);
+      ctx.lineTo(x - gap, y + gap);
+      ctx.lineTo(x - gap, y + gap + len);
+    }
+    if (c < 8) {
+      ctx.moveTo(x + gap + len, y - gap);
+      ctx.lineTo(x + gap, y - gap);
+      ctx.lineTo(x + gap, y - gap - len);
+      ctx.moveTo(x + gap + len, y + gap);
+      ctx.lineTo(x + gap, y + gap);
+      ctx.lineTo(x + gap, y + gap + len);
+    }
+    ctx.stroke();
+  }
 }
 
 function drawCoordinates() {
@@ -243,20 +294,17 @@ function drawCoordinates() {
   ctx.textBaseline = "middle";
 
   for (let c = 0; c < 9; c++) {
-    const x = MARGIN + c * CELL + CELL / 2;
-    // 上方：字母行（随红黑翻转），其下固定 1-9
-    ctx.fillText(cols[c], x, MARGIN - 36);
-    ctx.fillText(topNums[c], x, MARGIN - 66);
-    // 下方：固定 九到一（在上），其下字母行（随红黑翻转）
-    ctx.fillText(bottomNums[c], x, MARGIN + 1000 + 66);
-    ctx.fillText(cols[c], x, MARGIN + 1000 + 36);
+    const x = ML + c * CELL;
+    ctx.fillText(cols[c], x, 25);
+    ctx.fillText(topNums[c], x, 55);
+    ctx.fillText(bottomNums[c], x, H - 55);
+    ctx.fillText(cols[c], x, H - 25);
   }
 
-  // 左右两侧行号：红方 9-0（上到下），黑方 0-9，随红黑翻转
   for (let r = 0; r < 10; r++) {
-    const y = MARGIN + r * CELL + CELL / 2;
-    ctx.fillText(sideNums[r], MARGIN - 34, y);
-    ctx.fillText(sideNums[r], MARGIN + 900 + 34, y);
+    const y = MT + r * CELL;
+    ctx.fillText(sideNums[r], 25, y);
+    ctx.fillText(sideNums[r], W - 25, y);
   }
 }
 
@@ -266,29 +314,32 @@ function drawHighlight() {
   state.highlight.forEach((cell, i) => {
     const r = cell[0];
     const c = cell[1];
-    const x = MARGIN + c * CELL;
-    const y = MARGIN + r * CELL;
+    const x = ML + c * CELL;
+    const y = MT + r * CELL;
     if (i === 1) {
-      // 落点：四角 90 度角标
+      const gap = 35;
       const len = 15;
       ctx.beginPath();
-      ctx.moveTo(x, y + len);
-      ctx.lineTo(x, y);
-      ctx.lineTo(x + len, y);
-      ctx.moveTo(x + CELL - len, y);
-      ctx.lineTo(x + CELL, y);
-      ctx.lineTo(x + CELL, y + len);
-      ctx.moveTo(x, y + CELL - len);
-      ctx.lineTo(x, y + CELL);
-      ctx.lineTo(x + len, y + CELL);
-      ctx.moveTo(x + CELL - len, y + CELL);
-      ctx.lineTo(x + CELL, y + CELL);
-      ctx.lineTo(x + CELL, y + CELL - len);
+      // 左上
+      ctx.moveTo(x - gap - len, y - gap);
+      ctx.lineTo(x - gap, y - gap);
+      ctx.lineTo(x - gap, y - gap - len);
+      // 右上
+      ctx.moveTo(x + gap + len, y - gap);
+      ctx.lineTo(x + gap, y - gap);
+      ctx.lineTo(x + gap, y - gap - len);
+      // 左下
+      ctx.moveTo(x - gap - len, y + gap);
+      ctx.lineTo(x - gap, y + gap);
+      ctx.lineTo(x - gap, y + gap + len);
+      // 右下
+      ctx.moveTo(x + gap + len, y + gap);
+      ctx.lineTo(x + gap, y + gap);
+      ctx.lineTo(x + gap, y + gap + len);
       ctx.stroke();
     } else {
-      // 原位：中心白点
       ctx.beginPath();
-      ctx.arc(x + CELL / 2, y + CELL / 2, 9, 0, Math.PI * 2);
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
       ctx.fillStyle = "#ffffff";
       ctx.fill();
     }
@@ -300,8 +351,8 @@ function drawPieces() {
     for (let c = 0; c < 9; c++) {
       const id = state.board[r][c];
       if (!id) continue;
-      const cx = MARGIN + c * CELL + CELL / 2;
-      const cy = MARGIN + r * CELL + CELL / 2;
+      const cx = ML + c * CELL;
+      const cy = MT + r * CELL;
       drawPiece(id, cx, cy);
     }
   }
@@ -347,11 +398,6 @@ async function loadDevices() {
   lastSerials = serials;
   listEl.innerHTML = "";
   errEl.hidden = true;
-  if (data.error) {
-    errEl.className = "error";
-    errEl.textContent = data.error;
-    errEl.hidden = false;
-  }
   if (!devices.length) {
     const li = document.createElement("li");
     li.className = "empty";
@@ -448,12 +494,13 @@ function bindEvents() {
     post("auto_next", { enable });
     appendLog(enable ? "info" : "warn", `自动下一局已${enable ? "开启" : "关闭"}（对局结束后生效）`);
   });
-  document.getElementById("btn-sync").addEventListener("click", () => {
-    cmd("sync", "sync", "同步棋局...");
-  });
   document.getElementById("btn-flow").addEventListener("click", () => {
-    if (state.status === "stopped") {
-      cmd("start", "flow", "开始棋局...");
+    if (
+      state.status === "idle" ||
+      state.status === "over" ||
+      state.status === "stopped"
+    ) {
+      cmd("start", "flow", "同步并开始棋局...");
     } else if (
       state.status === "red" ||
       state.status === "black" ||

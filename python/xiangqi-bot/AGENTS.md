@@ -17,7 +17,7 @@
 - Windows 11，Python 3.12
 - 包管理：`uv`（禁止手写 pyproject.toml 的依赖；必须用 `uv init` 初始化、`uv add` 添加依赖）
 - 运行：一律 `uv run`，禁止 `python xxx.py`
-- 依赖：`pure-python-adb`、`opencv-python`、`numpy`、`fastapi`、`uvicorn[standard]`
+- 依赖：`pure-python-adb`、`opencv-python`、`numpy`、`fastapi`、`uvicorn[standard]`、`pywebview`
 - dev 依赖：`ruff`（格式/检查）、`ty`（类型检查）
 
 ## 常用命令
@@ -108,7 +108,7 @@ xiangqi-bot/
 ├── check.ps1                      # ruff/ty 一键检查
 ├── src/xiangqi_bot/
 │   ├── __init__.py / __main__.py  # 入口委派 main
-│   ├── main.py                    # uvicorn 启动（0.0.0.0:8900，自动开浏览器）
+│   ├── main.py                    # uvicorn 后台线程 + pywebview 独立窗口
 │   ├── server.py                  # FastAPI：静态托管 + REST API + WebSocket + 后台 worker
 │   ├── game.py                    # 对局状态机（同步/开始/中断/自动对弈）
 │   ├── config.py                  # 常量、路径、阈值、四角坐标
@@ -254,7 +254,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 构造参数：`GameSession(device, log, on_state, ask_turn)`，由 server 的**单个 worker 线程**调用。
 
 - 状态：`board`(10x9)、`prev`(上帧矫正图)、`my_side`、`_turn`、`phase`、`pending_move`、`game_over`、`_running`（自动对弈循环进行中）
-- `sync()`：无历史或已结束 -> `_reset` + `_init_from_corrected`（截图矫正 -> 全量分析 -> 判方（r_K/b_k 谁在 6..9 行）-> 判阶段/轮次）；否则 `_pull`（认输检测 -> diff_cells -> 重分析变化格 -> 敌方走棋处理）。**自动开始对弈**：`phase=="开局"`，或 `_is_fresh_one_move()` 成立（全 32 子在盘、仅对方相对默认格偏离且恰为一步移动、轮到已方）—— 后者即「刚开局红方只走了一步」的场景；其余中局/残局只载入棋盘，等用户点「开始棋局」
+- `start()`：截图同步棋盘（`_reset` + `_init_from_corrected`：全量分析 -> 判方 -> 判阶段/轮次），然后自动开始对弈；`phase=="开局"` 或 `_is_fresh_one_move()` 成立时自动 `_start_flow()`；其余中局/残局只载入棋盘，等用户再次点击「开始棋局」
 - `_is_fresh_one_move()` / `_single_piece_moved()`：行棋严格交替，故「对方走一步、我方未走」等价于「我方全在默认格 + 对方偏离」；再要求总子数=32、对方恰 1 个默认格空出 + 1 个非默认格落子，杜绝已走多步/残局误判
 - `start()`：用当前棋盘数据直接开始对弈（不重新拉取棋盘）
 - `move()`：内存布局生成 FEN，命中 `pending_move` 缓存则直接用，否则引擎现算；`tap_xy` 点击，`_verify_move_loop` 校验（失败帧收集），成功分三类处理；失败进 `_recover_move_failure` 恢复流程（对局结束判定 + 一次重试），仍失败返回 False
@@ -264,7 +264,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `_flow()`：自动对弈主循环（我方走棋 <-> `_wait_for_enemy_move` 检测敌方走棋，无次数上限），直到中断或对局结束；**我方走棋后若敌方已在走棋校验期间走完（turn 回到我方），立即继续我方走棋，不进入敌方检测**；对局结束后若 `self.auto_next_game`（实时开关）且未中断，调 `_auto_next_game()` 自动开始下一局（成功则继续对弈，失败/中止则结束本循环）
 - `_auto_next_game()`：对局结束后自动下一局。阶段A `_scan_gameover_interact()` 扫描结算文字并 adb 交互；
   阶段B `_wait_for_board_setup()` 等待摆棋完毕；阶段C `_init_next_game()` 初始化并开始对弈。任一阶段超时/失败
-  返回 False（保持结束状态，可手动「同步棋局」）；流程期间 `self._auto_next` 置位（`_status()` 返回 `auto_next`），
+  返回 False（保持结束状态，可手动「开始棋局」）；流程期间 `self._auto_next` 置位（`_status()` 返回 `auto_next`），
   网页端按钮状态保持不变
 - `_scan_gameover_interact()`：阶段A。按钮类识别到即点击（同一按钮连续操作超 `GAMEOVER_RETRY_MAX` 次则中止，不同按钮出现时重置计数）；
   文字类（段位提升/铜钱/领取）发返回键（同一文字连续操作超 `GAMEOVER_RETRY_MAX` 次则中止，不同文字出现时重置计数）；
@@ -282,22 +282,21 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 ### server.py — FastAPI + WebSocket
 
 - `Hub`：持有当前设备与会话；`post()` 把命令投递到**后台 worker 线程**串行执行（ADB/引擎阻塞调用），`broadcast()` 经 `run_coroutine_threadsafe` 跨线程推送
-- REST：`/api/devices`、`/api/connect`（serial 或 ip+port）、`/api/disconnect`、`/api/sync`、`/api/start`、`/api/interrupt`、`/api/answer_turn`、`/api/auto_next`（`{enable}` 实时开关自动下一局）
+- REST：`/api/devices`、`/api/connect`（serial 或 ip+port）、`/api/disconnect`、`/api/start`、`/api/interrupt`、`/api/answer_turn`、`/api/auto_next`（`{enable}` 实时开关自动下一局）
 - `/ws` WebSocket：广播 `log` / `state` / `prompt_turn` / `connected` / `disconnected`；新客户端连上先补发最新 state
 - 静态：`/pieces/<id>.png`（模板图）、`/`（`web/` 目录，`Cache-Control: no-cache`）
 
 ### web/ — 网页前端（原生 JS + Canvas）
 
 - 连接页：ADB 设备列表（一键连接）+ ip:port 手动连接（连接过程显示 loading 遮罩，失败在连接卡片内提示）
-- 主界面：Canvas 棋盘（900x1000 矫正比例 + 四边标注）、设备信息 + 断开设备、棋盘阶段/阵营信息、[同步棋局]、状态行（含**自动下一局开关**，对弈过程中可实时切换并同步服务端，切换不进入 busy）、flow 按钮、日志面板
-- **流程按钮互斥矩阵**（`btn-sync` 同步棋局 / `btn-flow` 开始或中断棋局）：
+- 主界面：Canvas 棋盘（900x1000 矫正比例 + 四边标注）、设备信息 + 断开设备、棋盘阶段/阵营信息、状态行（含**自动下一局开关**，对弈过程中可实时切换并同步服务端，切换不进入 busy）、flow 按钮（开始/中断棋局，点击时自动先同步）、日志面板
+- **流程按钮**（`btn-flow` 开始或中断棋局）：
 
-  | 状态 | 同步棋局 | 开始/中断棋局 |
-  |---|---|---|
-  | `idle`/`over`（刚连接/已结束） | 可用 | 禁用（开始棋局） |
-  | `red`/`black`（对弈中） | 禁用 | 可用（中断棋局） |
-  | `stopped`（残局已同步/中断后） | 可用 | 可用（开始棋局） |
-  | `auto_next`（自动下一局中） | 禁用 | 可用（中断棋局） |
+  | 状态 | 开始/中断棋局 |
+  |---|---|
+  | `idle`/`over`（刚连接/已结束） | 禁用 |
+  | `red`/`black`/`auto_next`（对弈中） | 可用（中断棋局） |
+  | `stopped`（残局已同步/中断后） | 可用（开始棋局，自动先同步） |
 
   对局结束后 `AUTO_NEXT_GAME` 开启时状态为 `auto_next`（按钮保持对弈中形态），自动下一局中止后才切到
   `over`；期间点「中断棋局」可中止自动下一局。
@@ -313,20 +312,20 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 
 ### main.py — 入口
 
-`uvicorn.run("xiangqi_bot.server:app", host="0.0.0.0", port=8900)`，打印本机/局域网地址并自动打开浏览器。
+`uvicorn.run("xiangqi_bot.server:app", host="0.0.0.0", port=8900)` 在后台线程运行，pywebview 打开独立窗口加载页面；pywebview 不可用时回退 `webbrowser.open()`。
 
 ## 主流程（网页版）
 
 1. 启动服务，浏览器打开连接页
 2. `/api/devices` 列设备：USB 设备直接「使用」；无线设备输入已配对 `ip:port` 连接
 3. 连接成功进入主界面（自动走棋 / 自动检测敌方走棋**常开**，无开关）
-4. 「同步棋局」-> 服务端截图识别棋盘，无历史/已结束走全量初始化，否则增量拉取：
+4. 点击「开始棋局」-> 截图识别棋盘并开始对弈（`/api/start` 调用 `start()`），无历史/已结束走全量初始化，否则增量拉取：
    - 全默认位 -> 红先；仅红偏离 -> 黑走；仅黑偏离 -> 红走
    - 双方均偏离或残局（棋子 < 20）-> 默认我方走棋，网页弹窗确认是否开始
    - **开局**自动开始对弈；**刚开局局面**（全棋子、对方仅走一步、轮到已方）也自动开始对弈；其余**中局/残局**只载入棋盘（stopped），等用户点「开始棋局」
 5. 对弈中可「中断棋局」（暂停 flow），中断后「开始棋局」用当前棋盘数据恢复对弈
 6. 任一处绝杀/认输判定 -> `game_over`，主界面提示；`AUTO_NEXT_GAME` 开启且未中断时自动扫描结算文字
-   （按钮类点击 / 段位提升发返回键）-> 等待摆棋完毕 -> 自动开始下一局；中止或失败后保持结束状态，可手动「同步棋局」重开
+   （按钮类点击 / 段位提升发返回键）-> 等待摆棋完毕 -> 自动开始下一局；中止或失败后保持结束状态，可手动「开始棋局」重开
 
 ### 子流程 走棋结果分类（校验截图）
 
@@ -334,7 +333,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - 只我方走棋 -> 保存截图为历史，进入自动检测敌方走棋
 - 我方走棋 + 敌方完整走棋 -> 保存截图，按对方走棋处理（立即预计算并继续）
 - 我方走棋 + 敌方提子未落子 -> 不保存截图，进入自动检测
-- 终点被我方走后又被吃掉 -> 打印提示并按敌方完整走棋处理；`_apply_move_result` 先对终点做一次**延时复检**（`MOVE_SETTLE_MS` 后再截图）：校验帧可能有多格变动导致终点瞬态误读（我方棋子其实已在终点），复检读回我方棋子则按走动成功处理（不误报被吃、不污染内存），否则才判「对方吃掉」；判「对方吃掉」后，敌方变动须能推断为完整一步（起点+落点，至多 2 格），否则视为帧内瞬态误读（如手部遮挡使无关格子被误判为空）或**对局已结束**（大量棋子消失的结束画面），延时复检至多 `ENEMY_NOISY_MAX` 次确认后才提交；复检每帧先做 `_detect_resignation`（连续 `RESIGN_CONFIRM_COUNT` 帧疑似 -> `_finish_game` 收局，不落暂停兜底）；复检帧非结束但始终无法构成完整一步则**不提交变动**、暂停自动对弈并提示「同步棋局」（避免无关棋子被误删污染内存布局）
+- 终点被我方走后又被吃掉 -> 打印提示并按敌方完整走棋处理；`_apply_move_result` 先对终点做一次**延时复检**（`MOVE_SETTLE_MS` 后再截图）：校验帧可能有多格变动导致终点瞬态误读（我方棋子其实已在终点），复检读回我方棋子则按走动成功处理（不误报被吃、不污染内存），否则才判「对方吃掉」；判「对方吃掉」后，敌方变动须能推断为完整一步（起点+落点，至多 2 格），否则视为帧内瞬态误读（如手部遮挡使无关格子被误判为空）或**对局已结束**（大量棋子消失的结束画面），延时复检至多 `ENEMY_NOISY_MAX` 次确认后才提交；复检每帧先做 `_detect_resignation`（连续 `RESIGN_CONFIRM_COUNT` 帧疑似 -> `_finish_game` 收局，不落暂停兜底）；复检帧非结束但始终无法构成完整一步则**不提交变动**、暂停自动对弈并提示「开始棋局」（避免无关棋子被误删污染内存布局）
 - 我方走棋后（含「敌方提子未落子」场景）`_checkmate_probe()` 探测绝杀 -> 确认则 `game_over`（提子截图不保存，FEN 用内存棋盘生成）
 - 3 次校验全失败 -> `_is_mate_by_move()` 确认绝杀则按成功+结束处理；否则进入 `_recover_move_failure()` 恢复流程：
   1. 复用校验失败的截图帧判定对局是否结束（`_detect_resignation` 连续帧计数），结束则 `_finish_game` 收局

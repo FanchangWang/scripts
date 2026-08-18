@@ -51,7 +51,7 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     b = _full_board("black")
     _move_piece(b, 2, 7, 2, 4)
     s, started = _make_session(b, "black", collector)
-    s.sync()
+    s.start()
     assert started, "场景1：对方走一步应自动开局"
     assert any("刚开局局面" in m for m in collector.logs), collector.logs
 
@@ -59,7 +59,7 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     collector.clear()
     b = _full_board("red")
     s, started = _make_session(b, "red", collector)
-    s.sync()
+    s.start()
     assert started, "场景2：开局局面应自动开局"
 
     # 场景3：双方各走一步，不应自动开局
@@ -68,7 +68,7 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     _move_piece(b, 2, 7, 2, 4)
     _move_piece(b, 7, 7, 7, 4)
     s, started = _make_session(b, "black", collector)
-    s.sync()
+    s.start()
     assert not started, "场景3：双方各走一步不应自动开局"
 
     # 场景4：残局（棋子 < 20），不应自动开局
@@ -79,7 +79,7 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     b[0][0] = "b_r"
     b[9][0] = "r_R"
     s, started = _make_session(b, "black", collector)
-    s.sync()
+    s.start()
     assert not started, "场景4：残局不应自动开局"
 
     # 场景5：对方走了多步（偏离不止一格），不应自动开局

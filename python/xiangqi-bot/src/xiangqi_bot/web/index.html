@@ -43,28 +43,29 @@
           <canvas id="board" width="1080" height="1180"></canvas>
         </div>
         <aside class="panel">
-          <div class="device-bar">
-            <span id="device-info" class="device-info">设备：-</span>
-            <button id="btn-disconnect" type="button">断开设备</button>
+          <div class="menu-wrap">
+            <div class="device-bar">
+              <span id="device-info" class="device-info">设备：-</span>
+              <button id="btn-disconnect" type="button">断开设备</button>
+            </div>
+            <div class="info-bar">
+              <span>棋盘：<b id="phase">-</b></span>
+              <span>阵营：<b id="side">-</b></span>
+            </div>
+            <button id="btn-flow" type="button" class="flow-btn" disabled>开始棋局</button>
+            <div class="status-line">
+              <span>状态：<b id="flow-status" class="status-text">未开始</b></span>
+              <label class="switch" title="对局结束后自动开始下一局">
+                <input type="checkbox" id="toggle-auto-next" checked />
+                <span class="slider"></span>
+                <span class="switch-label">自动下一局</span>
+              </label>
+            </div>
           </div>
-          <div class="info-bar">
-            <span>棋盘：<b id="phase">-</b></span>
-            <span>阵营：<b id="side">-</b></span>
+          <div class="log-wrap">
+            <div class="log-title">日志</div>
+            <div id="log" class="log"></div>
           </div>
-          <div class="menu">
-            <button id="btn-sync" type="button">同步棋局</button>
-            <button id="btn-flow" type="button" disabled>开始棋局</button>
-          </div>
-          <div class="status-line">
-            <span>状态：<b id="flow-status" class="status-text">未开始</b></span>
-            <label class="switch" title="对局结束后自动开始下一局">
-              <input type="checkbox" id="toggle-auto-next" checked />
-              <span class="slider"></span>
-              <span class="switch-label">自动下一局</span>
-            </label>
-          </div>
-          <div class="log-title">日志</div>
-          <div id="log" class="log"></div>
         </aside>
       </div>
     </section>
@@ -73,10 +74,10 @@
   <!-- 开始棋局确认弹窗 -->
   <div id="prompt-mask" class="mask" hidden>
     <div class="modal">
-      <p>无法自动判断当前轮到哪一方走，是否开始棋局（我方开始走棋）？</p>
+      <p>请确认本轮是否我方开始走棋？</p>
       <div id="prompt-btns" class="modal-btns">
-        <button id="prompt-no" type="button" class="no-btn">不</button>
-        <button id="prompt-start" type="button" class="ok-btn">开始</button>
+        <button id="prompt-no" type="button" class="no-btn">否</button>
+        <button id="prompt-start" type="button" class="ok-btn">我方走棋</button>
       </div>
     </div>
   </div>

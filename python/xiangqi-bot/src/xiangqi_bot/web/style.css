@@ -10,6 +10,7 @@ html,
 body {
   margin: 0;
   padding: 0;
+  height: 100%;
   font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
   background: #1e2227;
   color: #e8e8e8;
@@ -17,11 +18,20 @@ body {
 
 #app {
   max-width: 1200px;
+  min-height: 100%;
   margin: 0 auto;
   padding: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---------- 连接页 ---------- */
+.screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .screen h1 {
   text-align: center;
   font-size: 26px;
@@ -148,12 +158,17 @@ button:disabled {
 .layout {
   display: flex;
   gap: 14px;
-  align-items: flex-start;
+  align-items: stretch;
+  flex: 0 0 auto;
 }
 
 #board-wrap {
-  flex: 0 1 680px;
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  line-height: 0;
 }
 
 #board {
@@ -164,17 +179,33 @@ button:disabled {
 }
 
 .panel {
-  flex: 1 1 360px;
+  flex: 0 0 360px;
   min-width: 280px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
+.menu-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.log-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 .device-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   background: #262b33;
   border-radius: 10px;
@@ -201,10 +232,8 @@ button:disabled {
   color: #fff;
 }
 
-.menu {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+.flow-btn {
+  width: 100%;
 }
 
 .status-line {
@@ -276,10 +305,11 @@ button:disabled {
 }
 
 .log {
+  flex: 1 1 0;
+  min-height: 0;
   background: #11151a;
   border-radius: 10px;
   padding: 10px;
-  height: 320px;
   overflow-y: auto;
   font-size: 13px;
   line-height: 1.7;
@@ -344,17 +374,66 @@ button:disabled {
 .ok-btn { background: #27ae60; }
 .ok-btn:hover { background: #2ecc71; }
 
-/* ---------- 响应式（手机） ---------- */
+/* ---------- 响应式（手机/窄窗口） ---------- */
 @media (max-width: 820px) {
   .layout {
     flex-direction: column;
   }
 
   #board-wrap {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    display: block;
   }
 
-  .log {
-    height: 220px;
+  #board {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .panel {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+  }
+
+  .menu-wrap {
+    flex: 0 0 280px;
+  }
+
+  .log-wrap {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .info-bar {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .modal-btns {
+    flex-direction: column;
+  }
+
+  .status-line {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 500px) {
+  .panel {
+    flex-direction: column;
+  }
+
+  .menu-wrap {
+    flex: 0 0 auto;
+  }
+
+  .log-wrap {
+    min-height: 200px;
   }
 }

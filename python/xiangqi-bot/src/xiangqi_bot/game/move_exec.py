@@ -58,7 +58,7 @@ class MoveExecMixin:
     def _attempt_move(self, r1: int, c1: int, r2: int, c2: int, piece: str) -> bool:
         """点击起子+落子 → 截图校验 → 失败时绝杀探测或恢复流程"""
         if self._H is None:
-            self._log("error", "尚无棋盘坐标信息，请先同步棋局")
+            self._log("error", "尚无棋盘坐标信息，请点击「开始棋局」")
             return False
         x1, y1 = vision.tap_xy(self._H, r1, c1)
         x2, y2 = vision.tap_xy(self._H, r2, c2)
@@ -195,7 +195,7 @@ class MoveExecMixin:
                 else:
                     self._log(
                         "warn",
-                        "对方吃子后的走棋变动始终无法构成完整一步，已暂停自动对弈，请「同步棋局」确认",
+                        "对方吃子后的走棋变动始终无法构成完整一步，已暂停自动对弈，请点击「开始棋局」确认",
                     )
                     for r, c, old, new in enemy:
                         old_name = piece_label(old) if old else "空"

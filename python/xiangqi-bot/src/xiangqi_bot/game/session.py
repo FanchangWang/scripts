@@ -1,4 +1,4 @@
-"""对局状态机：同步棋局 / 自动对弈 / 中断。
+"""对局状态机：同步 / 自动对弈 / 中断。
 
 由服务端的单个后台 worker 线程调用；interrupt() 可从其它线程安全调用
 （打断自动对弈循环与轮次确认等待）。日志与棋盘状态通过回调推给网页。
@@ -94,8 +94,8 @@ class GameSession(AutoNextMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
         """关闭引擎进程"""
         self.engine.close()
 
-    def sync(self) -> None:
-        """同步棋局：全量初始化棋盘，之后自动开始对弈（开局/刚开局局面）"""
+    def start(self) -> None:
+        """开始棋局：截图同步棋盘状态，之后自动开始对弈"""
         self._interrupt.clear()
         corrected = self._capture()
         if corrected is None:
@@ -113,18 +113,6 @@ class GameSession(AutoNextMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
             if fresh:
                 self._log("info", "检测到刚开局局面（对方仅走一步），自动开始对弈")
             self._start_flow()
-
-    def start(self) -> None:
-        """开始棋局：用当前棋盘数据直接开始自动对弈（不重新拉取棋盘）"""
-        if self.game_over:
-            self._log("error", "本局已结束，请先「同步棋局」")
-            return
-        if self.my_side is None or self._turn is None:
-            self._log("error", "尚未同步棋局，请先点击「同步棋局」")
-            return
-        self._interrupt.clear()
-        self._log("info", "开始棋局（使用当前棋盘数据）")
-        self._start_flow()
 
     def move(self) -> bool:
         """走一步：引擎计算 + 点击落子 + 截图校验。仅由 _flow 调用。"""
@@ -144,7 +132,7 @@ class GameSession(AutoNextMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
         if piece is None:
             self._log(
                 "warn",
-                f"引擎着法 {move} 起点无我方棋子，棋盘数据可能已过期，请先「同步棋局」",
+                f"引擎着法 {move} 起点无我方棋子，棋盘数据可能已过期，请点击「开始棋局」重同步",
             )
             return False
         self._last_move = move
@@ -353,7 +341,7 @@ class GameSession(AutoNextMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
             return False
         self._turn_event.clear()
         self._turn_answer = None
-        self._log("info", "无法自动判断当前轮到哪一方，默认我方走棋，请确认是否开始")
+        self._log("info", "无法自动判断当前轮到哪一方，请确认本轮是否我方开始走棋")
         self._ask_turn_cb()
         while not self._turn_event.wait(0.2):
             if self._interrupt.is_set():

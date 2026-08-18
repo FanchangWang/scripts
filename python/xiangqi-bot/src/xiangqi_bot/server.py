@@ -193,15 +193,9 @@ async def api_disconnect() -> dict:
     return {"ok": True}
 
 
-@app.post("/api/sync")
-async def api_sync() -> dict:
-    hub.interrupt()  # 若自动对弈进行中，先中断
-    hub.post(hub.command, name="sync")
-    return {"ok": True}
-
-
 @app.post("/api/start")
 async def api_start() -> dict:
+    hub.interrupt()  # 若自动对弈进行中，先中断
     hub.post(hub.command, name="start")
     return {"ok": True}
 

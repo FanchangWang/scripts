@@ -64,7 +64,7 @@ def test_prompt_turn(collector: LogCollector) -> None:
         s._capture = lambda: {"board": board, "diff": set()}  # type: ignore[method-assign]
         s._confirm_start = lambda: answer == "start"  # type: ignore[method-assign]
         s._flow = lambda: None  # type: ignore[method-assign]
-        s.sync()
+        s.start()
         return s
 
     # 场景1：回答"不" -> 不开始对弈
