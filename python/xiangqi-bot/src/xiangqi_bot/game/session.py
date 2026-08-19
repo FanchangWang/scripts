@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 from numpy import ndarray
 
-from xiangqi_bot import adb_client, engine, vision
+from xiangqi_bot import engine, vision
 from xiangqi_bot.adb_client import Device
 from xiangqi_bot.board import (
     COLS,
@@ -27,6 +27,7 @@ from xiangqi_bot.board import (
 )
 from xiangqi_bot.config import AUTO_NEXT_GAME, ENDGAME_PIECE_COUNT
 from xiangqi_bot.game.auto_next import AutoNextMixin
+from xiangqi_bot.game.capture import CaptureMixin
 from xiangqi_bot.game.enemy_move import EnemyMoveMixin
 from xiangqi_bot.game.game_over import GameOverMixin
 from xiangqi_bot.game.move_exec import MoveExecMixin
@@ -39,7 +40,7 @@ StateFn = Callable[[dict], None]
 AskTurnFn = Callable[[], None]  # 请求网页弹窗选择当前轮次
 
 
-class GameSession(AutoNextMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
+class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
     def __init__(
         self,
         device,
@@ -200,24 +201,6 @@ class GameSession(AutoNextMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
         self._noisy_count = 0
         self._highlight = []
         self._last_move = None
-
-    def _capture(self) -> ndarray | None:
-        """截图并透视矫正：返回矫正后的棋盘图，失败返回 None"""
-        try:
-            img = adb_client.screencap(self.device)
-        except adb_client.AdbError as exc:
-            self._log("error", str(exc))
-            return None
-        if img is None:
-            self._log("error", "截图失败")
-            return None
-        h, w = img.shape[:2]
-        try:
-            self._H = vision.homography(w, h)
-        except RuntimeError as exc:
-            self._log("error", str(exc))
-            return None
-        return vision.correct_board(img)
 
     def _init_from_corrected(self, corrected: ndarray) -> None:
         """全量初始化：分析棋盘、判断红黑方/阶段/轮次，输出日志"""

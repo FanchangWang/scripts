@@ -9,6 +9,7 @@ from numpy import ndarray
 from xiangqi_bot import adb_client, vision
 from xiangqi_bot.adb_client import Device
 from xiangqi_bot.config import (
+    BOARD_STABLE_THRESHOLD,
     ENDGAME_MODE_PIECE_COUNT,
     GAMEOVER_BACK_WORDS,
     GAMEOVER_BUTTON_WORDS,
@@ -75,36 +76,44 @@ class AutoNextMixin:
 
         扁平循环：按钮点击、遮罩返回键共用同一层循环。
         不同文字出现时自动重置计数器（无需分别跟踪按钮/遮罩）。
-        点击按钮后，下一帧若该按钮消失（无论出现其它按钮/遮罩/无内容），视为成功。
+        无结算文字时检查棋盘是否有棋子，连续稳定 N 帧才判定摆棋完毕
+        （防游戏结束动画残余棋子导致单帧误判）。
+        检测到结算文字时清空棋子计数（文字与棋子互斥）。
+        每帧只截图一次，复用于文字匹配和棋盘分析。
         """
         self._log("info", "开始扫描结算文字……")
         last_word: str | None = None
         retry_count = 0
-        just_clicked = False
+        piece_streak = 0
         for _attempt in range(GAMEOVER_SCAN_MAX):
             if self._interrupt.is_set():
                 return False
             if not self.auto_next_game:
                 return False
-            hit = self._scan_gameover_text()
-            if just_clicked:
-                just_clicked = False
-                if hit is None:
-                    return True
-                if retry_count >= GAMEOVER_RETRY_MAX:
-                    self._log(
-                        "error",
-                        f"结算按钮「{last_word}」点击 {GAMEOVER_RETRY_MAX} 次仍无响应，"
-                        "中止自动下一局，请手动处理",
-                    )
-                    return False
-                self._log(
-                    "warn",
-                    f"点击后仍识别到结算按钮「{last_word}」，延时复检后重试",
-                )
-            if hit is None:
+            img = self._take_screenshot()
+            if img is None:
                 time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
                 continue
+            hit = self._scan_gameover_text(img)
+            if hit is None:
+                corrected = self._correct_from_raw(img)
+                if corrected is not None:
+                    board_now = vision.analyze_board(corrected, self.templates)
+                    count = sum(cell is not None for row in board_now for cell in row)
+                    if count > 0:
+                        piece_streak += 1
+                        self._log(
+                            "info",
+                            f"识别到 {count} 个棋子（稳定 {piece_streak}/3）",
+                        )
+                        if piece_streak >= BOARD_STABLE_THRESHOLD:
+                            self._log("info", "摆棋完毕")
+                            return True
+                    else:
+                        piece_streak = 0
+                time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
+                continue
+            piece_streak = 0
             word, x, y, is_button = hit
             if word != last_word:
                 last_word = word
@@ -146,7 +155,6 @@ class AutoNextMixin:
             except adb_client.AdbError as exc:
                 self._log("error", f"自动下一局交互失败：{exc}")
                 return False
-            just_clicked = True
             time.sleep(GAMEOVER_TAP_VERIFY_MS / 1000)
         self._log(
             "warn",
@@ -154,15 +162,12 @@ class AutoNextMixin:
         )
         return False
 
-    def _scan_gameover_text(self) -> tuple[str, int, int, bool] | None:
-        """截图模板匹配结算文字，返回 (文字, 屏幕x, 屏幕y, 是否按钮) 或 None"""
-        try:
-            img = adb_client.screencap(self.device)
-        except adb_client.AdbError as exc:
-            self._log("error", str(exc))
-            return None
+    def _scan_gameover_text(
+        self,
+        img: ndarray | None = None,
+    ) -> tuple[str, int, int, bool] | None:
+        """模板匹配结算文字，返回 (文字, 屏幕x, 屏幕y, 是否按钮) 或 None"""
         if img is None:
-            self._log("error", "截图失败")
             return None
         matches = vision.find_gameover_text(img)
         for word in GAMEOVER_BACK_WORDS:

@@ -65,6 +65,7 @@ GAMEOVER_TEXT_THRESHOLD = 0.75  # 结算文字模板匹配 TM_CCOEFF_NORMED 阈�
 GAMEOVER_TEMPLATE_W = 1080  # 结算文字模板基准宽度（匹配前把原始截图等比缩放到该宽度）
 GAMEOVER_TAP_VERIFY_MS = 2000  # 点击结算按钮后的校验延时（动画未结束时点击可能无响应，等待后复检）
 GAMEOVER_RETRY_MAX = 3  # 同一按钮/遮罩连续操作上限（不同文字出现时重新计数）
+BOARD_STABLE_THRESHOLD = 3 # 无结算文字时检查棋盘是否有棋子，连续稳定 N 帧才判定摆棋完毕
 GAMEOVER_BUTTON_WORDS = (
     "下一关",
     "晋级赛",
