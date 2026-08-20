@@ -200,9 +200,17 @@ class GameSession(
                 self._wait_for_enemy_move()
             else:
                 if not self._do_move():
-                    self._running = False
-                    self._log("info", "走棋失败，自动对弈已暂停，可点击「开始棋局」重试")
-                    break
+                    # _do_move 返回 False 有两种含义：
+                    # 1. 对局正常结束（认输/绝杀）—— _finish_game 已置 game_over=True，
+                    #    不应 break，需继续走到下面的自动下一局分支；
+                    # 2. 真正的走棋失败（ADB 无响应、引擎异常等）—— game_over 仍为 False，
+                    #    暂停 flow 等用户手动重开。
+                    if self.game_over:
+                        self._log("info", "我方走棋阶段检测到对局结束")
+                    else:
+                        self._running = False
+                        self._log("info", "走棋失败，自动对弈已暂停，可点击「开始棋局」重试")
+                        break
             if self.game_over:
                 if self.auto_next_game:
                     corrected = self._auto_next_game()

@@ -164,8 +164,11 @@ def test_auto_next_game(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(game.time, "monotonic", fake_monotonic)
     board_a = _full_start_board()
+    board_a[3][0] = None
+    board_a[3][2] = None  # 30 枚棋子（去掉两个卒）
     board_b = _full_start_board()
-    board_b[0][0] = None  # 不同棋盘，保证 stable_count 永远归零
+    board_b[6][0] = None
+    board_b[6][2] = None  # 30 枚棋子（去掉两个兵，不同于 board_a）
     capture_gen = itertools.cycle([_stable_frame(board_a), _stable_frame(board_b)])
     s, dev = _make_session(collector)
     s._capture = lambda: next(capture_gen)  # type: ignore[method-assign]
@@ -447,14 +450,20 @@ def test_auto_next_game(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
 
     # 场景21：点击按钮后棋子出现又消失（点击未生效）-> 文字重现 -> 重试点击 -> 第二次成功
     collector.clear()
-    full = _full_start_board()
+    setup_board = _full_start_board()
+    setup_board[3][0] = None
+    setup_board[3][2] = None  # 30 枚棋子（非开局位置，避免 count==32 快速返回）
     empty = make_empty_board()
     capture_queue: list[dict[str, Any]] = [
-        _stable_frame(full),  # 0: 棋子出现（第一次点击后）→ 清空 last_word，prev_board=full
+        _stable_frame(
+            setup_board
+        ),  # 0: 棋子出现（第一次点击后）→ 清空 last_word，prev_board=setup_board
         _stable_frame(empty),  # 1: 棋盘为空（点击未生效）
-        _stable_frame(full),  # 2: 第二次点击后棋子出现 → prev_board=full（未变）→ stable_count=1
-        _stable_frame(full),  # 3: stable_count=2
-        _stable_frame(full),  # 4: stable_count=3 => 返回
+        _stable_frame(
+            setup_board
+        ),  # 2: 第二次点击后棋子出现 → prev_board=setup_board（未变）→ stable_count=1
+        _stable_frame(setup_board),  # 3: stable_count=2
+        _stable_frame(setup_board),  # 4: stable_count=3 => 返回
     ]
     s, dev = _make_session(collector)
     s._capture = lambda: capture_queue.pop(0) if capture_queue else None  # type: ignore[method-assign]
@@ -473,3 +482,39 @@ def test_auto_next_game(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
     assert dev.taps == [(542, 2237), (542, 2237)], f"应点击两次再来一局，实际 {dev.taps}"
     assert any("棋盘为空" in m for m in collector.logs), collector.logs
     assert s.game_over is False, "第二次点击成功后应开始新局"
+
+    # 场景22：count==32 开局位置 -> 识别到即可返回，无需等稳定
+    collector.clear()
+    capture_queue = [
+        _stable_frame(_full_start_board()),
+    ]
+    s, dev = _make_session(collector)
+    s._capture = lambda: capture_queue.pop(0)  # type: ignore[method-assign]
+    hit_queue = [
+        ("下一关", 712, 2198, True),
+        None,
+    ]
+    s._scan_gameover_text = lambda: hit_queue.pop(0) if hit_queue else None  # type: ignore[method-assign]
+    ok = s._auto_next_game()
+    assert ok is not None, collector.logs
+    assert s.phase == "开局", s.phase
+    assert any("下一局开始" in m for m in collector.logs), collector.logs
+
+    # 场景23：count==32 仅一方偏离一步 -> 同样快速返回
+    collector.clear()
+    one_move_board = _full_start_board()
+    one_move_board[7][1] = None
+    one_move_board[7][4] = "r_C"  # 红右炮平中（仅一步偏离）
+    capture_queue = [
+        _stable_frame(one_move_board),
+    ]
+    s, dev = _make_session(collector)
+    s._capture = lambda: capture_queue.pop(0)  # type: ignore[method-assign]
+    hit_queue = [
+        ("下一关", 712, 2198, True),
+        None,
+    ]
+    s._scan_gameover_text = lambda: hit_queue.pop(0) if hit_queue else None  # type: ignore[method-assign]
+    ok = s._auto_next_game()
+    assert ok is not None, collector.logs
+    assert any("下一局开始" in m for m in collector.logs), collector.logs

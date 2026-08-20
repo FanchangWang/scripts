@@ -162,6 +162,8 @@ def test_lifted_only(collector: LogCollector, monkeypatch: pytest.MonkeyPatch) -
     """最后一帧 n==1 提起未落 → _lifted_only_。"""
     b = make_empty_board()
     b[7][3] = "r_R"
+    b[9][4] = "r_K"
+    b[0][4] = "b_k"
     s = _make_session(collector, b)
     _patch_sleep(monkeypatch)
 
@@ -181,6 +183,8 @@ def test_all_stationary_true(collector: LogCollector, monkeypatch: pytest.Monkey
     """全帧 n==0 → True（stationary，建议外层重走）。"""
     b = make_empty_board()
     b[7][3] = "r_R"
+    b[9][4] = "r_K"
+    b[0][4] = "b_k"
     s = _make_session(collector, b)
     _patch_sleep(monkeypatch)
 
@@ -209,9 +213,11 @@ def test_n1_not_lifted_false(collector: LogCollector, monkeypatch: pytest.Monkey
 
 
 def test_n_over4_false(collector: LogCollector, monkeypatch: pytest.MonkeyPatch) -> None:
-    """n>4 变动过多 → False。"""
+    """n>4 变动过多（但有将帅，非结算画面）→ False。"""
     b = make_empty_board()
     b[7][3] = "r_R"
+    b[9][4] = "r_K"
+    b[0][4] = "b_k"
     s = _make_session(collector, b)
     _patch_sleep(monkeypatch)
 
@@ -388,3 +394,36 @@ def test_do_move_checkmate(collector: LogCollector, monkeypatch: pytest.MonkeyPa
 
     assert s._do_move() is True
     assert s.game_over is True
+
+
+def test_do_move_enemy_resign_n_over4(
+    collector: LogCollector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """我方走棋时敌方投降/结算画面：n>4 变动过多且双方将帅缺失 → 检测到对局结束。"""
+    b = make_empty_board()
+    b[7][3] = "r_R"
+    b[9][4] = "r_K"
+    b[0][4] = "b_k"
+    b[0][0] = "b_r"
+    b[9][0] = "r_R"
+    s = _make_session(collector, b)
+
+    empty = make_empty_board()
+    # 结算画面：棋盘几乎被清空（双方将帅同时缺失）→ n>4
+    updates = [
+        (7, 3, "r_R", None),
+        (9, 4, "r_K", None),
+        (0, 4, "b_k", None),
+        (0, 0, "b_r", None),
+        (9, 0, "r_R", None),
+    ]
+    _setup_do_move(
+        monkeypatch,
+        s,
+        best_moves=["d2d9"],
+        frames_per_verify=[[(empty, updates)] * MOVE_VERIFY_COUNT],
+    )
+
+    assert s._do_move() is False
+    assert s.game_over is True
+    assert any("检测到对局结束画面" in line for line in collector.logs)

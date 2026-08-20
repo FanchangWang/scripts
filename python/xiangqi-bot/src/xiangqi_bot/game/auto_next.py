@@ -97,6 +97,14 @@ class AutoNextMixin(_SessionAttrs):
                     # 棋子出现 = ADB 操作已生效，清空重试状态
                     last_word = None
                     retry_count = 0
+                    if count == 31:  # 31 枚棋子通常表示：敌方是红方 & 提子未落子
+                        self._log("info", "识别到 31 个棋子，暂不处理")
+                        prev_board = board_now
+                        stable_count = 0
+                        continue
+                    if count == 32:
+                        self._log("info", "识别到 32 个棋子，当做开局处理")
+                        return corrected
                     if prev_board is not None:
                         if prev_board == board_now:
                             stable_count += 1

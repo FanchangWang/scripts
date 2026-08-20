@@ -196,18 +196,16 @@ class SelfMoveMixin(_SessionAttrs):
                 pass  # 保持 stationary=True，认输检测放在 3 次分类之后
             else:
                 stationary = False
-                # 只要检测到有变动（任何 n>=1）就是走棋中间态，把认输 streak 清零。
-                # 避免「前一帧 n==0 + 將帥瞬态遮挡涨了 streak(1/3)」的历史包袱
-                # 污染后续走棋帧分类阶段（n>=1 绝不可能是结算画面）。
-                self._resign_streak = 0
                 if n == 1:
                     hit = self._is_lifted_only(updates[0], r1, c1, piece, r2, c2, new_board)
                     if hit and is_last_frame:
                         lifted_on_last = True
+                        self._resign_streak = 0
                 elif n == 2:
                     moved = self._infer_move(updates)
                     if moved is not None and self._moved_matches(moved, r1, c1, r2, c2, piece):
                         self._apply_self_move(moved)
+                        self._resign_streak = 0
                         # 按用户方案：只在「我方走棋成功（n==2 且 _infer_move 命中）」时做绝杀校验，
                         # 其他任何分类成功场景（n=3/4 敌方反吃、敌方走棋后、校验兜底等）都不做
                         self._checkmate_probe()
@@ -232,16 +230,25 @@ class SelfMoveMixin(_SessionAttrs):
                                     self_moved2: MoveResult = ((r1, c1), (r2, c2), piece, None)
                                     enemy_move2: MoveResult = ((xr, xc), (r2, c2), ep, piece)
                                     self._apply_self_then_enemy(self_moved2, enemy_move2)
+                                    self._resign_streak = 0
                                     return "_done_ok_"
                 elif n == 3:
                     result = self._classify_n3(updates, new_board, r1, c1, r2, c2, piece)
                     if result is not None:
+                        self._resign_streak = 0
                         return result
                 elif n == 4:
                     result = self._classify_n4(updates, new_board, r1, c1, r2, c2, piece)
                     if result is not None:
+                        self._resign_streak = 0
                         return result
-                # n > 4：变动过多（结束画面/棋盘重置），不做处理，stationary=False 已设
+                else:  # n > 4：变动过多（结算画面/棋盘重置），有可能是敌方投降
+                    resign = self._detect_resignation_board(new_board)
+                    if resign == "confirmed":
+                        self._finish_game("检测到对局结束画面")
+                        return "_done_end_"
+                    # "suspect"：streak 已在方法内增长，交后续帧/结尾 while 续帧确认
+                    # "none"：streak 已在方法内清零
 
         # ========== 3 次分类校验全没命中，才认输检测续帧 ==========
         # 走棋中间态（n>=1 分支命中时）已经清零 streak，这里 streak 只可能是 0

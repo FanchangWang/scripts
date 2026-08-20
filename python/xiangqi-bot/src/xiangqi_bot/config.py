@@ -50,7 +50,7 @@ ENDGAME_MODE_PIECE_COUNT = 31  # 自动下一局残局模式棋子数上限
 # 自动下一局
 AUTO_NEXT_GAME = True  # 对局结束后自动开始下一局
 AUTO_NEXT_TIMEOUT_S = 180  # 总超时（秒）
-GAMEOVER_SCAN_INTERVAL_MS = 500  # 扫描间隔
+GAMEOVER_SCAN_INTERVAL_MS = 300  # 扫描间隔
 BOARD_STABLE_THRESHOLD = 3  # 连续相同棋盘帧数
 GAMEOVER_RETRY_MAX = 3  # 同一按钮/遮罩操作上限
 GAMEOVER_TEXT_THRESHOLD = 0.75  # 模板匹配阈值
