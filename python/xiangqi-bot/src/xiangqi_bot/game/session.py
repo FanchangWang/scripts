@@ -27,7 +27,7 @@ from xiangqi_bot.board import (
     piece_label,
 )
 from xiangqi_bot.config import AUTO_NEXT_GAME, ENDGAME_PIECE_COUNT
-from xiangqi_bot.game._base import Change, MoveResult  # noqa: F401 类型别名
+from xiangqi_bot.game._base import Change, MoveResult
 from xiangqi_bot.game.auto_next import AutoNextMixin
 from xiangqi_bot.game.board_diff import BoardDiffMixin
 from xiangqi_bot.game.capture import CaptureMixin
@@ -209,7 +209,7 @@ class GameSession(
                     if corrected is None:
                         break
                 else:
-                    self._log("info", "自动下一局未开启")
+                    self._log("warn", "自动下一局未开启")
                     break
         self._emit()
 
@@ -371,6 +371,15 @@ class GameSession(
         capture_note = f"（吃{piece_label(captured)}）" if captured else ""
         self._last_move = f"{from_sq}-{to_sq}"
         self._log("enemy", f"{color_cn}方走{PIECE_CN[piece]}：{from_sq} -> {to_sq}{capture_note}")
+
+    def _log_updates(self, updates: list[Change], level: str = "info") -> None:
+        """打印逐格变动日志。"""
+        side = self.my_side or "red"
+        self._log(level, f"棋子变动（{len(updates)} 格）")
+        for r, c, old, new in updates:
+            old_name = piece_label(old) if old else "空"
+            new_name = piece_label(new) if new else "空"
+            self._log(level, f"变化：{grid_to_square(r, c, side)} {old_name} -> {new_name}")
 
     # ---------- 状态回传 ----------
 

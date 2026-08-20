@@ -2,8 +2,6 @@
 
 import time
 
-from numpy import ndarray
-
 from xiangqi_bot import adb_client, engine, vision
 from xiangqi_bot.board import (
     Board,
@@ -13,6 +11,7 @@ from xiangqi_bot.board import (
     piece_label,
 )
 from xiangqi_bot.config import (
+    ENGINE_MOVETIME_MS,
     MOVE_SETTLE_MS,
     MOVE_VERIFY_COUNT,
     RESIGN_SUSPECT_WAIT_MS,
@@ -35,7 +34,7 @@ class SelfMoveMixin(_SessionAttrs):
         """我方走棋主流程：计算着法 → 2 次点击尝试 → 每次 MOVE_VERIFY_COUNT 帧校验分类。
 
         校验按变动格数分类（0/1/2/3/4/>4），成功分类直接写入内存+推送+绝杀探测后返回。
-        MOVE_VERIFY_COUNT 次校验全部失败后，尝试 _is_mate_by_move 绝杀探测；仅当全为 n==0
+        MOVE_VERIFY_COUNT 次校验全部失败后，尝试认输检测续帧；仅当全为 n==0
         的"完全不动"帧才允许外层重新点击 ADB。
         """
         pending = self._compute_move()
@@ -66,8 +65,7 @@ class SelfMoveMixin(_SessionAttrs):
                 if retry_res == "_done_end_":
                     return False
                 # retry 没成功：交给 SELF_MOVE_ATTEMPTS 下一轮整步重走（可能 ADB 坐标没响应）
-            # 不再做 _is_mate_by_move 兜底绝杀探测（用户方案：只有 n==2+_infer_move 成功时探测，
-            # 3 次校验失败的兜底直接重走，最终失败就让 flow 暂停；结算画面的认输检测能兜住真绝杀）
+            # 3 次校验失败的兜底直接重走，最终失败就让 flow 暂停；结算画面的认输检测能兜住真绝杀
             if only_stationary is False:
                 break
         self._log("warn", "走棋尝试失败，未检测到走棋成功")
@@ -123,10 +121,8 @@ class SelfMoveMixin(_SessionAttrs):
         容错链：
         1. 生成 FEN + INFO 日志（便于排查"引擎判无路可走"时的棋盘状态）
         2. EngineError 降级：打 error 日志返回 None（外层 _start_flow 兜底已不崩溃）
-        3. 引擎返回 bestmove (none)：不直接判结束，先截图做一次全量识别自愈
-           （过滤内存布局 vs 真实棋盘的累计偏差，比如敌方走棋时 1-2 格的视觉漏识别
-           导致棋子多写/漏写，最终 FEN 非法让引擎判无路可走）
-           自愈后再算一次，仍 (none) 才视为对局真的结束。
+        3. 引擎返回 bestmove (none)：用较短 movetime 重试一次
+           （过滤视觉误识别导致的临时无着法），仍 (none) 才判定对局结束。
         """
         if self.my_side is None:
             self._log(
@@ -146,32 +142,20 @@ class SelfMoveMixin(_SessionAttrs):
             )
             return None
         if move is None:
-            # 自愈：截图 → 全量覆盖棋盘 → 再算一次
+            # 自愈：用较短 movetime 重试一次（过滤视觉误识别导致的临时无着法）
+            short_time = ENGINE_MOVETIME_MS * 2 // 3
             self._log(
                 "warn",
-                "引擎无可用着法（疑似内存布局污染），执行全量截图校验自愈...",
+                f"引擎无可用着法，用 {short_time}ms 短时限重试...",
             )
-            corrected = self._capture()
-            if corrected is not None:
-                new_board = vision.analyze_board(corrected, self.templates)
-                if self.prev_board is not None:
-                    self.prev_board = [row[:] for row in new_board]
-                self.board = new_board
-                fen = fen_of_board(self.board, self.my_side, self._turn)
-                self._log("info", f"自愈后重新生成 FEN：{fen}")
-                try:
-                    move = self.engine.best_move(fen)
-                except engine.EngineError as exc:
-                    self._log(
-                        "error",
-                        f"自愈后引擎错误：{exc}（_compute_move 返回 None）",
-                    )
-                    return None
-            else:
+            try:
+                move = self.engine.best_move(fen, short_time)
+            except engine.EngineError as exc:
                 self._log(
-                    "warn",
-                    "自愈阶段 ADB 截图失败（_capture 返回 None），跳过自愈，直接判定结束",
+                    "error",
+                    f"重试引擎错误：{exc}（_compute_move 返回 None）",
                 )
+                return None
         if move is None:
             self._log("warn", "引擎无可用着法（对局可能已结束）")
             self._finish_game("引擎判定我方无路可走，对局结束")
@@ -245,15 +229,16 @@ class SelfMoveMixin(_SessionAttrs):
                                     and piece_color(ep) != (self.my_side or "red")
                                     and new_board[r2][c2] == ep
                                 ):
+                                    self_moved2: MoveResult = ((r1, c1), (r2, c2), piece, None)
                                     enemy_move2: MoveResult = ((xr, xc), (r2, c2), ep, piece)
-                                    self._apply_self_then_enemy(enemy_move2)
+                                    self._apply_self_then_enemy(self_moved2, enemy_move2)
                                     return "_done_ok_"
                 elif n == 3:
-                    result = self._classify_n3(updates, new_board, corrected, r1, c1, r2, c2, piece)
+                    result = self._classify_n3(updates, new_board, r1, c1, r2, c2, piece)
                     if result is not None:
                         return result
                 elif n == 4:
-                    result = self._classify_n4(updates, new_board, corrected, r1, c1, r2, c2, piece)
+                    result = self._classify_n4(updates, new_board, r1, c1, r2, c2, piece)
                     if result is not None:
                         return result
                 # n > 4：变动过多（结束画面/棋盘重置），不做处理，stationary=False 已设
@@ -365,7 +350,6 @@ class SelfMoveMixin(_SessionAttrs):
         self,
         updates: list[Change],
         new_board: Board,
-        corrected: ndarray,
         r1: int,
         c1: int,
         r2: int,
@@ -408,15 +392,17 @@ class SelfMoveMixin(_SessionAttrs):
         ):
             e_piece = r2_new
             if x_old == e_piece and x_new is None:
+                self_moved_3a: MoveResult = ((r1, c1), (r2, c2), piece, e_piece)
                 enemy_move3_2: MoveResult = ((xr, xc), (r2, c2), e_piece, piece)
-                self._apply_self_then_enemy(enemy_move3_2)
+                self._apply_self_then_enemy(self_moved_3a, enemy_move3_2)
                 return "_done_ok_"
         # 情况3：我方走棋 r1→r2 成功，敌方另一子 x→r1 占我原位
         if r1_new is not None and piece_color(r1_new) != (self.my_side or "red"):
             e_piece = r1_new
             if r1_old == piece and r2_new == piece and x_old == e_piece and x_new is None:
+                self_moved_3b: MoveResult = ((r1, c1), (r2, c2), piece, None)
                 enemy_move3_3: MoveResult = ((xr, xc), (r1, c1), e_piece, None)
-                self._apply_self_then_enemy(enemy_move3_3)
+                self._apply_self_then_enemy(self_moved_3b, enemy_move3_3)
                 return "_done_ok_"
         return None
 
@@ -426,7 +412,6 @@ class SelfMoveMixin(_SessionAttrs):
         self,
         updates: list[Change],
         new_board: Board,
-        corrected: ndarray,
         r1: int,
         c1: int,
         r2: int,
@@ -448,19 +433,9 @@ class SelfMoveMixin(_SessionAttrs):
         enemy_move4 = self._infer_move(enemy_changes)
         if enemy_move4 is None:
             return None
-        self._apply_self_then_enemy(enemy_move4)
+        self_moved4: MoveResult = ((r1, c1), (r2, c2), piece, None)
+        self._apply_self_then_enemy(self_moved4, enemy_move4)
         return "_done_ok_"
-
-    # ---------- 绝杀辅助：走一步后模拟（已废弃，保留签名避免调用方报错）----------
-
-    def _is_mate_by_move(self, r1: int, c1: int, r2: int, c2: int, piece: str) -> bool:
-        """已废弃（用户方案：只在 n==2+_infer_move 成功时走 _checkmate_probe，其余场景统一
-        交给结算画面认输检测兜底，避免 3 次校验失败时的引擎 is_mate 带来假异常/误判结束。
-
-        本方法保留签名但直接 return False，不再临时改棋盘/调用引擎，因此不会触发任何
-        EngineError 也不会调用 _finish_game，完全不影响主流程。
-        """
-        return False
 
     # ---------- 成功写入 ----------
 
@@ -479,22 +454,16 @@ class SelfMoveMixin(_SessionAttrs):
         self._highlight = [(r1, c1), (r2, c2)]
         self._emit()
 
-    def _apply_self_then_enemy(self, enemy_moved: MoveResult) -> None:
-        """n==3b/3c/4：我方走棋成功 + 敌方已完成一步，轮到我方走。基准快照由 _flow 开头维护。
+    def _apply_self_then_enemy(self, self_moved: MoveResult, enemy_moved: MoveResult) -> None:
+        """我方走棋成功 + 敌方已完成一步，轮到我方走。
 
         精确应用：
-        1. 先从我方走棋起点→终点（piece 由调用方保证已和内存一致，在调用此函数前
-           board 仍是 _flow 开头的快照，所以按起点 r1c1（self._highlight 里存的我方
-           上一步坐标 + 已知 piece 信息 self._last_move 起点棋子 = 自己 board[r1][c1]）
-           → 简化：从 self._highlight[0] 和 [1] 取我方 r1c1/r2c2，piece 再读一遍起点
+        1. 我方走棋：self_moved 显式传入（不再依赖 self._highlight）
+        2. 敌方走棋：enemy_moved 显式传入
         """
-        # 我方走棋：highlights[0]=起点, highlights[1]=终点（_unpack_move 里写入的）
-        if self._highlight and len(self._highlight) >= 2:
-            (sr, sc), (dr, dc) = self._highlight[0], self._highlight[1]
-            my_piece = self.board[sr][sc]
-            self.board[sr][sc] = None
-            self.board[dr][dc] = my_piece
-        # 敌方走棋
+        (sr, sc), (dr, dc), my_piece, _mc = self_moved
+        self.board[sr][sc] = None
+        self.board[dr][dc] = my_piece
         (xr, xc), (yr, yc), ep, _ec = enemy_moved
         self.board[xr][xc] = None
         self.board[yr][yc] = ep

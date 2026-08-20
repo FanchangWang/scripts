@@ -6,12 +6,12 @@ from numpy import ndarray
 
 from xiangqi_bot import adb_client, vision
 from xiangqi_bot.config import (
+    AUTO_NEXT_TIMEOUT_S,
+    BOARD_STABLE_THRESHOLD,
     GAMEOVER_BACK_WORDS,
     GAMEOVER_BUTTON_WORDS,
     GAMEOVER_RETRY_MAX,
     GAMEOVER_SCAN_INTERVAL_MS,
-    GAMEOVER_SCAN_MAX,
-    GAMEOVER_TAP_VERIFY_MS,
 )
 from xiangqi_bot.game._base import _SessionAttrs
 
@@ -57,154 +57,129 @@ class AutoNextMixin(_SessionAttrs):
             self._emit()
 
     def _scan_gameover_interact(self) -> ndarray | None:
-        """结算交互 + 等待摆棋（合并）。
+        """结算交互 + 等待摆棋（单循环，无模式切换）。
 
-        内部两模式：
-          mode="scan"：扁平循环扫结算文字，按钮点击 / 遮罩返回键；
-                       识别到「曾有结算文字退出 + 棋子出现」→ 切 mode="setup"。
-          mode="setup"：沿用原 _wait_for_board_setup 逻辑——连续 2 帧 count 相同且相邻帧 diff_cells 无变动
-                       才返回 corrected，避免摆棋动画半截误判。
-                       setup 过程中若 count 变回 0（结算画面又回来 / 新弹窗），立即退回 "scan"
-                       （重新扫描文字 + 重置 setup streak，避免把「结算瞬态空白」当摆棋）。
+        每次循环先延时，再扫结算文字：
+          - 有文字：按钮点击 / 遮罩发返回键（重试上限 GAMEOVER_RETRY_MAX）
+          - 无文字：截图分析棋盘，连续 BOARD_STABLE_THRESHOLD 帧棋盘相同则返回
+        棋子出现时清空 last_word/retry_count（界面从文字→棋子 = ADB 操作已生效）。
+        超过 AUTO_NEXT_TIMEOUT_S 秒未完成则中止。
         """
         self._log("info", "开始扫描结算文字……")
         last_word: str | None = None
         retry_count = 0
-        mode: str = "scan"
-        # setup 模式状态
-        setup_prev: ndarray | None = None
-        setup_stable_count: int | None = None
-        setup_streak = 0
-        for _attempt in range(GAMEOVER_SCAN_MAX):
+        prev_board: list[list[str | None]] | None = None
+        stable_count = 0
+        start_time = time.monotonic()
+        while True:
             if self._interrupt.is_set():
                 return None
             if not self.auto_next_game:
                 return None
-            if mode == "scan":
-                hit = self._scan_gameover_text()
-                if hit is None:
-                    if last_word is None:
-                        self._log("info", "未识别到结算文字")
-                        time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
-                        continue
-                    corrected = self._capture()
-                    if corrected is None:
-                        self._log("info", "未识别到结算文字")
-                        time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
-                        continue
-                    board_now = vision.analyze_board(corrected, self.templates)
-                    count = sum(cell is not None for row in board_now for cell in row)
-                    if count > 0:
+            if time.monotonic() - start_time > AUTO_NEXT_TIMEOUT_S:
+                self._log(
+                    "warn",
+                    f"{AUTO_NEXT_TIMEOUT_S}秒未完成结算交互 + 摆棋，中止自动下一局，请手动处理",
+                )
+                return None
+
+            time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
+
+            hit = self._scan_gameover_text()
+            if hit is None:
+                corrected = self._capture()
+                if corrected is None:
+                    self._log("info", "未识别到结算文字")
+                    continue
+                board_now = vision.analyze_board(corrected, self.templates)
+                count = sum(cell is not None for row in board_now for cell in row)
+                if count > 0:
+                    # 棋子出现 = ADB 操作已生效，清空重试状态
+                    last_word = None
+                    retry_count = 0
+                    if prev_board is not None:
+                        if prev_board == board_now:
+                            stable_count += 1
+                            self._log(
+                                "info",
+                                f"等待摆棋完毕：识别到 {count} 个棋子"
+                                f"（稳定 {stable_count}/{BOARD_STABLE_THRESHOLD}）",
+                            )
+                            if stable_count >= BOARD_STABLE_THRESHOLD:
+                                return corrected
+                        else:
+                            prev_board = board_now
+                            stable_count = 0
+                            self._log(
+                                "info",
+                                f"等待摆棋完毕：识别到 {count} 个棋子（棋子变动，重置稳定计数）",
+                            )
+                    else:
+                        prev_board = board_now
+                        stable_count = 0
                         self._log(
                             "info",
-                            f"未识别到结算文字，识别到 {count} 个棋子，切换为摆棋稳定检测",
+                            f"未识别到结算文字，识别到 {count} 个棋子，开始摆棋稳定检测",
                         )
-                        mode = "setup"
-                        setup_prev = corrected
-                        setup_stable_count = count
-                        setup_streak = 0
-                        # 这是摆棋稳定第 1 帧（与 setup 首帧处理对齐）：
-                        #   作为 prev_frame，下一帧和它比较 count 相同 + diff 空 == 2 帧稳定。
-                    else:
-                        self._log("info", "未识别到结算文字，棋盘为空")
-                    time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
-                    continue
-                # hit is not None：继续走结算交互分支
-                word, x, y, is_button = hit
-                if word != last_word:
-                    last_word = word
-                    retry_count = 0
                 else:
-                    last_word = word
-                retry_count += 1
-                if is_button is False:
-                    if retry_count > GAMEOVER_RETRY_MAX:
-                        self._log(
-                            "error",
-                            f"遮罩「{last_word}」发送返回键 {GAMEOVER_RETRY_MAX} 次仍无响应，"
-                            "中止自动下一局，请手动处理",
-                        )
-                        return None
-                    prefix = "仍识别到文字" if retry_count > 1 else "识别到文字"
-                    self._log(
-                        "info",
-                        f"{prefix}「{last_word}」，发送返回键（第 {retry_count}/{GAMEOVER_RETRY_MAX} 次）",
-                    )
-                    try:
-                        adb_client.keyevent(self.device, adb_client.KEYCODE_BACK)
-                    except adb_client.AdbError as exc:
-                        self._log("error", f"自动下一局交互失败：{exc}")
-                        return None
-                    time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
-                    continue
-                # is_button == True：retry_count 已在前面 word == last_word 判断处累加
+                    self._log("info", "未识别到结算文字，棋盘为空")
+                continue
+
+            # hit is not None：结算交互
+            word, x, y, is_button = hit
+            if word != last_word:
+                last_word = word
+                retry_count = 0
+            retry_count += 1
+            if is_button is False:
                 if retry_count > GAMEOVER_RETRY_MAX:
                     self._log(
                         "error",
-                        f"结算按钮「{last_word}」点击 {GAMEOVER_RETRY_MAX} 次仍无响应，"
+                        f"遮罩「{last_word}」发送返回键 {GAMEOVER_RETRY_MAX} 次仍无响应，"
                         "中止自动下一局，请手动处理",
                     )
                     return None
-                prefix = "仍识别到结算按钮" if retry_count > 1 else "识别到结算按钮"
+                prefix = "仍识别到文字" if retry_count > 1 else "识别到文字"
                 self._log(
-                    "move",
-                    f"{prefix}「{last_word}」，点击 ({x},{y}) 开始下一局"
-                    f"（第 {retry_count}/{GAMEOVER_RETRY_MAX} 次）",
+                    "info",
+                    f"{prefix}「{last_word}」，发送返回键（第 {retry_count}/{GAMEOVER_RETRY_MAX} 次）",
                 )
                 try:
-                    adb_client.tap(self.device, x, y)
+                    adb_client.keyevent(self.device, adb_client.KEYCODE_BACK)
                 except adb_client.AdbError as exc:
                     self._log("error", f"自动下一局交互失败：{exc}")
                     return None
-                time.sleep(GAMEOVER_TAP_VERIFY_MS / 1000)
                 continue
-            # mode == "setup"：摆棋稳定检测（完全同原 _wait_for_board_setup）
-            corrected = self._capture()
-            if corrected is None:
-                time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
-                continue
-            board_now = vision.analyze_board(corrected, self.templates)
-            count = sum(cell is not None for row in board_now for cell in row)
-            if count == 0:
+            # is_button == True
+            if retry_count > GAMEOVER_RETRY_MAX:
                 self._log(
-                    "info", f"摆棋过程中棋子数归零（{setup_stable_count}→0），退回结算文字扫描"
+                    "error",
+                    f"结算按钮「{last_word}」点击 {GAMEOVER_RETRY_MAX} 次仍无响应，"
+                    "中止自动下一局，请手动处理",
                 )
-                mode = "scan"
-                setup_prev = None
-                setup_stable_count = None
-                setup_streak = 0
-                time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
-                continue
-            changed = (
-                setup_prev is None
-                or count != setup_stable_count
-                or bool(vision.diff_cells(setup_prev, corrected))
-            )
-            if changed:
-                setup_stable_count = count
-                setup_streak = 0
-            else:
-                setup_streak += 1
-            setup_prev = corrected
+                return None
+            prefix = "仍识别到结算按钮" if retry_count > 1 else "识别到结算按钮"
             self._log(
-                "info",
-                f"等待摆棋完毕：识别到 {count} 个棋子（稳定 {setup_streak}/2）",
+                "move",
+                f"{prefix}「{last_word}」，点击 ({x},{y}) 开始下一局"
+                f"（第 {retry_count}/{GAMEOVER_RETRY_MAX} 次）",
             )
-            if setup_streak >= 2:
-                return corrected
-            time.sleep(GAMEOVER_SCAN_INTERVAL_MS / 1000)
-        self._log(
-            "warn",
-            f"{GAMEOVER_SCAN_MAX} 次截图未完成结算交互 + 摆棋，"
-            "未检测到摆棋完毕，中止自动下一局，请手动处理",
-        )
-        return None
+            try:
+                adb_client.tap(self.device, x, y)
+            except adb_client.AdbError as exc:
+                self._log("error", f"自动下一局交互失败：{exc}")
+                return None
+            continue
 
     def _scan_gameover_text(
         self,
         img: ndarray | None = None,
     ) -> tuple[str, int, int, bool] | None:
         """模板匹配结算文字，返回 (文字, 屏幕x, 屏幕y, 是否按钮) 或 None。
+
+        优先处理遮罩类（GAMEOVER_BACK_WORDS），再处理按钮类（GAMEOVER_BUTTON_WORDS）。
+        同一帧中若遮罩和按钮同时存在，优先返回遮罩（外层会先发返回键消除遮罩，
+        下一帧再扫描到按钮时点击）。
 
         无 img 参数时自行截图（用于 `_scan_gameover_interact` 的扫描循环）。
         """

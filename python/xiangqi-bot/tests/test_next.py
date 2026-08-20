@@ -1,7 +1,9 @@
-"""自动下一局场景（16 个）。"""
+"""自动下一局场景。"""
 
 from __future__ import annotations
 
+import itertools
+import time as real_time
 from typing import Any
 
 import pytest
@@ -22,10 +24,6 @@ def _full_start_board() -> list[list[str | None]]:
 
 def _stable_frame(board: list[list[str | None]]) -> dict[str, Any]:
     return {"board": board, "diff": set()}
-
-
-def _changed_frame(board: list[list[str | None]], diff: set[tuple[int, int]]) -> dict[str, Any]:
-    return {"board": board, "diff": set(diff)}
 
 
 def _make_session(collector: LogCollector) -> tuple[game.GameSession, MockDeviceWithRecord]:
@@ -50,8 +48,6 @@ def test_auto_next_game(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
     from xiangqi_bot import config as cfg
     from xiangqi_bot.game import auto_next as an
 
-    monkeypatch.setattr(cfg, "GAMEOVER_SCAN_MAX", 7)
-    monkeypatch.setattr(an, "GAMEOVER_SCAN_MAX", 7)
     monkeypatch.setattr(game.time, "sleep", collector.sleep)
 
     # 场景1：下一关对话框 -> 点击右侧按钮 -> 开局自动对弈
@@ -135,15 +131,20 @@ def test_auto_next_game(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
     assert s.phase == "残局", s.phase
     assert any("残局模式：我方为红方、轮到我方先走" in m for m in collector.logs), collector.logs
 
-    # 场景4：扫描超时（一直无结算文字）-> 返回 False
+    # 场景4：扫描超时（一直无结算文字）-> 返回 None
     collector.clear()
-    hit_queue = [None] * (cfg.GAMEOVER_SCAN_MAX + 1)
+    old_timeout = cfg.AUTO_NEXT_TIMEOUT_S
+    monkeypatch.setattr(cfg, "AUTO_NEXT_TIMEOUT_S", 0)
+    monkeypatch.setattr(an, "AUTO_NEXT_TIMEOUT_S", 0)
     s, dev = _make_session(collector)
-    s._scan_gameover_text = lambda: hit_queue.pop(0) if hit_queue else None  # type: ignore[method-assign]
+    s._capture = lambda: None  # type: ignore[method-assign]
+    s._scan_gameover_text = lambda: None  # type: ignore[method-assign]
     ok = s._auto_next_game()
-    assert ok is None, "无结算文字应中止"
+    assert ok is None, "超时应中止"
     assert not dev.taps and not dev.shells, f"不应点击，{dev.taps}/{dev.shells}"
-    assert any("未识别到结算文字" in m for m in collector.logs), collector.logs
+    assert any("未完成结算交互" in m for m in collector.logs), collector.logs
+    monkeypatch.setattr(cfg, "AUTO_NEXT_TIMEOUT_S", old_timeout)
+    monkeypatch.setattr(an, "AUTO_NEXT_TIMEOUT_S", old_timeout)
 
     # 场景5：扫描期间被中断 -> 返回 False
     collector.clear()
@@ -152,23 +153,32 @@ def test_auto_next_game(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
     ok = s._auto_next_game()
     assert ok is None, "中断应中止自动下一局"
 
-    # 场景6：摆棋动画一直未稳定 -> 返回 False
+    # 场景6：摆棋动画一直未稳定 -> 超时返回 None
     collector.clear()
-    board = _full_start_board()
-    anim1 = _changed_frame(board, {(0, 4), (9, 4)})
-    anim2 = _changed_frame(board, {(2, 1), (2, 7)})
-    capture_queue = [anim1, anim2] * (cfg.GAMEOVER_SCAN_MAX // 2 + 1)
+    call_count = 0
+
+    def fake_monotonic() -> float:
+        nonlocal call_count
+        call_count += 1
+        return call_count * 10
+
+    monkeypatch.setattr(game.time, "monotonic", fake_monotonic)
+    board_a = _full_start_board()
+    board_b = _full_start_board()
+    board_b[0][0] = None  # 不同棋盘，保证 stable_count 永远归零
+    capture_gen = itertools.cycle([_stable_frame(board_a), _stable_frame(board_b)])
     s, dev = _make_session(collector)
-    s._capture = lambda: capture_queue.pop(0)  # type: ignore[method-assign]
+    s._capture = lambda: next(capture_gen)  # type: ignore[method-assign]
     hit_queue = [
         ("下一关", 712, 2198, True),
         None,
     ]
     s._scan_gameover_text = lambda: hit_queue.pop(0) if hit_queue else None  # type: ignore[method-assign]
     ok = s._auto_next_game()
-    assert ok is None, "摆棋未稳定应中止"
+    assert ok is None, "摆棋未稳定应超时中止"
     assert dev.taps == [(712, 2198)], f"应已点击下一关，实际 {dev.taps}"
-    assert any("未检测到摆棋完毕" in m for m in collector.logs), collector.logs
+    assert any("未完成结算交互" in m for m in collector.logs), collector.logs
+    monkeypatch.setattr(game.time, "monotonic", real_time.monotonic)
 
     # 场景7：_flow 循环——对局结束触发自动下一局，失败则停止
     collector.clear()
@@ -434,3 +444,32 @@ def test_auto_next_game(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
     assert dev.taps == [(542, 2237), (542, 2237)], f"应点击两次再来一局，实际 {dev.taps}"
     assert dev.shells == ["input keyevent 4"], f"应发一次返回键消除遮罩，{dev.shells}"
     assert any("识别到文字「领取」，发送返回键" in m for m in collector.logs), collector.logs
+
+    # 场景21：点击按钮后棋子出现又消失（点击未生效）-> 文字重现 -> 重试点击 -> 第二次成功
+    collector.clear()
+    full = _full_start_board()
+    empty = make_empty_board()
+    capture_queue: list[dict[str, Any]] = [
+        _stable_frame(full),  # 0: 棋子出现（第一次点击后）→ 清空 last_word，prev_board=full
+        _stable_frame(empty),  # 1: 棋盘为空（点击未生效）
+        _stable_frame(full),  # 2: 第二次点击后棋子出现 → prev_board=full（未变）→ stable_count=1
+        _stable_frame(full),  # 3: stable_count=2
+        _stable_frame(full),  # 4: stable_count=3 => 返回
+    ]
+    s, dev = _make_session(collector)
+    s._capture = lambda: capture_queue.pop(0) if capture_queue else None  # type: ignore[method-assign]
+    hit_queue: list[tuple[str, int, int, bool] | None] = [
+        ("再来一局", 542, 2237, True),  # 第 1 次点击
+        None,
+        None,  # 棋盘为空时无文字
+        ("再来一局", 542, 2237, True),  # 第 2 次点击（文字重现）
+        None,
+        None,
+        None,
+    ]
+    s._scan_gameover_text = lambda: hit_queue.pop(0) if hit_queue else None  # type: ignore[method-assign]
+    ok = s._auto_next_game()
+    assert ok is not None, collector.logs
+    assert dev.taps == [(542, 2237), (542, 2237)], f"应点击两次再来一局，实际 {dev.taps}"
+    assert any("棋盘为空" in m for m in collector.logs), collector.logs
+    assert s.game_over is False, "第二次点击成功后应开始新局"

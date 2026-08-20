@@ -53,27 +53,27 @@ CORRECT_H = 1000
 CORRECT_TEMPLATE_SIZE = 60
 
 # 延时（毫秒）
-TAP_HOLD_INTERVAL_MS = 400   # 点起子 -> 点落子之间的间隔
-MOVE_SETTLE_MS = 500         # 落子后每次校验截图前的等待
-MOVE_VERIFY_COUNT = 5       # 走棋校验截图次数（全部失败才判定走棋失败）
-SELF_MOVE_ATTEMPTS = 2       # 整步重试上限（_do_move 的外层循环）
+TAP_HOLD_INTERVAL_MS = 400  # 点起子 -> 点落子之间的间隔
+MOVE_SETTLE_MS = 500  # 落子后每次校验截图前的等待
+MOVE_VERIFY_COUNT = 5  # 走棋校验截图次数（全部失败才判定走棋失败）
+SELF_MOVE_ATTEMPTS = 2  # 整步重试上限（_do_move 的外层循环）
 
 # 引擎
 ENGINE_MOVETIME_MS = 1000
 ENGINE_THREADS = 12
 ENGINE_HASH_MB = 2048
-ENGINE_MATE_PROBE_MS = 200   # 绝杀判断用的短时限探测
+ENGINE_MATE_PROBE_MS = 200  # 绝杀判断用的短时限探测
 
 # 自动检测敌方走棋（毫秒）
 ENEMY_RECHECK_WAIT_MS = 500  # 噪声帧延时复检
-ENEMY_NOISY_MAX = 3          # 连续噪声帧上限，超过则暂停自动对弈
+ENEMY_NOISY_MAX = 3  # 连续噪声帧上限，超过则暂停自动对弈
 
 # 对局结束 / 认输检测
-RESIGN_CONFIRM_COUNT = 3     # 双方将帅缺失需连续几帧才确认
+RESIGN_CONFIRM_COUNT = 3  # 双方将帅缺失需连续几帧才确认
 RESIGN_SUSPECT_WAIT_MS = 1000  # 单帧疑似结束时延时再采样
 
 # 残局判断
-ENDGAME_PIECE_COUNT = 24     # 可识别棋子总数少于该值视为残局
+ENDGAME_PIECE_COUNT = 24  # 可识别棋子总数少于该值视为残局
 ENDGAME_MODE_PIECE_COUNT = 31  # 残局模式（如「下一关」）棋子数上限
 
 # 图片识别（矫正棋盘空间，像素）
@@ -84,11 +84,11 @@ EMPTY_MATCH_THRESHOLD = 0.8
 
 # 自动下一局
 AUTO_NEXT_GAME = True
-GAMEOVER_SCAN_MAX = 15        # 扫描结算文字 + 等待摆棋的截图次数上限
+GAMEOVER_SCAN_MAX = 15  # 扫描结算文字 + 等待摆棋的截图次数上限
 GAMEOVER_SCAN_INTERVAL_MS = 500
 GAMEOVER_TEXT_THRESHOLD = 0.75
 GAMEOVER_TEMPLATE_W = 1080
-BOARD_STABLE_THRESHOLD = 3    # 结算文字消失后连续识别到棋子的帧数阈值
+BOARD_STABLE_THRESHOLD = 2  # 结算文字消失后连续识别到棋子的帧数阈值
 GAMEOVER_TAP_VERIFY_MS = 2000
 GAMEOVER_RETRY_MAX = 3
 GAMEOVER_BUTTON_WORDS = ("下一关", "晋级赛", "重新挑战", "再来一局")  # 按钮类（点击），按优先级

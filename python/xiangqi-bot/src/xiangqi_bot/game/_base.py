@@ -71,9 +71,6 @@ class _SessionAttrs:
     def _correct_from_raw(self, img: ndarray) -> ndarray | None:
         raise NotImplementedError
 
-    def _board_changes(self, corrected: ndarray) -> list[Change]:
-        raise NotImplementedError
-
     def _analyze_board_with_prev_board(
         self, corrected: ndarray
     ) -> tuple[list[list[str | None]], list[Change]]:
@@ -87,6 +84,9 @@ class _SessionAttrs:
         raise NotImplementedError
 
     def _log_move(self, moved: MoveResult) -> None:
+        raise NotImplementedError
+
+    def _log_updates(self, updates: list[Change], level: str = "info") -> None:
         raise NotImplementedError
 
     def _detect_resignation_board(self, new_board: list[list[str | None]]) -> str:
@@ -105,9 +105,6 @@ class _SessionAttrs:
         raise NotImplementedError
 
     def _attempt_move(self, r1: int, c1: int, r2: int, c2: int) -> bool:
-        raise NotImplementedError
-
-    def _is_mate_by_move(self, r1: int, c1: int, r2: int, c2: int, piece: str) -> bool:
         raise NotImplementedError
 
     def _checkmate_probe(self) -> bool:

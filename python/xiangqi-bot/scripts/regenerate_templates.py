@@ -18,7 +18,7 @@ from xiangqi_bot.board import START_SQUARES, corrected_center
 REFERENCE = (
     config.PROJECT_ROOT / "raw_screenshots" / "木_红_1080x2400.png"
 )  # 参考开局截图（1080x2400）
-HALF = config.CORRECT_TEMPLATE_SIZE // 2
+HALF = config.TEMPLATE_SIZE // 2
 
 
 def main() -> int:
@@ -36,9 +36,7 @@ def main() -> int:
         r, c = START_SQUARES[piece_id][0]
         cx, cy = corrected_center(r, c)
         x1, y1 = int(round(cx - HALF)), int(round(cy - HALF))
-        crop = corrected[
-            y1 : y1 + config.CORRECT_TEMPLATE_SIZE, x1 : x1 + config.CORRECT_TEMPLATE_SIZE
-        ]
+        crop = corrected[y1 : y1 + config.TEMPLATE_SIZE, x1 : x1 + config.TEMPLATE_SIZE]
         out = config.TEMPLATES_DIR / f"{piece_id}.png"
         cv2.imwrite(str(out), crop)
         saved += 1

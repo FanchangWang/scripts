@@ -2,7 +2,7 @@
 
 import time
 
-from xiangqi_bot.board import grid_to_square, piece_color, piece_label
+from xiangqi_bot.board import piece_color
 from xiangqi_bot.config import ENEMY_NOISY_MAX, ENEMY_RECHECK_WAIT_MS, RESIGN_SUSPECT_WAIT_MS
 from xiangqi_bot.game._base import MoveResult, _SessionAttrs
 
@@ -83,6 +83,8 @@ class EnemyMoveMixin(_SessionAttrs):
                     continue
                 self._lift_logged = False
                 self._noisy_count += 1
+                if updates:
+                    self._log_updates(updates, level="info")
                 if self._noisy_count >= ENEMY_NOISY_MAX:
                     if resign == "none":
                         self._log(
@@ -90,15 +92,6 @@ class EnemyMoveMixin(_SessionAttrs):
                             f"连续 {ENEMY_NOISY_MAX} 帧无法推断敌方完整走法，"
                             "暂停自动对弈，请点击「开始棋局」确认",
                         )
-                        if updates:
-                            for r, c, old, new in updates:
-                                old_name = piece_label(old) if old else "空"
-                                new_name = piece_label(new) if new else "空"
-                                side = self.my_side or "red"
-                                self._log(
-                                    "warn",
-                                    f"变化：{grid_to_square(r, c, side)} {old_name} -> {new_name}",
-                                )
                         self._running = False
                         self._emit()
                         return
