@@ -7,6 +7,7 @@
 import asyncio
 import queue
 import threading
+import traceback
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 
@@ -41,7 +42,7 @@ class Hub:
         self.clients: set[WebSocket] = set()
         self.device_name: str | None = None
         self.session: GameSession | None = None
-        self._last_state: dict | None = None
+        self.last_state: dict | None = None
         self._queue: queue.Queue[tuple[Callable[..., None], dict]] = queue.Queue()
         self._worker: threading.Thread | None = None
 
@@ -58,7 +59,7 @@ class Hub:
             try:
                 fn(**kwargs)
             except Exception as exc:  # noqa: BLE001
-                self.log("error", f"后台任务异常：{exc}")
+                self.log("error", f"后台任务异常：{exc}\n{traceback.format_exc()}")
 
     def post(self, fn: Callable[..., None], **kwargs: object) -> None:
         self._queue.put((fn, kwargs))
@@ -82,7 +83,7 @@ class Hub:
         self.broadcast({"type": "log", "kind": kind, "msg": msg})
 
     def on_state(self, state: dict) -> None:
-        self._last_state = state
+        self.last_state = state
         self.broadcast({"type": "state", "state": state})
 
     def ask_turn(self) -> None:
@@ -90,7 +91,8 @@ class Hub:
 
     # ---------- 设备 / 会话 ----------
 
-    def _teardown(self) -> None:
+    def teardown(self) -> None:
+        """关闭当前会话并清空设备名（无线设备需另行 adb disconnect）"""
         if self.session is not None:
             self.session.interrupt()
             self.session.close()
@@ -107,7 +109,7 @@ class Hub:
     def disconnect(self) -> None:
         """在 worker 线程中断开会话（无线设备同时 adb disconnect）"""
         name = self.device_name
-        self._teardown()
+        self.teardown()
         if name is not None and ":" in name:
             try:
                 adb_client.disconnect(name)
@@ -148,7 +150,7 @@ async def lifespan(_app: FastAPI):
         hub.session.close()
 
 
-app = FastAPI(title="中国象棋 Bot", lifespan=lifespan)
+app = FastAPI(title="JJ象棋 Bot", lifespan=lifespan)
 
 
 # ---------- REST API ----------
@@ -169,7 +171,7 @@ def api_connect(req: ConnectReq) -> dict:
     if req.serial is None and (req.ip is None or req.port is None):
         return {"ok": False, "error": "需要 serial 或 ip:port"}
     had_session = hub.session is not None
-    hub._teardown()
+    hub.teardown()
     try:
         if req.serial is not None:
             device = adb_client.get_device(req.serial)
@@ -227,8 +229,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
     hub.clients.add(ws)
     if hub.device_name is not None:
         await ws.send_json({"type": "connected", "serial": hub.device_name})
-    if hub._last_state is not None:
-        await ws.send_json({"type": "state", "state": hub._last_state})
+    if hub.last_state is not None:
+        await ws.send_json({"type": "state", "state": hub.last_state})
     try:
         while True:
             await ws.receive_text()

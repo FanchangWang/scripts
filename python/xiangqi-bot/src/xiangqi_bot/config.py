@@ -7,7 +7,7 @@ PIKAFISH_EXE = PIKAFISH_DIR / "pikafish-bmi2.exe"  # 引擎可执行文件
 
 TEMPLATES_DIR = PROJECT_ROOT / "templates"  # 14 张 60x60 棋子模板所在目录（从矫正棋盘切割）
 GAMEOVER_TEXT_DIR = PROJECT_ROOT / "templates" / "text"  # 结算文字模板所在目录（从原始截图切割）
-WEB_DIR = PROJECT_ROOT / "src" / "xiangqi_bot" / "web"  # 网页前端静态文件
+WEB_DIR = Path(__file__).resolve().parent / "web"  # 网页前端静态文件
 
 # 棋盘四角格中心坐标（透视矫正输入），按截图分辨率 (宽, 高) 查表。
 # 每项为 (左上, 右上, 左下, 右下) 四个角格的网格中心坐标（像素）。
@@ -26,7 +26,7 @@ CORRECT_TEMPLATE_SIZE = 60  # 矫正空间下的模板边长（棋子直径约 4
 # 延时（毫秒）
 TAP_HOLD_INTERVAL_MS = 400  # 点起子 -> 点落子之间的间隔
 MOVE_SETTLE_MS = 500  # 落子后每次校验截图前的等待（3 次均 500ms）
-MOVE_VERIFY_COUNT = 3  # 走棋校验截图次数（全部失败才判定走棋失败）
+MOVE_VERIFY_COUNT = 5  # 走棋校验截图次数（全部失败才判定走棋失败）
 RECOVERY_WAIT_MS = 500  # 走棋失败恢复：检测到棋子被提起后，延迟该时长再次确认
 
 # 引擎（毫秒）
@@ -36,14 +36,10 @@ ENGINE_HASH_MB = 2048  # setoption name Hash（MB）
 ENGINE_MATE_PROBE_MS = 200  # 绝杀判断用的短时限探测（无着法会立即返回 (none)）
 
 # 自动检测敌方走棋（毫秒）
-AUTO_DETECT_INTERVAL_MS = (
-    0  # 截图间隔延时；ADB 截图本身耗时，不再额外延时（无次数限制，直到用户中断）
-)
 ENEMY_RECHECK_WAIT_MS = 500  # 多格变动/无法构成完整一步（疑似瞬态噪声）时延时复检
 ENEMY_NOISY_MAX = 3  # 连续噪声帧上限，超过则按实际变动提交（避免永久卡住检测循环）
 
 # 对局结束 / 敌方认输检测
-RESIGN_PIECE_DROP_THRESHOLD = 3  # 可识别棋子数比内存布局至少少几枚，判为对局结束画面
 RESIGN_CONFIRM_COUNT = 3  # 疑似对局结束画面需连续几帧稳定出现才确认（过滤瞬态误判）
 RESIGN_SUSPECT_WAIT_MS = (
     1000  # 单帧疑似结束时延时再采样，避免快速连续截图把瞬态（敌方提子/手部遮挡）误判为结束
@@ -63,9 +59,9 @@ GAMEOVER_SCAN_MAX = 15  # 扫描结算文字 / 等待摆棋完毕的截图次数
 GAMEOVER_SCAN_INTERVAL_MS = 500  # 扫描间隔（毫秒）
 GAMEOVER_TEXT_THRESHOLD = 0.75  # 结算文字模板匹配 TM_CCOEFF_NORMED 阈值
 GAMEOVER_TEMPLATE_W = 1080  # 结算文字模板基准宽度（匹配前把原始截图等比缩放到该宽度）
+BOARD_STABLE_THRESHOLD = 3  # 结算文字消失后连续识别到棋子的帧数阈值，达此值才认为进入摆棋阶段
 GAMEOVER_TAP_VERIFY_MS = 2000  # 点击结算按钮后的校验延时（动画未结束时点击可能无响应，等待后复检）
 GAMEOVER_RETRY_MAX = 3  # 同一按钮/遮罩连续操作上限（不同文字出现时重新计数）
-BOARD_STABLE_THRESHOLD = 3 # 无结算文字时检查棋盘是否有棋子，连续稳定 N 帧才判定摆棋完毕
 GAMEOVER_BUTTON_WORDS = (
     "下一关",
     "晋级赛",

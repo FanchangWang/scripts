@@ -85,6 +85,32 @@ def analyze_cell(img: np.ndarray, r: int, c: int, templates: Templates) -> str |
     return best_id
 
 
+def analyze_cell_with_priority(
+    img: np.ndarray,
+    r: int,
+    c: int,
+    templates: Templates,
+    priority_id: str | None = None,
+) -> str | None:
+    """优先匹配 priority_id 模板，命中则直接返回；不匹配再匹配剩余模板（排除 priority_id）。
+
+    用于 prev_board 变动检测：大部分格子未变化，优先匹配上一帧的棋子可大幅减少匹配次数。
+    """
+    if priority_id is not None and priority_id in templates:
+        px, py = corrected_center(r, c)
+        px, py = round(px), round(py)
+        half = config.MATCH_SEARCH_HALF + config.TEMPLATE_SIZE // 2
+        x1 = max(0, px - half)
+        y1 = max(0, py - half)
+        window = img[y1 : py + half, x1 : px + half]
+        result = cv2.matchTemplate(window, templates[priority_id], cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        if max_val >= config.EMPTY_MATCH_THRESHOLD:
+            return priority_id
+    remaining = {k: v for k, v in templates.items() if k != priority_id}
+    return analyze_cell(img, r, c, remaining)
+
+
 def analyze_board(img: np.ndarray, templates: Templates) -> list[list[str | None]]:
     """分析矫正棋盘 90 格，返回 10x9 布局"""
     return [[analyze_cell(img, r, c, templates) for c in range(COLS)] for r in range(ROWS)]

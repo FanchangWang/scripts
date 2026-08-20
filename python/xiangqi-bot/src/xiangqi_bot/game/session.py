@@ -4,9 +4,12 @@
 （打断自动对弈循环与轮次确认等待）。日志与棋盘状态通过回调推给网页。
 """
 
+import sys
 import threading
 import time  # noqa: F401 — smoke tests patch game.time.sleep
+import traceback
 from collections.abc import Callable
+from pathlib import Path
 
 from numpy import ndarray
 
@@ -18,19 +21,19 @@ from xiangqi_bot.board import (
     ROWS,
     START_SQUARES,
     Board,
-    fen_of_board,
     grid_to_square,
     make_empty_board,
     piece_color,
     piece_label,
-    square_to_grid,
 )
 from xiangqi_bot.config import AUTO_NEXT_GAME, ENDGAME_PIECE_COUNT
+from xiangqi_bot.game._base import Change, MoveResult  # noqa: F401 类型别名
 from xiangqi_bot.game.auto_next import AutoNextMixin
+from xiangqi_bot.game.board_diff import BoardDiffMixin
 from xiangqi_bot.game.capture import CaptureMixin
 from xiangqi_bot.game.enemy_move import EnemyMoveMixin
 from xiangqi_bot.game.game_over import GameOverMixin
-from xiangqi_bot.game.move_exec import MoveExecMixin
+from xiangqi_bot.game.self_move import SelfMoveMixin
 
 RED_CN = "红"
 BLACK_CN = "黑"
@@ -40,7 +43,14 @@ StateFn = Callable[[dict], None]
 AskTurnFn = Callable[[], None]  # 请求网页弹窗选择当前轮次
 
 
-class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, GameOverMixin):
+class GameSession(
+    AutoNextMixin,
+    CaptureMixin,
+    BoardDiffMixin,
+    SelfMoveMixin,
+    EnemyMoveMixin,
+    GameOverMixin,
+):
     def __init__(
         self,
         device,
@@ -48,31 +58,30 @@ class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, Ga
         on_state: StateFn | None = None,
         ask_turn: AskTurnFn | None = None,
     ) -> None:
-        self.device: Device = device
-        self._log = log
-        self._on_state = on_state
-        self._ask_turn_cb = ask_turn
-        self.templates = vision.load_templates()
-        self.engine = engine.Engine()
-        self._H: ndarray | None = None
-        self.board: Board = make_empty_board()
-        self.prev: ndarray | None = None
-        self.my_side: str | None = None
-        self._turn: str | None = None
-        self.phase: str | None = None
-        self.pending_move: tuple[str, str] | None = None
-        self.game_over = False
+        self.device: Device = device  # ADB 设备实例
+        self._log = log  # 日志回调 (kind, msg)
+        self._on_state = on_state  # 状态推送回调
+        self._ask_turn_cb = ask_turn  # 请求网页确认轮次的回调
+        self.templates = vision.load_templates()  # 棋子模板字典（14 张 60x60）
+        self.engine = engine.Engine()  # pikafish UCI 引擎客户端
+        self._homography: ndarray | None = None  # 透视矫正单应矩阵
+        self.board: Board = make_empty_board()  # 棋盘布局 10x9
+        self.prev_board: Board | None = None  # 上一轮次开始时的棋盘布局快照（变动对比基准）
+        self.my_side: str | None = None  # 我方红黑方（"red"/"black"）
+        self._turn: str | None = None  # 当前轮到哪方走棋
+        self.phase: str | None = None  # 棋局阶段（开局/中局/残局）
+        self.game_over = False  # 对局是否结束
         self._running = False  # 自动对弈循环是否进行中
         self._auto_next = False  # 自动下一局流程进行中（网页端据此保持按钮状态不变）
         self.auto_next_game = AUTO_NEXT_GAME  # 对局结束后是否自动下一局（网页开关可实时修改）
-        self._resign_streak = 0
-        self._lift_logged = False
-        self._noisy_count = 0
-        self._highlight: list[tuple[int, int]] = []
-        self._last_move: str | None = None
-        self._interrupt = threading.Event()
-        self._turn_answer: str | None = None
-        self._turn_event = threading.Event()
+        self._resign_streak = 0  # 连续疑似对局结束的帧计数
+        self._lift_logged = False  # 是否已提示过敌方提起棋子（防重复）
+        self._noisy_count = 0  # 连续噪声帧计数
+        self._highlight: list[tuple[int, int]] = []  # 走棋高亮格 [(r, c), ...]
+        self._last_move: str | None = None  # 最近一次着法的记谱表示
+        self._interrupt = threading.Event()  # 中断自动对弈的事件
+        self._turn_answer: str | None = None  # 网页弹窗返回的轮次确认答案
+        self._turn_event = threading.Event()  # 等待轮次确认的事件
 
     # ---------- 公共接口（worker 线程调用） ----------
 
@@ -96,71 +105,85 @@ class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, Ga
         self.engine.close()
 
     def start(self) -> None:
-        """开始棋局：截图同步棋盘状态，之后自动开始对弈"""
-        self._interrupt.clear()
-        corrected = self._capture()
-        if corrected is None:
-            self._emit()
-            return
-        self._reset()
-        self._init_from_corrected(corrected)
-        fresh = self._turn is not None and self._turn == self.my_side and self._is_fresh_one_move()
-        if (
-            not self._running
-            and not self.game_over
-            and self._turn is not None
-            and (self.phase == "开局" or fresh)
-        ):
-            if fresh:
-                self._log("info", "检测到刚开局局面（对方仅走一步），自动开始对弈")
-            self._start_flow()
+        """开始棋局：截图同步棋盘状态，之后自动开始对弈。
 
-    def move(self) -> bool:
-        """走一步：引擎计算 + 点击落子 + 截图校验。仅由 _flow 调用。"""
-        assert self.my_side is not None
-        fen = fen_of_board(self.board, self.my_side)
-        if self.pending_move is not None and self.pending_move[0] == fen:
-            move = self.pending_move[1]
-            self._log("info", f"使用预计算着法：{move}")
-        else:
-            pending = self._compute_move()
-            if pending is None:
-                return False
-            move = pending[1]
-        r1, c1 = square_to_grid(move[0:2], self.my_side)
-        r2, c2 = square_to_grid(move[2:4], self.my_side)
-        piece = self.board[r1][c1]
-        if piece is None:
+        整个初始化流程包 try/except：任何阶段（截图、识别、判方、弹窗确认）抛异常，
+        都打印 error + 堆栈，并推送 stopped 状态，前端可再点「开始棋局」重试。
+        """
+        self._interrupt.clear()
+        try:
+            corrected = self._capture()
+            if corrected is None:
+                self._emit()
+                return
+            self._reset()
+            if not self._init_from_corrected(corrected):
+                self._emit()  # 判方失败
+                return
+
+            # 弹窗确认（轮次无法推断时）
+            start_now = False
+            if self._turn is None:
+                self._turn = self.my_side
+                start_now = self._confirm_start()
+                if not start_now:
+                    side_cn = RED_CN if self.my_side == "red" else BLACK_CN
+                    self._log("ok", f"我方为{side_cn}方，当前棋盘为{self.phase}，未开始对弈")
+                    self._emit()
+                    return
+
+            # 日志输出 + 推送状态
+            side_cn = RED_CN if self.my_side == "red" else BLACK_CN
+            turn_cn = RED_CN if self._turn == "red" else BLACK_CN
+            self._log("ok", f"我方为{side_cn}方，当前棋盘为{self.phase}，轮到{turn_cn}方")
+            self._emit()
+
+            # 自动开始对弈（开局自动 或 弹窗确认）
+            if start_now or (self.phase == "开局" and self._turn is not None):
+                self._start_flow()
+        except Exception as exc:  # noqa: BLE001 — 初始化阶段异常统一兜底
             self._log(
-                "warn",
-                f"引擎着法 {move} 起点无我方棋子，棋盘数据可能已过期，请点击「开始棋局」重同步",
+                "error",
+                f"启动棋局异常：{exc!r}",
             )
-            return False
-        self._last_move = move
-        self._highlight = [(r1, c1), (r2, c2)]
-        captured = self.board[r2][c2]
-        capture_note = f"（吃{piece_label(captured)}）" if captured else ""
-        self._log(
-            "move",
-            f"走棋 {move}：{piece_label(piece)} "
-            f"{grid_to_square(r1, c1, self.my_side)} -> "
-            f"{grid_to_square(r2, c2, self.my_side)}{capture_note}",
-        )
-        return self._attempt_move(r1, c1, r2, c2, piece)
+            traceback.print_exc()
+            self._running = False
+            self._auto_next = False
+            self._emit()
 
     # ---------- 自动对弈 ----------
 
     def _start_flow(self) -> None:
-        """启动自动对弈：设置运行标志，进入主循环"""
+        """启动自动对弈：设置运行标志，进入主循环。
+
+        外层 try/except/finally 保证：
+        - 任何业务异常（引擎报错、ADB 故障、坐标断言失败…）都不击穿到上层 worker，
+          仅打印 error 日志并把堆栈打到本地 stderr；
+        - finally 里必然把 _running 置 False + _emit() 推送状态，
+          前端按钮自动回到"开始棋局"可用态，用户可一键重开，不"卡死"。
+        """
         self._running = True
         self._emit()
-        self._flow()
+        try:
+            self._flow()
+        except Exception as exc:  # noqa: BLE001 — 顶层兜所有业务异常
+            self._log(
+                "error",
+                f"自动对弈异常终止：{exc!r}",
+            )
+            traceback.print_exc()
+        finally:
+            self._running = False
+            self._auto_next = False
+            self._emit()
+        self._log("info", "flow 流程结束！")
 
     def _flow(self) -> None:
         """自动对弈主循环：单层循环，每个分支提前退出，避免嵌套。
 
-        流程：对方走棋 <-> 我方走棋 -> 对局结束后自动开始下一局。
-        直到中断、失败或自动下一局中止时退出。
+        - 每轮循环开头维护 prev_board = board 快照，作为该轮次变动对比基准。
+        - 敌方走棋 <-> 我方走棋交替；对局结束后若 auto_next_game 开启则自动结算+摆棋，
+          返回摆棋完毕帧后在此处统一调用 _init_from_corrected 初始化下一轮。
         """
         while True:
             if not self._running:
@@ -169,18 +192,24 @@ class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, Ga
                 break
             if self.my_side is None or self._turn is None:
                 break
+            # 每轮次快照：进入敌方检测或我方走棋前，把当前 board 固定为对比基准
+            # （prev_board 为 None 时由首次初始化保证，此处不做额外兜底）
+            if self.prev_board is not None:
+                self.prev_board = [row[:] for row in self.board]
             if self._turn != self.my_side:
                 self._wait_for_enemy_move()
             else:
-                if not self.move():
+                if not self._do_move():
                     self._running = False
                     self._log("info", "走棋失败，自动对弈已暂停，可点击「开始棋局」重试")
                     break
             if self.game_over:
-                if self.auto_next_game and not self._interrupt.is_set():
-                    if not self._auto_next_game():
+                if self.auto_next_game:
+                    corrected = self._auto_next_game()
+                    if corrected is None:
                         break
                 else:
+                    self._log("info", "自动下一局未开启")
                     break
         self._emit()
 
@@ -189,45 +218,30 @@ class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, Ga
     def _reset(self) -> None:
         """重置所有状态到初始值（全量同步前调用）"""
         self.board = make_empty_board()
-        self.prev = None
+        self.prev_board = None
         self.my_side = None
         self._turn = None
         self.phase = None
-        self.pending_move = None
         self.game_over = False
         self._running = False
+        self._auto_next = False
         self._resign_streak = 0
         self._lift_logged = False
         self._noisy_count = 0
         self._highlight = []
         self._last_move = None
 
-    def _init_from_corrected(self, corrected: ndarray) -> None:
-        """全量初始化：分析棋盘、判断红黑方/阶段/轮次，输出日志"""
+    def _init_from_corrected(self, corrected: ndarray) -> bool:
+        """全量初始化：分析棋盘、判断红黑方/阶段/轮次。返回是否成功"""
         self.board = vision.analyze_board(corrected, self.templates)
         side = self._detect_side()
         if side is None:
             self._log("error", "无法判断我方红黑方（未识别到将/帥），请检查棋盘画面后重新同步")
-            self._emit()
-            return
+            return False
         self.my_side = side
-        self.prev = corrected
-        self.phase = self._detect_phase()
-        self._turn = self._infer_turn()
-        side_cn = RED_CN if side == "red" else BLACK_CN
-        start_now = False
-        if self._turn is None:
-            self._turn = side
-            start_now = self._confirm_start()
-            if not start_now:
-                self._log("ok", f"我方为{side_cn}方，当前棋盘为{self.phase}，未开始对弈")
-                self._emit()
-                return
-        turn_cn = RED_CN if self._turn == "red" else BLACK_CN
-        self._log("ok", f"我方为{side_cn}方，当前棋盘为{self.phase}，轮到{turn_cn}方")
-        self._emit()
-        if start_now:
-            self._start_flow()
+        self.prev_board = [row[:] for row in self.board]  # 深拷贝当前布局
+        self.phase, self._turn = self._analyze_opening()
+        return True
 
     def _detect_side(self) -> str | None:
         """判断我方红黑方：将/帥在屏幕下方（行6..9）则该方为我方"""
@@ -239,34 +253,35 @@ class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, Ga
             return "black"
         return None
 
-    def _detect_phase(self) -> str:
-        """判断棋局阶段：棋子数>=20 按偏离开局默认位判断开局/中局，否则残局"""
-        count = sum(cell is not None for row in self.board for cell in row)
-        if count >= ENDGAME_PIECE_COUNT:
-            red_dev = self._color_deviates("red")
-            black_dev = self._color_deviates("black")
-            if not red_dev and not black_dev:
-                return "开局"
-            return "中局"
-        return "残局"
+    def _analyze_opening(self) -> tuple[str, str | None]:
+        """一次性分析棋局阶段和轮次（消除 _detect_phase/_infer_turn/_is_fresh_one_move 重复检测）。
 
-    def _infer_turn(self) -> str | None:
-        """推断当前轮到谁走。
-
-        残局 → None（无法推断）。
-        双方均不偏离 → "red"（红先）。
-        仅红方偏离 → "black"（红方已走，该黑方）。
-        双方均偏离 → None（中国象棋规则中不存在黑棋先走的情况）。
+        返回 (phase, turn):
+        - 残局：(残局, None) — 棋子数 < 20，无法推断轮次
+        - 开局未走：(开局, "red") — 32棋子双方不偏离，红方先走
+        - 开局对方走一步：(开局, 对方颜色) — 32棋子恰一方偏离且单步移动，轮到我方
+        - 中局：(中局, None) — 棋子≥20但<32，或32棋子但走多步，需弹窗确认
         """
-        if self.phase == "残局":
-            return None
+        count = sum(cell is not None for row in self.board for cell in row)
+        if count < ENDGAME_PIECE_COUNT:
+            return "残局", None
+
         red_dev = self._color_deviates("red")
         black_dev = self._color_deviates("black")
-        if not red_dev and not black_dev:
-            return "red"
-        if red_dev and not black_dev:
-            return "black"
-        return None
+
+        # 开局：32棋子未走或仅走一步
+        if count == 32:
+            if not red_dev and not black_dev:
+                return "开局", "red"  # 双方均未走，红先
+            if red_dev != black_dev:  # 恰一方偏离
+                moved = "red" if red_dev else "black"
+                if self._single_piece_moved(moved):
+                    # 对方走一步，轮到我方
+                    other = "black" if moved == "red" else "red"
+                    return "开局", other
+
+        # 中局：双方均偏离或棋子不足32但≥20
+        return "中局", None
 
     def _color_deviates(self, color: str) -> bool:
         """判断某颜色棋子是否偏离开局默认位置"""
@@ -291,17 +306,6 @@ class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, Ga
         if self.my_side == "black":
             red_sq, black_sq = black_sq, red_sq
         return red_sq if color == "red" else black_sq
-
-    def _is_fresh_one_move(self) -> bool:
-        """刚开局局面：全棋子均在盘上，且仅一方走了一步（对方未走）"""
-        if sum(cell is not None for row in self.board for cell in row) != 32:
-            return False
-        red_dev = self._color_deviates("red")
-        black_dev = self._color_deviates("black")
-        if red_dev == black_dev:
-            return False
-        moved = "red" if red_dev else "black"
-        return self._single_piece_moved(moved)
 
     def _single_piece_moved(self, color: str) -> bool:
         """该颜色相对开局默认格恰有一枚棋子移动：1 个默认格空出 + 1 个非默认格落子"""
@@ -332,31 +336,41 @@ class GameSession(AutoNextMixin, CaptureMixin, MoveExecMixin, EnemyMoveMixin, Ga
         return self._turn_answer == "start"
 
     def _finish_game(self, reason: str) -> None:
-        """标记对局结束并通知网页端"""
+        """标记对局结束并通知网页端。
+
+        额外打印调用路径给前端面板：避免之前用 traceback.format_stack 打出的
+        "File / line / in func" 标准异常格式让用户误以为是报错。
+        详细完整 traceback 仍然写本地 stderr（排错用），不污染前端面板。
+        """
+        self._log("info", f"[结束触发点] {reason}")
+        # 前端面板：简洁路径（每帧 → 函数名/文件名/行号，不含 Exception 风格 "File ... in"）
+        frames = traceback.extract_stack()[:-1]  # 去掉 _finish_game 自身
+        parts = [f"→ {f.name} ({Path(f.filename).name}:{f.lineno})" for f in frames]
+        # 只保留项目内的最后 8 帧（截断 threading / worker 启动等噪音）
+        project_frames = [p for p in parts if "xiangqi_bot" in p or "server.py" in p]
+        tail = project_frames[-8:] if project_frames else parts[-8:]
+        self._log("info", "调用路径：\n  " + "\n  ".join(tail))
+        # 本地 stderr：完整详细 traceback（含 threading.py 等外层帧），开发者排错用
+        print(
+            f"[finish_game] {reason}\n{''.join(traceback.format_stack()[:-1])}",
+            file=sys.stderr,
+            flush=True,
+        )
         self.game_over = True
         self._log("gameover", reason)
         self._emit()
 
-    def _log_changes(self, changes: list[tuple[int, int, str | None, str | None]]) -> None:
-        """输出走棋/变动日志：能推断为一步棋则格式化输出，否则逐格输出"""
+    def _log_move(self, moved: MoveResult) -> None:
+        """输出敌方走棋日志：已推断为一步棋，格式化输出（红/黑方 + 棋子 + 记谱 + 吃子）"""
         if self.my_side is None:
             return
-        moved = self._infer_move(changes)
-        if moved is not None:
-            (r1, c1), (r2, c2), piece, captured = moved
-            color_cn = RED_CN if piece_color(piece) == "red" else BLACK_CN
-            from_sq = grid_to_square(r1, c1, self.my_side)
-            to_sq = grid_to_square(r2, c2, self.my_side)
-            capture_note = f"（吃{piece_label(captured)}）" if captured else ""
-            self._last_move = f"{from_sq}-{to_sq}"
-            self._log(
-                "enemy", f"{color_cn}方走{PIECE_CN[piece]}：{from_sq} -> {to_sq}{capture_note}"
-            )
-            return
-        for r, c, old, new in changes:
-            old_name = piece_label(old) if old else "空"
-            new_name = piece_label(new) if new else "空"
-            self._log("enemy", f"{grid_to_square(r, c, self.my_side)} {old_name} -> {new_name}")
+        (r1, c1), (r2, c2), piece, captured = moved
+        color_cn = RED_CN if piece_color(piece) == "red" else BLACK_CN
+        from_sq = grid_to_square(r1, c1, self.my_side)
+        to_sq = grid_to_square(r2, c2, self.my_side)
+        capture_note = f"（吃{piece_label(captured)}）" if captured else ""
+        self._last_move = f"{from_sq}-{to_sq}"
+        self._log("enemy", f"{color_cn}方走{PIECE_CN[piece]}：{from_sq} -> {to_sq}{capture_note}")
 
     # ---------- 状态回传 ----------
 

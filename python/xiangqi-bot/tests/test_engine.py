@@ -74,11 +74,11 @@ def test_engine(collector: LogCollector) -> None:
     assert move == "h2e2", f"重试后应返回 bestmove，实际 {move}"
     assert len(spawned) == 2, f"首次失败应重建进程，实际启动 {len(spawned)} 次"
 
-    # 场景3：两次均失败 -> 抛 EngineError（而非裸 OSError）
-    e, spawned, _waits = _make_engine(write_fail=2)
+    # 场景3：三次均失败 -> 抛 EngineError（而非裸 OSError）
+    e, spawned, _waits = _make_engine(write_fail=3)
     with pytest.raises(EngineError, match="引擎"):
         e.best_move("fen3")
-    assert len(spawned) == 2, f"应尝试两次，实际启动 {len(spawned)} 次"
+    assert len(spawned) == 3, f"应尝试三次，实际启动 {len(spawned)} 次"
 
     # 场景4：终局 (none) 返回 None，不重建
     e, spawned, _waits = _make_engine()

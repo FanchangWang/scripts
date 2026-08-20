@@ -56,14 +56,26 @@ def test_prompt_turn(collector: LogCollector) -> None:
     _patch_adb_screencap()
     board = _full_start_board()
 
-    def run(answer: str) -> tuple[game.GameSession, list[int]]:
+    def run(answer: str) -> game.GameSession:
         dev = _MockDevice(str(RAW_SCREENSHOTS / "木_红_1080x2400.png"))
         s = game.GameSession(dev, collector.log, collector.on_state, None)
-        s._detect_phase = lambda: "残局"  # type: ignore[method-assign]
-        s._infer_turn = lambda: None  # type: ignore[method-assign]
-        s._capture = lambda: {"board": board, "diff": set()}  # type: ignore[method-assign]
+
+        def fake_init(corrected: np.ndarray) -> bool:
+            s.board = [row[:] for row in board]
+            s.my_side = "red"
+            s.phase, s._turn = "残局", None
+            s.prev_board = [row[:] for row in s.board]
+            return True
+
+        def fake_start_flow() -> None:
+            # 替换 _start_flow：不执行真正 try/finally，只保留语义——启动时设 running=True + emit
+            s._running = True
+            s._emit()
+
+        s._capture = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
+        s._init_from_corrected = fake_init  # type: ignore[method-assign]
         s._confirm_start = lambda: answer == "start"  # type: ignore[method-assign]
-        s._flow = lambda: None  # type: ignore[method-assign]
+        s._start_flow = fake_start_flow  # type: ignore[method-assign]
         s.start()
         return s
 

@@ -30,12 +30,12 @@ def _make_session(
     dev = MockDevice()
     s = game.GameSession(dev, collector.log, collector.on_state, None)
 
-    def fake_init(corrected: np.ndarray) -> None:
+    def fake_init(corrected: np.ndarray) -> bool:
         s.board = [row[:] for row in board]
         s.my_side = side
-        s.phase = s._detect_phase()
-        s._turn = s._infer_turn()
+        s.phase, s._turn = s._analyze_opening()
         s.prev = corrected
+        return True
 
     s._capture = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
     s._init_from_corrected = fake_init  # type: ignore[method-assign]
@@ -53,7 +53,8 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     s, started = _make_session(b, "black", collector)
     s.start()
     assert started, "场景1：对方走一步应自动开局"
-    assert any("刚开局局面" in m for m in collector.logs), collector.logs
+    assert s.phase == "开局", f"场景1：应判为开局，实际 {s.phase}"
+    assert s._turn == "black", f"场景1：应轮到黑方，实际 {s._turn}"
 
     # 场景2：我方红方，无人走棋（开局局面），应自动开局
     collector.clear()
@@ -88,4 +89,5 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     _move_piece(b, 2, 7, 2, 4)
     _move_piece(b, 0, 7, 2, 6)
     s, started = _make_session(b, "black", collector)
-    assert s._is_fresh_one_move() is False, "场景5：对方走多步不满足刚开局"
+    phase, _ = s._analyze_opening()
+    assert phase != "开局", "场景5：对方走多步不满足刚开局"

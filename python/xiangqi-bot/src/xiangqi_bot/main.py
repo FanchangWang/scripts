@@ -23,7 +23,7 @@ def _lan_ip() -> str:
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="xiangqi-bot",
-        description="中国象棋 Bot 网页版 — 通过 ADB 控制手机自动下棋",
+        description="JJ象棋 Bot 网页版 — 通过 ADB 控制手机自动下棋",
     )
     p.add_argument(
         "-l",
@@ -55,12 +55,17 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    # 屏蔽 SyntaxWarning：部分第三方依赖在 Python 3.12+ 会抛出该警告
+    import warnings
+
+    warnings.filterwarnings("ignore", category=SyntaxWarning)
+
     args = _parse_args()
     host = "127.0.0.1" if args.listen == "local" else "0.0.0.0"
     port = args.port
     ip = _lan_ip()
     print("=" * 46)
-    print("  中国象棋 Bot 网页版")
+    print("  JJ象棋 Bot 网页版")
     print(f"  本机访问：http://127.0.0.1:{port}")
     if args.listen == "lan":
         print(f"  手机访问：http://{ip}:{port}  （需同一局域网）")
@@ -94,7 +99,7 @@ def main() -> None:
         import webview
 
         webview.create_window(
-            "中国象棋 Bot",
+            "JJ象棋 Bot",
             url,
             width=1220,
             height=1000,
@@ -108,7 +113,3 @@ def main() -> None:
 
         webbrowser.open(url)
         server_thread.join()
-
-
-if __name__ == "__main__":
-    main()

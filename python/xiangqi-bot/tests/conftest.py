@@ -25,9 +25,13 @@ DICT_VISION_PATCHES: dict[str, Callable[..., Any]] = {}
 def _make_dict_vision() -> dict[str, Callable[..., Any]]:
     return {
         "analyze_cell": lambda corrected, r, c, templates: corrected["cells"].get((r, c)),
+        "analyze_cell_with_priority": lambda corrected, r, c, templates, priority_id=None: (
+            corrected["cells"].get((r, c), priority_id)
+        ),
         "diff_cells": lambda prev, corrected: corrected["diff"],
         "analyze_board": lambda corrected, templates: corrected["board"],
         "find_gameover_text": lambda img, w=0, h=0: [],
+        "tap_xy": lambda h, r, c: (50 + c * 100, 50 + r * 100),
     }
 
 

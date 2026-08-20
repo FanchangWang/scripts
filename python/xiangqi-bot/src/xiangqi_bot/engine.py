@@ -9,6 +9,7 @@
 import subprocess
 import threading
 import time
+from collections import deque
 from contextlib import suppress
 from typing import IO
 
@@ -22,9 +23,12 @@ class EngineError(RuntimeError):
 class Engine:
     """pikafish 长进程 UCI 会话（线程安全：调用方需用同一线程串行，内部亦有锁）"""
 
+    # 引擎输出行缓冲上限（防止后台 _drain 线程在无 best_move 调用时无限增长）
+    _MAX_LINES = 2000
+
     def __init__(self) -> None:
         self._proc: subprocess.Popen[str] | None = None
-        self._lines: list[str] = []
+        self._lines: deque[str] = deque(maxlen=self._MAX_LINES)
         self._lock = threading.Lock()
 
     def _write(self, stream: IO[str], line: str) -> None:
@@ -47,9 +51,12 @@ class Engine:
     def _wait_for(self, marker: str, timeout: float) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if any(marker in ln for ln in self._lines):
+            # 必须严格按"行首是 marker"匹配（去掉两端空白），避免 info 行含 marker 子串
+            # （如 "info string hash bestmove cache 1234"）导致提前命中却找不到真实响应。
+            stripped = (ln.strip() for ln in reversed(self._lines))
+            if any(ln.startswith(marker + " ") or ln == marker for ln in stripped):
                 return
-            time.sleep(0.02)
+            time.sleep(0.005)  # 5ms 轮询：本地管道收发是 ms 级，不需 20ms
         raise EngineError(f"引擎响应超时（等待 {marker}）")
 
     def _kill(self, proc: subprocess.Popen[str]) -> None:
@@ -108,10 +115,16 @@ class Engine:
     def best_move(self, fen: str, movetime_ms: int = config.ENGINE_MOVETIME_MS) -> str | None:
         """发送局面并返回 bestmove；无着法（终局）返回 None。
 
-        引擎无响应（超时）或进程退出（写管道报错）时自动重建进程并重试一次；
-        仍失败抛 EngineError。
+        引擎无响应（超时）或进程退出（写管道报错）时自动重建进程并重试两次；
+        仍失败抛 EngineError。restart 后额外 sleep 0.5s 等待 Windows 子进程资源释放，
+        避免短时间连续重启造成管道/句柄串扰。
+
+        等待超时 = 思考时间 + 1 秒缓冲：缓冲覆盖「go movetime 写入 + 线程启动/NNUE 热身
+        + stdout 管道 flush + readline 调度」的非思考开销。本地进程管道通信是 ms 级，
+        1 秒余量已足够覆盖 Windows 调度抖动 + 管道 flush 延迟；
+        重试 3 次意味着即使某一次引擎假卡住（Hash/管道异常），重启后也能恢复。
         """
-        for _attempt in range(2):
+        for attempt in range(3):
             self.start()
             assert self._proc is not None
             assert self._proc.stdin is not None
@@ -120,7 +133,7 @@ class Engine:
                     self._lines.clear()
                     self._write(self._proc.stdin, f"position fen {fen}")
                     self._write(self._proc.stdin, f"go movetime {movetime_ms}")
-                    self._wait_for("bestmove", movetime_ms / 1000 + 20)
+                    self._wait_for("bestmove", movetime_ms / 1000 + 1)
                     for line in self._lines:
                         if line.startswith("bestmove"):
                             tokens = line.split()
@@ -130,7 +143,8 @@ class Engine:
                             return None if move == "(none)" else move
             except (EngineError, OSError) as exc:
                 self._restart()
-                if _attempt == 0:
+                if attempt < 2:
+                    time.sleep(0.5)
                     continue
                 raise EngineError(f"引擎异常：{exc}") from exc
         raise EngineError("引擎未返回 bestmove")
