@@ -58,7 +58,7 @@ def _setup_frames(
     s: game.GameSession,
     frames: list[tuple[list, list]],
 ) -> None:
-    """Mock _capture + _analyze_board_with_prev_board 返回帧队列。"""
+    """Mock 截图链路 + _analyze_board_with_prev_board 返回帧队列。"""
 
     it = iter(frames)
 
@@ -66,7 +66,9 @@ def _setup_frames(
         return next(it)
 
     monkeypatch.setattr(type(s), "_analyze_board_with_prev_board", fake_analyze)
-    s._capture = lambda: np.zeros((10, 10, 3), np.uint8)  # type: ignore[method-assign]
+    s._take_screenshot = lambda: np.zeros((10, 10, 3), np.uint8)  # type: ignore[method-assign]
+    s._dismiss_draw = lambda img: (img, 0)  # type: ignore[method-assign]
+    s._correct_from_raw = lambda img: img  # type: ignore[method-assign]
 
 
 # ============================================================
@@ -265,7 +267,9 @@ def _setup_do_move(
         return next(frame_iter)
 
     monkeypatch.setattr(type(s), "_analyze_board_with_prev_board", fake_analyze)
-    s._capture = lambda: np.zeros((10, 10, 3), np.uint8)  # type: ignore[method-assign]
+    s._take_screenshot = lambda: np.zeros((10, 10, 3), np.uint8)  # type: ignore[method-assign]
+    s._dismiss_draw = lambda img: (img, 0)  # type: ignore[method-assign]
+    s._correct_from_raw = lambda img: img  # type: ignore[method-assign]
 
 
 def test_do_move_success(collector: LogCollector, monkeypatch: pytest.MonkeyPatch) -> None:

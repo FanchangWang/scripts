@@ -18,6 +18,7 @@ from xiangqi_bot import config
 
 RAW = config.PROJECT_ROOT / "raw_screenshots"
 OUT_DIR = config.GAMEOVER_TEXT_DIR
+DRAW_OUT_DIR = config.PROJECT_ROOT / "templates" / "draw"
 
 # 文字 -> (来源截图, 裁剪范围)。按钮取对话框底部按钮文字；段位提升为顶部提示文字；领取为悬浮遮罩文字。
 SOURCES: dict[str, tuple[str, tuple[int, int, int, int]]] = {
@@ -28,6 +29,11 @@ SOURCES: dict[str, tuple[str, tuple[int, int, int, int]]] = {
     "段位提升": ("段位提升_1080x2400.png", (360, 70, 720, 165)),
     "铜钱": ("再来一局_铜钱_1080x2400.png", (430, 1150, 525, 1200)),
     "领取": ("再来一局_领取_1080x2400.png", (500, 1360, 645, 1425)),
+}
+
+# 和棋弹窗模板（独立目录，不与结算文字混用）
+DRAW_SOURCES: dict[str, tuple[str, tuple[int, int, int, int]]] = {
+    "拒绝": ("和棋_1080x2400.png", (285, 1280, 435, 1345)),
 }
 
 
@@ -83,7 +89,51 @@ def main() -> int:
             continue
         out.write_bytes(buf.tobytes())
         print(f"  已写入 {out}")
-    print("模板已生成。异常/缺失请勿使用，需重新核验裁剪范围。")
+    print("结算文字模板已生成。异常/缺失请勿使用，需重新核验裁剪范围。")
+
+    # 和棋弹窗模板
+    DRAW_OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for word, (src, (x0, y0, x1, y1)) in DRAW_SOURCES.items():
+        if src not in shots:
+            print(f"错误: 缺少来源截图 {src}")
+            ok = False
+            continue
+        tpl = shots[src][y0:y1, x0:x1]
+        tgray = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
+        res_self = cv2.matchTemplate(
+            cv2.cvtColor(shots[src], cv2.COLOR_BGR2GRAY), tgray, cv2.TM_CCOEFF_NORMED
+        )
+        self_score = float(res_self.max())
+        worst = 0.0
+        worst_where = ""
+        for oname, oimg in shots.items():
+            if oname == src or word in oname:
+                continue
+            res = cv2.matchTemplate(
+                cv2.cvtColor(oimg, cv2.COLOR_BGR2GRAY), tgray, cv2.TM_CCOEFF_NORMED
+            )
+            _, mx, _, _ = cv2.minMaxLoc(res)
+            if float(mx) > worst:
+                worst = float(mx)
+                worst_where = oname
+        verdict = "OK" if self_score >= 0.95 and worst < config.GAMEOVER_TEXT_THRESHOLD else "异常"
+        if verdict != "OK":
+            ok = False
+        print(
+            f"[和棋] {word}: 自匹配 {self_score:.3f}，"
+            f"其它截图最高 {worst:.3f} ({worst_where}) -> {verdict}"
+        )
+        if verdict != "OK":
+            continue
+        out = DRAW_OUT_DIR / f"{word}.png"
+        success, buf = cv2.imencode(".png", tpl)
+        if not success:
+            print(f"错误: 无法编码 {word}.png")
+            ok = False
+            continue
+        out.write_bytes(buf.tobytes())
+        print(f"  已写入 {out}")
+    print("和棋弹窗模板已生成。")
     return 0 if ok else 1
 
 

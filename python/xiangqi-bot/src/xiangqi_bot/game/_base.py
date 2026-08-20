@@ -71,6 +71,9 @@ class _SessionAttrs:
     def _correct_from_raw(self, img: ndarray) -> ndarray | None:
         raise NotImplementedError
 
+    def _dismiss_draw(self, img: ndarray) -> tuple[ndarray, int]:
+        raise NotImplementedError
+
     def _analyze_board_with_prev_board(
         self, corrected: ndarray
     ) -> tuple[list[list[str | None]], list[Change]]:

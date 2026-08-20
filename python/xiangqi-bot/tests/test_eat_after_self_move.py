@@ -126,7 +126,9 @@ def test_self_eat_then_enemy_r2_eat_no_finish(
 
     monkeypatch.setattr(type(s), "_analyze_board_with_prev_board", fake_analyze)
 
-    s._capture = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
+    s._take_screenshot = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
+    s._dismiss_draw = lambda img: (img, 0)  # type: ignore[method-assign]
+    s._correct_from_raw = lambda img: img  # type: ignore[method-assign]
 
     # 全局 patch time.sleep（self_move/game_over 同 time 模块）
     noop_sleep = MagicMock()

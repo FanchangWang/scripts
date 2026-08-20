@@ -38,7 +38,13 @@ class EnemyMoveMixin(_SessionAttrs):
         self._lift_logged = False
         self._log("info", "检测敌方走棋")
         while self._running and not self._interrupt.is_set() and not self.game_over:
-            corrected = self._capture()
+            raw = self._take_screenshot()
+            if raw is None:
+                continue
+            raw, _drawn = self._dismiss_draw(raw)
+            if not self._running or self._interrupt.is_set() or self.game_over:
+                break
+            corrected = self._correct_from_raw(raw)
             if corrected is None:
                 continue
             new_board, updates = self._analyze_board_with_prev_board(corrected)

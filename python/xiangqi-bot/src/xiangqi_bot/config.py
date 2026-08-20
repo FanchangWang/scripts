@@ -57,3 +57,7 @@ GAMEOVER_TEXT_THRESHOLD = 0.75  # 模板匹配阈值
 GAMEOVER_TEMPLATE_W = 1080  # 模板基准宽度
 GAMEOVER_BUTTON_WORDS = ("下一关", "晋级赛", "重新挑战", "再来一局")  # 按钮类（点击）
 GAMEOVER_BACK_WORDS = ("段位提升", "铜钱", "领取")  # 遮罩类（发返回键）
+
+# 和棋弹窗
+DRAW_TEXT_DIR = TEMPLATES_DIR / "draw"
+DRAW_TEXT_THRESHOLD = 0.75  # 模板匹配阈值

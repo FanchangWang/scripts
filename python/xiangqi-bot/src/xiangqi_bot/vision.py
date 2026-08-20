@@ -16,6 +16,7 @@ Templates = dict[str, np.ndarray]
 _HOMOGRAPHY_CACHE: dict[tuple[int, int], np.ndarray] = {}
 
 _gameover_text_cache: dict[str, np.ndarray] | None = None
+_draw_text_cache: dict[str, np.ndarray] | None = None
 
 
 def load_templates() -> Templates:
@@ -170,6 +171,51 @@ def find_gameover_text(
     for word, tpl in templates.items():
         result = cv2.matchTemplate(gray, tpl, cv2.TM_CCOEFF_NORMED)
         ys, xs = np.where(result >= config.GAMEOVER_TEXT_THRESHOLD)
+        for x, y in zip(xs, ys, strict=False):
+            if x > gray.shape[1] - tpl.shape[1] or y > gray.shape[0] - tpl.shape[0]:
+                continue
+            cx = round((x + tpl.shape[1] / 2) * scale)
+            cy = round((y + tpl.shape[0] / 2) * scale)
+            matches.append((word, cx, cy, float(result[y, x])))
+    return sorted(matches, key=lambda m: m[3], reverse=True)
+
+
+def load_draw_text_templates() -> dict[str, np.ndarray]:
+    """加载 templates/draw/*.png 和棋弹窗模板（灰度），返回 {文字: 模板}"""
+    global _draw_text_cache
+    if _draw_text_cache is None:
+        templates: dict[str, np.ndarray] = {}
+        for path in sorted(config.DRAW_TEXT_DIR.glob("*.png")):
+            tpl = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+            if tpl is None:
+                raise RuntimeError(f"无法读取和棋弹窗模板: {path}")
+            templates[path.stem] = tpl
+        _draw_text_cache = templates
+    return _draw_text_cache
+
+
+def find_draw_dialog(img: np.ndarray, w: int = 0, h: int = 0) -> list[tuple[str, int, int, float]]:
+    """在原始截图上模板匹配和棋弹窗文字。
+
+    与 find_gameover_text 相同的缩放策略：缩放到 GAMEOVER_TEMPLATE_W 宽度再匹配，
+    坐标还原到源分辨率。返回所有高于阈值的
+    [(文字, 屏幕x, 屏幕y, 匹配分)]（中心点坐标），按分降序。
+    """
+    if w == 0 or h == 0:
+        h, w = img.shape[:2]
+    templates = load_draw_text_templates()
+    if not templates:
+        return []
+    scale = w / config.GAMEOVER_TEMPLATE_W
+    if w != config.GAMEOVER_TEMPLATE_W:
+        target_h = max(1, round(h / scale))
+        interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+        img = cv2.resize(img, (config.GAMEOVER_TEMPLATE_W, target_h), interpolation=interp)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    matches: list[tuple[str, int, int, float]] = []
+    for word, tpl in templates.items():
+        result = cv2.matchTemplate(gray, tpl, cv2.TM_CCOEFF_NORMED)
+        ys, xs = np.where(result >= config.DRAW_TEXT_THRESHOLD)
         for x, y in zip(xs, ys, strict=False):
             if x > gray.shape[1] - tpl.shape[1] or y > gray.shape[0] - tpl.shape[0]:
                 continue

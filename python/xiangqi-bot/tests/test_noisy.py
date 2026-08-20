@@ -60,7 +60,9 @@ def _setup_frames(
         return next(it)
 
     monkeypatch.setattr(type(s), "_analyze_board_with_prev_board", fake_analyze)
-    s._capture = lambda: np.zeros((10, 10, 3), np.uint8)  # type: ignore[method-assign]
+    s._take_screenshot = lambda: np.zeros((10, 10, 3), np.uint8)  # type: ignore[method-assign]
+    s._dismiss_draw = lambda img: (img, 0)  # type: ignore[method-assign]
+    s._correct_from_raw = lambda img: img  # type: ignore[method-assign]
 
 
 def _full_board() -> list[list[str | None]]:

@@ -186,7 +186,13 @@ class SelfMoveMixin(_SessionAttrs):
         lifted_on_last = False
         for idx in range(MOVE_VERIFY_COUNT):
             time.sleep(MOVE_SETTLE_MS / 1000)
-            corrected = self._capture()
+            raw = self._take_screenshot()
+            if raw is None:
+                continue
+            raw, _drawn = self._dismiss_draw(raw)
+            if not self._running or self._interrupt.is_set() or self.game_over:
+                return "_done_end_"
+            corrected = self._correct_from_raw(raw)
             if corrected is None:
                 continue
             new_board, updates = self._analyze_board_with_prev_board(corrected)
@@ -261,7 +267,13 @@ class SelfMoveMixin(_SessionAttrs):
             and not self.game_over
         ):
             time.sleep(MOVE_SETTLE_MS / 1000)
-            corrected = self._capture()
+            raw = self._take_screenshot()
+            if raw is None:
+                continue
+            raw, _drawn = self._dismiss_draw(raw)
+            if not self._running or self._interrupt.is_set() or self.game_over:
+                return False
+            corrected = self._correct_from_raw(raw)
             if corrected is None:
                 continue
             new_board, _updates = self._analyze_board_with_prev_board(corrected)
