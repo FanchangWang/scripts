@@ -105,7 +105,7 @@ def connect_to_device(ip_port):
 
 def start_scrcpy(device_id=None, extra_args=None):
     """启动scrcpy"""
-    cmd = ["scrcpy.exe", "--stay-awake"]
+    cmd = ["scrcpy.exe", "--stay-awake", "--audio-dup", "--window-height=1400"]
     # 询问用户是否保持屏幕关闭
     reply = QMessageBox.question(
         None,
@@ -138,7 +138,7 @@ def start_scrcpy(device_id=None, extra_args=None):
         )
         return False
     except Exception as e:
-        QMessageBox.critical(None, "错误", f"启动scrcpy失败: {str(e)}")
+        QMessageBox.critical(None, "错误", f"启动scrcpy失败: {e!s}")
         return False
 
 
