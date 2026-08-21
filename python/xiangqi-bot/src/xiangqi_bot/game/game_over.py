@@ -48,7 +48,9 @@ class GameOverMixin(_SessionAttrs):
             return False
         opp = "black" if self.my_side == "red" else "red"
         opp_cn = BLACK_CN if opp == "black" else RED_CN
-        fen = fen_of_board(self.board, self.my_side, to_move=opp)
+        fen = fen_of_board(
+            self.board, self.my_side, to_move=opp, halfmove_clock=self.halfmove_clock
+        )
         self._log("info", f"绝杀探测 FEN（{opp_cn}方行棋）：{fen}")
         try:
             mated = self.engine.is_mate(fen, ENGINE_MATE_PROBE_MS)

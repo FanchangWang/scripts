@@ -130,7 +130,7 @@ class SelfMoveMixin(_SessionAttrs):
                 "_compute_move：my_side 未初始化，无法生成着法（请先「开始棋局」同步棋盘）",
             )
             return None
-        fen = fen_of_board(self.board, self.my_side, self._turn)
+        fen = fen_of_board(self.board, self.my_side, self._turn, self.halfmove_clock)
         self._log("info", f"生成 FEN：{fen}")
         self._log("info", "计算着法...")
         try:
@@ -466,9 +466,10 @@ class SelfMoveMixin(_SessionAttrs):
 
         注：绝杀校验不再放在这里，调用方按需调用（目前只有 n==2 + _infer_move 分支调用）。
         """
-        (r1, c1), (r2, c2), piece, _cap = moved
+        (r1, c1), (r2, c2), piece, cap = moved
         self.board[r1][c1] = None
         self.board[r2][c2] = piece
+        self.halfmove_clock = 0 if cap is not None else self.halfmove_clock + 1
         self._turn = "black" if (self.my_side or "red") == "red" else "red"
         self._highlight = [(r1, c1), (r2, c2)]
         self._emit()
@@ -480,12 +481,14 @@ class SelfMoveMixin(_SessionAttrs):
         1. 我方走棋：self_moved 显式传入（不再依赖 self._highlight）
         2. 敌方走棋：enemy_moved 显式传入
         """
-        (sr, sc), (dr, dc), my_piece, _mc = self_moved
+        (sr, sc), (dr, dc), my_piece, my_cap = self_moved
         self.board[sr][sc] = None
         self.board[dr][dc] = my_piece
-        (xr, xc), (yr, yc), ep, _ec = enemy_moved
+        self.halfmove_clock = 0 if my_cap is not None else self.halfmove_clock + 1
+        (xr, xc), (yr, yc), ep, en_cap = enemy_moved
         self.board[xr][xc] = None
         self.board[yr][yc] = ep
+        self.halfmove_clock = 0 if en_cap is not None else self.halfmove_clock + 1
         self._turn = self.my_side
         self._highlight = [(xr, xc), (yr, yc)]
         self._log_move(enemy_moved)

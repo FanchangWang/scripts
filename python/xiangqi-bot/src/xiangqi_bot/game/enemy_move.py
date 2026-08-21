@@ -17,9 +17,10 @@ class EnemyMoveMixin(_SessionAttrs):
         （基准快照 prev_board 由 _flow 循环开头统一维护；corrected 参数保留与基类签名一致，
         当前实现未使用但后续如需基于截图做自愈/校验可直接扩展。）
         """
-        (r1, c1), (r2, c2), piece, _cap = moved
+        (r1, c1), (r2, c2), piece, cap = moved
         self.board[r1][c1] = None
         self.board[r2][c2] = piece
+        self.halfmove_clock = 0 if cap is not None else self.halfmove_clock + 1
         self._turn = self.my_side
         self._highlight = [(r1, c1), (r2, c2)]
         self._log_move(moved)

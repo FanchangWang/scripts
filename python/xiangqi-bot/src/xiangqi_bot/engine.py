@@ -105,12 +105,31 @@ class Engine:
                 self._wait_for("uciok", 15)
                 self._write(proc.stdin, f"setoption name Threads value {config.ENGINE_THREADS}")
                 self._write(proc.stdin, f"setoption name Hash value {config.ENGINE_HASH_MB}")
+                self._write(
+                    proc.stdin,
+                    f"setoption name Rule60MaxPly value {config.ENGINE_RULE60_MAX_PLY}",
+                )
                 self._write(proc.stdin, "isready")
                 self._wait_for("readyok", 15)
             except EngineError:
                 self._kill(proc)
                 self._proc = None
                 raise
+
+    def newgame(self) -> None:
+        """通知引擎新对局开始（UCI ucinewgame），清空哈希与搜索状态。
+
+        UCI 最佳实践：每局开始前发送。引擎未启动时先启动；必须在引擎空闲时调用
+        （worker 线程串行保证，调用方需确保上一着 bestmove 已返回）。
+        """
+        self.start()
+        assert self._proc is not None
+        assert self._proc.stdin is not None
+        with self._lock:
+            self._lines.clear()
+            self._write(self._proc.stdin, "ucinewgame")
+            self._write(self._proc.stdin, "isready")
+            self._wait_for("readyok", 15)
 
     def best_move(self, fen: str, movetime_ms: int = config.ENGINE_MOVETIME_MS) -> str | None:
         """发送局面并返回 bestmove；无着法（终局）返回 None。

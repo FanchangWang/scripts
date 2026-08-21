@@ -104,11 +104,18 @@ def make_empty_board() -> Board:
     return [[None for _ in range(COLS)] for _ in range(ROWS)]
 
 
-def fen_of_board(board: Board, side: str, to_move: str | None = None) -> str:
+def fen_of_board(
+    board: Board,
+    side: str,
+    to_move: str | None = None,
+    halfmove_clock: int = 0,
+) -> str:
     """棋盘布局 -> FEN 字符串。
 
     `side` 为我方颜色（决定屏幕棋盘行列翻转）；`to_move` 为行棋方（默认等于 side），
     用于"走棋后判断对手是否被绝杀"等需要对方行棋的局面。
+    `halfmove_clock` 为自上次吃子以来的半回合数（单方走一步 +1，吃子归零），
+    供 pikafish 的自然限招（Sixty Move Rule）判断限着临近。
     FEN 为 ICCS 绝对坐标系（黑方在 FEN 上方），不随我方红黑变化；
     我方为黑方时（屏幕棋盘翻转），行列均反转后再写入 FEN。
     """
@@ -131,7 +138,7 @@ def fen_of_board(board: Board, side: str, to_move: str | None = None) -> str:
         if empty:
             parts.append(str(empty))
         lines.append("".join(parts))
-    return f"{'/'.join(lines)} {side_char} - - 0 1"
+    return f"{'/'.join(lines)} {side_char} - - {halfmove_clock} 1"
 
 
 def piece_color(piece_id: str) -> str:

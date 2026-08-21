@@ -1,0 +1,25 @@
+# 统一文本文件换行符为 LF
+*.py text eol=lf
+*.md text eol=lf
+*.ps1 text eol=lf
+*.toml text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# 二进制文件不做换行符转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.exe binary
+*.nnue binary
+*.so binary
+*.dll binary

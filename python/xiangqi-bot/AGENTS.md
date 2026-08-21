@@ -63,6 +63,7 @@ ENGINE_MOVETIME_MS = 1000
 ENGINE_THREADS = 12
 ENGINE_HASH_MB = 2048
 ENGINE_MATE_PROBE_MS = 200  # 绝杀判断用的短时限探测
+ENGINE_RULE60_MAX_PLY = 60  # 自然限招（60 步不吃子判和，对应平台规则；引擎 Sixty Move Rule 默认开）
 
 # 自动检测敌方走棋（毫秒）
 ENEMY_RECHECK_WAIT_MS = 500  # 噪声帧延时复检
@@ -232,7 +233,8 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 
 - `START_SQUARES`：14 类棋子的开局默认格（用于轮次推断/自愈）
 - 记谱 <-> 网格（受红黑方影响）、FEN <-> 布局（互逆，按红黑方翻转）
-- `make_empty_board()` / `fen_of_board(board, side, to_move=...)`
+- `make_empty_board()` / `fen_of_board(board, side, to_move=..., halfmove_clock=0)`
+  （`halfmove_clock` 为自上次吃子以来的半回合数，写入 FEN 第六字段供引擎自然限招判断）
 - `corrected_center(r, c)`：矫正空间格心（供脚本/调试）
 - `piece_color(piece_id)`：返回 `"red"` / `"black"`
 
@@ -252,13 +254,18 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 ### engine.py — pikafish UCI 长进程客户端
 
 - 每局只启动一个引擎子进程（cwd = `pikafish/`，引擎才能找到 `pikafish.nnue`），线程安全
-- `start()` 幂等：`uci`->`uciok`、`setoption Threads/Hash`、`isready`->`readyok`
+- `start()` 幂等：`uci`->`uciok`、`setoption Threads/Hash/Rule60MaxPly`、`isready`->`readyok`
+- `newgame()`：发 `ucinewgame` + `isready`->`readyok`，通知引擎新对局开始（清 hash）；引擎未启动时先 `start()`
 - `best_move(fen, movetime_ms)`：`position fen` + `go movetime`，等 `bestmove`；`(none)`/超时返回 None
 - **自愈**：引擎无响应（超时）或进程已退出（Windows 写管道可能抛 `OSError [Errno 22]`）时，
   自动结束进程重建并**重试一次**，仍失败抛 `EngineError`（绝不外泄裸 OSError 击穿调用方）
 - `is_mate(fen, movetime_ms)`：对方无路可走即返回 True（绝杀/困毙）
 - **`quit` 必须只在 close() 时发**，且所有 bestmove 均已返回；若与 `go` 批量写入会浅层搜索（棋力骤降）
 - 后台线程持续读 stdout，一条条发指令并等待对应标记
+- **自然限招**：引擎 `Sixty Move Rule` 默认开启，`start()` 时设 `Rule60MaxPly=ENGINE_RULE60_MAX_PLY(=60)`；
+  引擎依赖 FEN 第六字段（halfmove clock）感知限着临近，故 `GameSession.halfmove_clock` 必须正确维护
+  （单方走一步+1，吃子归零；兵卒移动不重置），所有 `fen_of_board` 调用均需传入。中局/残局手动同步时
+  clock 从 0 起算（截图无法还原历史吃子步数，属已知折中）
 
 ### game/ — 对局状态机（mixin 拆分）
 
@@ -269,14 +276,18 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 #### session.py — 主类与核心状态
 
 - 状态属性：`board`(10x9 Board)、`prev_board`(Board|None，上一轮次布局快照)、`my_side`、`_turn`、`phase`、
-  `game_over`、`_running`、`_auto_next`、`auto_next_game`、`_resign_streak`、`_noisy_count`、`_lift_logged`、`_highlight`、`_last_move`
+  `game_over`、`_running`、`_auto_next`、`auto_next_game`、`_resign_streak`、`_noisy_count`、`_lift_logged`、
+  `halfmove_clock`（自上次吃子以来的半回合数，单方走一步+1/吃子归零，写入 FEN 供引擎自然限招判断）、
+  `_highlight`、`_last_move`
 - `start()`：截图同步棋盘（`_reset` + `_init_from_corrected`：全量分析 -> 判方 -> 判阶段/轮次），
   然后自动开始对弈；`phase=="开局"` 或 `_is_fresh_one_move()` 成立时自动 `_start_flow()`；
   其余中局/残局只载入棋盘，等用户再次点击「开始棋局」
+- `_start_flow()`：置 `_running=True` → `engine.newgame()`（ucinewgame 清 hash）→ `_flow()`；
+  顶层 try/except/finally 兜底，异常不击穿 worker，finally 必推送 stopped 状态
 - `_flow()`：自动对弈主循环。每轮次开头快照 `prev_board = board`；我方走棋 <-> 敌方走棋检测交替；
   对局结束后若 `auto_next_game` 开启调 `_auto_next_game()` 拿到 corrected 帧，继续循环；失败/中止则 break
 - `interrupt()` / `answer_turn(answer)` / `set_auto_next(enable)`：线程安全
-- `_reset()`：重置全部状态（含 board/prev_board/turn/phase/game_over/_running/_resign_streak 等）
+- `_reset()`：重置全部状态（含 board/prev_board/turn/phase/game_over/_running/_resign_streak/halfmove_clock 等）
 - `_init_from_corrected(corrected)`：纯初始化（分析棋盘 -> 判方 -> 保存 prev_board -> 分析阶段/轮次），返回 bool
 - `_analyze_opening()`：一次性返回 `(phase, turn)`，合并了旧的 `_detect_phase`/`_infer_turn`/`_is_fresh_one_move`
 - `_status()`：`idle` / `red` / `black` / `over` / `stopped` / `auto_next`
@@ -287,7 +298,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 
 - `_do_move()`：走棋主流程。`_compute_move()` 算着法 → `_unpack_move()` 解析坐标 → `_attempt_move()` 点击 →
   `_verify_and_classify()` 校验分类。`SELF_MOVE_ATTEMPTS=2` 次整步重试上限
-- `_compute_move()`：生成 FEN → `engine.best_move()` → 缓存到 `pending_move`
+- `_compute_move()`：生成 FEN（含 `halfmove_clock`）→ `engine.best_move()` → 缓存到 `pending_move`
 - `_unpack_move(fen, move)`：解析 `(r1, c1, r2, c2, piece)`，设置 `_highlight` / `_last_move`
 - `_attempt_move(r1, c1, r2, c2)`：**只做 ADB 点击**（起子 + 间隔 + 落子），不校验
 - `_verify_and_classify(r1, c1, r2, c2, piece)` → `bool | str`：
@@ -303,8 +314,8 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
   - 5 次全没命中后：认输续帧 while 循环（仅 `_resign_streak > 0` 时进入），confirmed → `"_done_end_"`
   - 返回优先级：`"_lifted_only_"` > `stationary`
 - `_lifted_only_` 处理：外层 `_tap_cell` 补点后重跑一整轮 `_verify_and_classify`，不消耗 `SELF_MOVE_ATTEMPTS`
-- `_apply_self_move(moved)`：写布局 + 切轮次 + 高亮 + 推送
-- `_apply_self_then_enemy(enemy_moved)`：先写我方走棋（从 `_highlight` 取坐标），再写敌方走棋，轮次切回我方
+- `_apply_self_move(moved)`：写布局 + 更新 `halfmove_clock`（吃子归零/不吃+1）+ 切轮次 + 高亮 + 推送
+- `_apply_self_then_enemy(self_moved, enemy_moved)`：先写我方走棋（更新 clock），再写敌方走棋（更新 clock），轮次切回我方
 
 #### enemy_move.py — 敌方走棋检测（EnemyMoveMixin）
 
@@ -316,7 +327,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
   - `n>2`：fallthrough_noisy → `_detect_resignation_board`
   - fallthrough_noisy：认输 confirmed → `_finish_game` + return；suspect → 延时复检；none → `_noisy_count += 1`
   - `_noisy_count >= ENEMY_NOISY_MAX` → 暂停自动对弈（不提交变动，不污染内存布局）
-- `_apply_enemy_move(moved)`：写布局 + 保存 prev_board + 切轮次 + 高亮 + 日志 + 推送
+- `_apply_enemy_move(moved)`：写布局 + 更新 `halfmove_clock`（吃子归零/不吃+1）+ 切轮次 + 高亮 + 日志 + 推送
 
 #### game_over.py — 绝杀与认输（GameOverMixin）
 
@@ -343,6 +354,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `_auto_next_game()` → `ndarray | None`：对局结束后自动下一局（合并了旧 `_init_next_game`）。
   - 调 `_scan_gameover_interact()` 拿摆棋完毕帧
   - `_reset()` + `_init_from_corrected(corrected)` 初始化下一局
+  - `engine.newgame()` 通知引擎新对局（清 hash）
   - 残局模式（棋子 < `ENDGAME_MODE_PIECE_COUNT`）固定红方先走
   - 流程期间 `_auto_next=True`（`_status()` 返回 `auto_next`）
 - `_scan_gameover_interact()` → `ndarray | None`：结算交互 + 等待摆棋（合并了旧 `_wait_for_board_setup`）。
@@ -443,6 +455,8 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - 注释/日志用中文，代码本身不加多余注释
 - 写完后必须跑 `.\check.ps1`（ruff format + ruff check + ty check）且通过
 - 测试：`uv run pytest tests/ -v`，30 个场景全通过
+- 文本文件换行符统一使用 LF（`.py`/`.md`/`.ps1`/`.toml` 等），仓库根目录 `.gitattributes` 已强制 `eol=lf`；
+  Windows 下不要提交 CRLF
 
 ## 已实测的技术事实（勿重复验证）
 

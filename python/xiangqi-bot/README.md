@@ -5,7 +5,7 @@
 ## 功能特性
 
 - **ADB 截图识别棋盘**：已知四角坐标做透视矫正，再对 14 张模板做模板匹配
-- **pikafish 引擎计算走棋**：UCI 协议长进程复用，`go movetime` 固定时限思考
+- **pikafish 引擎计算走棋**：UCI 协议长进程复用，`go movetime` 固定时限思考；正确维护 FEN halfmove clock，引擎感知自然限招（60 步不吃子判和），优势残局主动避和
 - **ADB 模拟点击落子**：点起子 → 间隔 → 点落子，`MOVE_VERIFY_COUNT=5` 帧逐帧分类校验
 - **走棋校验分类**：按变动格数 `n` 分类（0/1/2/3/4/>4），命中即写入内存；提子未落补点重跑
 - **走棋失败重试**：`SELF_MOVE_ATTEMPTS=2` 次整步重试上限；外层重新点击（完全不动）或补点重跑（提起未落）
@@ -117,8 +117,8 @@ xiangqi-bot/
 1. `device.screencap()` 截取屏幕 PNG，`cv2.imdecode` 解码
 2. 按分辨率查 `BOARD_CORNERS` 做透视矫正到 900x1000 棋盘空间
 3. 对 90 个格子逐一与 14 张模板做 `matchTemplate`（TM_CCOEFF_NORMED）识别棋子
-4. 布局转 FEN（ICCS 绝对坐标系，黑方在上，不随红黑方变化）
-5. 调 pikafish（UCI：`position fen` + `go movetime`）计算着法
+4. 布局转 FEN（ICCS 绝对坐标系，黑方在上，不随红黑方变化；第六字段 halfmove clock 记录自上次吃子的半回合数）
+5. 调 pikafish（UCI：`position fen` + `go movetime`）计算着法；引擎启动时设 `Rule60MaxPly=60`，配合 halfmove clock 感知自然限招；每局开始发 `ucinewgame` 清 hash
 6. 矫正格心经逆单应映射回原图坐标，ADB 点击落子
 7. `MOVE_VERIFY_COUNT=5` 帧逐帧分类校验（按变动格数 0/1/2/3/4/>4），命中即写入内存；失败整步重试或补点重跑
 
@@ -252,6 +252,7 @@ uv run python scripts/compare_piece_templates.py        # 对比模板相似度
 | `ENGINE_THREADS` | 12 | 引擎线程数 |
 | `ENGINE_HASH_MB` | 2048 | 引擎哈希（MB） |
 | `ENGINE_MATE_PROBE_MS` | 200 | 绝杀探测短时限 |
+| `ENGINE_RULE60_MAX_PLY` | 60 | 自然限招步数（60 步不吃子判和，引擎 `Rule60MaxPly`） |
 | `ENEMY_RECHECK_WAIT_MS` | 500 | 多格变动/无法构成完整一步（疑似瞬态噪声）时延时复检 |
 | `ENEMY_NOISY_MAX` | 3 | 连续噪声帧上限，超过则暂停自动对弈 |
 | `RESIGN_CONFIRM_COUNT` | 3 | 双方将/帅均缺失需连续几帧才确认认输 |

@@ -44,6 +44,7 @@ class AutoNextMixin(_SessionAttrs):
             self._running = keep_running  # 保留 flow 循环运行状态（_reset 默认清零）
             if not self._init_from_corrected(corrected):
                 return None
+            self.engine.newgame()
             if self.phase == "残局":
                 self._turn = "red"
                 side_cn = RED_CN if self.my_side == "red" else BLACK_CN

@@ -42,6 +42,7 @@ ENGINE_MOVETIME_MS = 1000  # go movetime（毫秒）
 ENGINE_THREADS = 12
 ENGINE_HASH_MB = 2048
 ENGINE_MATE_PROBE_MS = 200  # 绝杀探测短时限
+ENGINE_RULE60_MAX_PLY = 60  # 自然限招（60 步不吃子判和，对应平台规则）
 
 # 残局判断
 ENDGAME_PIECE_COUNT = 24  # 少于此值视为残局
