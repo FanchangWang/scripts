@@ -254,7 +254,7 @@ def _setup_do_move(
     engine_cls = s.engine.__class__
 
     move_iter = iter(best_moves)
-    monkeypatch.setattr(engine_cls, "best_move", lambda self, fen: next(move_iter))
+    monkeypatch.setattr(engine_cls, "best_move", lambda self, fen: (next(move_iter), 0))
     monkeypatch.setattr(engine_cls, "is_mate", lambda self, fen, ms: is_mate)
     monkeypatch.setattr(type(s), "_attempt_move", lambda self, r1, c1, r2, c2: True)
 

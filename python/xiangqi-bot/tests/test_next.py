@@ -38,7 +38,7 @@ def _make_session(collector: LogCollector) -> tuple[game.GameSession, MockDevice
     s._resign_streak = 0
     s._lift_logged = False
     s._noisy_count = 0
-    s.engine.best_move = lambda fen: "e2e3"  # type: ignore[method-assign]
+    s.engine.best_move = lambda fen: ("e2e3", 0)  # type: ignore[method-assign]
     s.engine.is_mate = lambda fen, ms: False  # type: ignore[method-assign]
     s.engine.newgame = lambda: None  # type: ignore[method-assign]
     return s, dev

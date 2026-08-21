@@ -78,6 +78,7 @@ class GameSession(
         self._lift_logged = False  # 是否已提示过敌方提起棋子（防重复）
         self._noisy_count = 0  # 连续噪声帧计数
         self.halfmove_clock = 0  # 自上次吃子以来的半回合数（单方走一步+1，吃子归零）
+        self._last_eval_score = 0  # 我方最近一次走棋时引擎评估分（正=我方占优），供和棋决策
         self._highlight: list[tuple[int, int]] = []  # 走棋高亮格 [(r, c), ...]
         self._last_move: str | None = None  # 最近一次着法的记谱表示
         self._interrupt = threading.Event()  # 中断自动对弈的事件
@@ -239,6 +240,7 @@ class GameSession(
         self._lift_logged = False
         self._noisy_count = 0
         self.halfmove_clock = 0
+        self._last_eval_score = 0
         self._highlight = []
         self._last_move = None
 

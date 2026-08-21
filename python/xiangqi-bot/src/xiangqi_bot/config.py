@@ -62,3 +62,4 @@ GAMEOVER_BACK_WORDS = ("段位提升", "铜钱", "领取")  # 遮罩类（发返
 # 和棋弹窗
 DRAW_TEXT_DIR = TEMPLATES_DIR / "draw"
 DRAW_TEXT_THRESHOLD = 0.75  # 模板匹配阈值
+DRAW_REJECT_CP = 1000  # 我方优势超过此值（厘兵，100≈1兵）则拒绝和棋，否则同意

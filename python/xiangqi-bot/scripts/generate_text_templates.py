@@ -33,7 +33,8 @@ SOURCES: dict[str, tuple[str, tuple[int, int, int, int]]] = {
 
 # 和棋弹窗模板（独立目录，不与结算文字混用）
 DRAW_SOURCES: dict[str, tuple[str, tuple[int, int, int, int]]] = {
-    "拒绝": ("和棋_1080x2400.png", (285, 1280, 435, 1345)),
+    "和棋_拒绝": ("和棋_1080x2400.png", (285, 1280, 435, 1345)),
+    "和棋_同意": ("和棋_1080x2400.png", (645, 1280, 795, 1345)),
 }
 
 

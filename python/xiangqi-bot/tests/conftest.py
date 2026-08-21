@@ -31,6 +31,7 @@ def _make_dict_vision() -> dict[str, Callable[..., Any]]:
         "diff_cells": lambda prev, corrected: corrected["diff"],
         "analyze_board": lambda corrected, templates: corrected["board"],
         "find_gameover_text": lambda img, w=0, h=0: [],
+        "find_draw_dialog": lambda img, w=0, h=0: [],
         "tap_xy": lambda h, r, c: (50 + c * 100, 50 + r * 100),
     }
 

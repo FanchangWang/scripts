@@ -51,6 +51,7 @@ class _SessionAttrs:
     halfmove_clock: (
         int  # 自上次吃子以来的半回合数（单方走一步+1，吃子归零），写入 FEN 供引擎自然限招判断
     )
+    _last_eval_score: int  # 我方最近一次走棋时引擎评估分（厘兵，正=我方占优），供和棋决策复用
     _highlight: list[tuple[int, int]]  # 走棋高亮格 [(r, c), ...]
     _last_move: str | None  # 最近一次着法的记谱表示
     _interrupt: threading.Event  # 中断自动对弈的事件

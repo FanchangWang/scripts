@@ -131,17 +131,10 @@ class Engine:
             self._write(self._proc.stdin, "isready")
             self._wait_for("readyok", 15)
 
-    def best_move(self, fen: str, movetime_ms: int = config.ENGINE_MOVETIME_MS) -> str | None:
-        """发送局面并返回 bestmove；无着法（终局）返回 None。
+    def _go(self, fen: str, movetime_ms: int) -> list[str]:
+        """发送 position+go 并等待 bestmove，返回本次输出行快照（含 info/bestmove）。
 
-        引擎无响应（超时）或进程退出（写管道报错）时自动重建进程并重试两次；
-        仍失败抛 EngineError。restart 后额外 sleep 0.5s 等待 Windows 子进程资源释放，
-        避免短时间连续重启造成管道/句柄串扰。
-
-        等待超时 = 思考时间 + 1 秒缓冲：缓冲覆盖「go movetime 写入 + 线程启动/NNUE 热身
-        + stdout 管道 flush + readline 调度」的非思考开销。本地进程管道通信是 ms 级，
-        1 秒余量已足够覆盖 Windows 调度抖动 + 管道 flush 延迟；
-        重试 3 次意味着即使某一次引擎假卡住（Hash/管道异常），重启后也能恢复。
+        引擎无响应或进程退出时自动重建并重试（共 3 次），仍失败抛 EngineError。
         """
         for attempt in range(3):
             self.start()
@@ -153,13 +146,7 @@ class Engine:
                     self._write(self._proc.stdin, f"position fen {fen}")
                     self._write(self._proc.stdin, f"go movetime {movetime_ms}")
                     self._wait_for("bestmove", movetime_ms / 1000 + 1)
-                    for line in self._lines:
-                        if line.startswith("bestmove"):
-                            tokens = line.split()
-                            if len(tokens) < 2:
-                                return None
-                            move = tokens[1]
-                            return None if move == "(none)" else move
+                    return list(self._lines)
             except (EngineError, OSError) as exc:
                 self._restart()
                 if attempt < 2:
@@ -168,9 +155,61 @@ class Engine:
                 raise EngineError(f"引擎异常：{exc}") from exc
         raise EngineError("引擎未返回 bestmove")
 
+    @staticmethod
+    def _parse_score(lines: list[str]) -> int:
+        """从引擎 info 行解析局面分数（厘兵，正=当前行棋方占优）。
+
+        score cp N 直接取 N；score mate N 映射为 ±(100000-|N|)；无 score 行返回 0。
+        取最后一条 info score（最深搜索结果）。
+        """
+        score = 0
+        for line in lines:
+            if not line.startswith("info"):
+                continue
+            tokens = line.split()
+            for i, tok in enumerate(tokens):
+                if tok == "score" and i + 2 < len(tokens):
+                    kind = tokens[i + 1]
+                    try:
+                        val = int(tokens[i + 2])
+                    except ValueError:
+                        continue
+                    if kind == "cp":
+                        score = val
+                    elif kind == "mate":
+                        score = 100000 - val if val > 0 else -100000 - val
+        return score
+
+    def best_move(
+        self, fen: str, movetime_ms: int = config.ENGINE_MOVETIME_MS
+    ) -> tuple[str | None, int]:
+        """发送局面并返回 (bestmove, score)；无着法（终局）返回 (None, 0)。
+
+        score 为引擎 info score cp/mate（厘兵，正=当前行棋方占优；mate 映射 ±100000）。
+        引擎无响应（超时）或进程退出（写管道报错）时自动重建进程并重试两次；
+        仍失败抛 EngineError。restart 后额外 sleep 0.5s 等待 Windows 子进程资源释放，
+        避免短时间连续重启造成管道/句柄串扰。
+
+        等待超时 = 思考时间 + 1 秒缓冲：缓冲覆盖「go movetime 写入 + 线程启动/NNUE 热身
+        + stdout 管道 flush + readline 调度」的非思考开销。本地进程管道通信是 ms 级，
+        1 秒余量已足够覆盖 Windows 调度抖动 + 管道 flush 延迟；
+        重试 3 次意味着即使某一次引擎假卡住（Hash/管道异常），重启后也能恢复。
+        """
+        lines = self._go(fen, movetime_ms)
+        score = self._parse_score(lines)
+        for line in lines:
+            if line.startswith("bestmove"):
+                tokens = line.split()
+                if len(tokens) < 2:
+                    return None, score
+                move = tokens[1]
+                return (None if move == "(none)" else move), score
+        return None, score
+
     def is_mate(self, fen: str, movetime_ms: int = config.ENGINE_MATE_PROBE_MS) -> bool:
         """对方在该局面是否无路可走（绝杀/困毙）"""
-        return self.best_move(fen, movetime_ms) is None
+        move, _score = self.best_move(fen, movetime_ms)
+        return move is None
 
     def close(self) -> None:
         """结束引擎进程（`quit` 只在收到所有 bestmove 后发出，避免浅层搜索）"""

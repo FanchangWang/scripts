@@ -64,13 +64,14 @@ def test_engine(collector: LogCollector) -> None:
 
     # 场景1：首次超时 -> 自动重启引擎重试成功
     e, spawned, _waits = _make_engine(wait_fail=1)
-    move = e.best_move("fen1")
+    move, score = e.best_move("fen1")
     assert move == "h2e2", f"重试后应返回 bestmove，实际 {move}"
+    assert score == 0, f"无 info 行时 score 应为 0，实际 {score}"
     assert len(spawned) == 2, f"首次失败应重建进程，实际启动 {len(spawned)} 次"
 
     # 场景2：写管道报错（进程已死）-> 重启重试成功
     e, spawned, _waits = _make_engine(write_fail=1)
-    move = e.best_move("fen2")
+    move, _score = e.best_move("fen2")
     assert move == "h2e2", f"重试后应返回 bestmove，实际 {move}"
     assert len(spawned) == 2, f"首次失败应重建进程，实际启动 {len(spawned)} 次"
 
@@ -87,7 +88,7 @@ def test_engine(collector: LogCollector) -> None:
         e._lines.append("bestmove (none)")
 
     e._wait_for = fake_wait_none  # type: ignore[method-assign]
-    move = e.best_move("fen4")
+    move, _score = e.best_move("fen4")
     assert move is None, f"终局应返回 None，实际 {move}"
     assert len(spawned) == 1, "正常场景不应重建进程"
     assert e.is_mate("fen5") is True, "is_mate 应复用 best_move"

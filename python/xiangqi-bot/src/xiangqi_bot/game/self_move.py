@@ -134,7 +134,7 @@ class SelfMoveMixin(_SessionAttrs):
         self._log("info", f"生成 FEN：{fen}")
         self._log("info", "计算着法...")
         try:
-            move = self.engine.best_move(fen)
+            move, score = self.engine.best_move(fen)
         except engine.EngineError as exc:
             self._log(
                 "error",
@@ -149,7 +149,7 @@ class SelfMoveMixin(_SessionAttrs):
                 f"引擎无可用着法，用 {short_time}ms 短时限重试...",
             )
             try:
-                move = self.engine.best_move(fen, short_time)
+                move, score = self.engine.best_move(fen, short_time)
             except engine.EngineError as exc:
                 self._log(
                     "error",
@@ -160,7 +160,8 @@ class SelfMoveMixin(_SessionAttrs):
             self._log("warn", "引擎无可用着法（对局可能已结束）")
             self._finish_game("引擎判定我方无路可走，对局结束")
             return None
-        self._log("info", f"引擎着法：{move}")
+        self._last_eval_score = score
+        self._log("info", f"引擎着法：{move}（评估分 {score}）")
         return fen, move
 
     # ---------- 逐帧校验 + 分类 ----------

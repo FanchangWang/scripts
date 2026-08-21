@@ -99,7 +99,7 @@ def test_self_eat_then_enemy_r2_eat_no_finish(
     engine_cls = s.engine.__class__
 
     def spy_best_move(self, fen, movetime_ms=1000):  # type: ignore[no-untyped-def]
-        return next(best_move_seq)
+        return next(best_move_seq), 0
 
     def spy_is_mate(self, fen, movetime_ms=200):  # type: ignore[no-untyped-def]
         is_mate_calls.append(1)

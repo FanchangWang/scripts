@@ -65,6 +65,10 @@ ENGINE_HASH_MB = 2048
 ENGINE_MATE_PROBE_MS = 200  # 绝杀判断用的短时限探测
 ENGINE_RULE60_MAX_PLY = 60  # 自然限招（60 步不吃子判和，对应平台规则；引擎 Sixty Move Rule 默认开）
 
+# 和棋弹窗
+DRAW_TEXT_DIR = TEMPLATES_DIR / "draw"  # 和棋_同意.png / 和棋_拒绝.png 模板
+DRAW_TEXT_THRESHOLD = 0.75  # 模板匹配阈值
+DRAW_REJECT_CP = 1000  # 我方优势超过此值（厘兵，100≈1兵）则拒绝，否则同意
 # 自动检测敌方走棋（毫秒）
 ENEMY_RECHECK_WAIT_MS = 500  # 噪声帧延时复检
 ENEMY_NOISY_MAX = 3  # 连续噪声帧上限，超过则暂停自动对弈
@@ -256,7 +260,9 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - 每局只启动一个引擎子进程（cwd = `pikafish/`，引擎才能找到 `pikafish.nnue`），线程安全
 - `start()` 幂等：`uci`->`uciok`、`setoption Threads/Hash/Rule60MaxPly`、`isready`->`readyok`
 - `newgame()`：发 `ucinewgame` + `isready`->`readyok`，通知引擎新对局开始（清 hash）；引擎未启动时先 `start()`
-- `best_move(fen, movetime_ms)`：`position fen` + `go movetime`，等 `bestmove`；`(none)`/超时返回 None
+- `best_move(fen, movetime_ms)` → `(move | None, score)`：`position fen` + `go movetime`，等 `bestmove`；
+  无着法（终局）返回 `(None, 0)`；score 为 `info score cp/mate`（厘兵，正=行棋方占优；mate 映射 ±100000）
+- 内部 `_go()` 封装 position+go+等 bestmove+重试，返回输出行快照；`_parse_score()` 静态方法解析分数
 - **自愈**：引擎无响应（超时）或进程已退出（Windows 写管道可能抛 `OSError [Errno 22]`）时，
   自动结束进程重建并**重试一次**，仍失败抛 `EngineError`（绝不外泄裸 OSError 击穿调用方）
 - `is_mate(fen, movetime_ms)`：对方无路可走即返回 True（绝杀/困毙）
@@ -278,6 +284,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - 状态属性：`board`(10x9 Board)、`prev_board`(Board|None，上一轮次布局快照)、`my_side`、`_turn`、`phase`、
   `game_over`、`_running`、`_auto_next`、`auto_next_game`、`_resign_streak`、`_noisy_count`、`_lift_logged`、
   `halfmove_clock`（自上次吃子以来的半回合数，单方走一步+1/吃子归零，写入 FEN 供引擎自然限招判断）、
+  `_last_eval_score`（我方最近一次走棋时引擎评估分，正=我方占优；和棋弹窗复用，避免重复搜索）、
   `_highlight`、`_last_move`
 - `start()`：截图同步棋盘（`_reset` + `_init_from_corrected`：全量分析 -> 判方 -> 判阶段/轮次），
   然后自动开始对弈；`phase=="开局"` 或 `_is_fresh_one_move()` 成立时自动 `_start_flow()`；
@@ -287,7 +294,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `_flow()`：自动对弈主循环。每轮次开头快照 `prev_board = board`；我方走棋 <-> 敌方走棋检测交替；
   对局结束后若 `auto_next_game` 开启调 `_auto_next_game()` 拿到 corrected 帧，继续循环；失败/中止则 break
 - `interrupt()` / `answer_turn(answer)` / `set_auto_next(enable)`：线程安全
-- `_reset()`：重置全部状态（含 board/prev_board/turn/phase/game_over/_running/_resign_streak/halfmove_clock 等）
+- `_reset()`：重置全部状态（含 board/prev_board/turn/phase/game_over/_running/_resign_streak/halfmove_clock/_last_eval_score 等）
 - `_init_from_corrected(corrected)`：纯初始化（分析棋盘 -> 判方 -> 保存 prev_board -> 分析阶段/轮次），返回 bool
 - `_analyze_opening()`：一次性返回 `(phase, turn)`，合并了旧的 `_detect_phase`/`_infer_turn`/`_is_fresh_one_move`
 - `_status()`：`idle` / `red` / `black` / `over` / `stopped` / `auto_next`
@@ -298,7 +305,8 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 
 - `_do_move()`：走棋主流程。`_compute_move()` 算着法 → `_unpack_move()` 解析坐标 → `_attempt_move()` 点击 →
   `_verify_and_classify()` 校验分类。`SELF_MOVE_ATTEMPTS=2` 次整步重试上限
-- `_compute_move()`：生成 FEN（含 `halfmove_clock`）→ `engine.best_move()` → 缓存到 `pending_move`
+- `_compute_move()`：生成 FEN（含 `halfmove_clock`）→ `engine.best_move()` → 缓存到 `pending_move`；
+  成功后把 `engine.last_score` 存到 `_last_eval_score`（供和棋决策复用）
 - `_unpack_move(fen, move)`：解析 `(r1, c1, r2, c2, piece)`，设置 `_highlight` / `_last_move`
 - `_attempt_move(r1, c1, r2, c2)`：**只做 ADB 点击**（起子 + 间隔 + 落子），不校验
 - `_verify_and_classify(r1, c1, r2, c2, piece)` → `bool | str`：
@@ -348,6 +356,10 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `_take_screenshot()`：`adb_client.screencap(device)`
 - `_correct_from_raw(img)`：按分辨率查表 + `vision.correct_board` + 缓存 `_homography`
 - `_capture()`：截图 + 矫正，失败返回 None
+- `_dismiss_draw(img)`：`find_draw_dialog` 同时匹配到「和棋_同意」「和棋_拒绝」两按钮才认定为和棋页面；
+  首次命中调 `_draw_decision()` 决定同意/拒绝并点击对应按钮，循环直到弹窗消失；返回 `(截图, 点击次数)`
+- `_draw_decision()`：复用 `_compute_move` 缓存的 `_last_eval_score`（正=我方占优；弹窗距我方上一步
+  最多差敌方一步棋，可接受）；`> DRAW_REJECT_CP` 拒绝，否则同意；不额外发引擎搜索
 
 #### auto_next.py — 自动下一局（AutoNextMixin）
 
