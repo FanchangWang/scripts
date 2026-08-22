@@ -12,6 +12,7 @@ import pytest
 
 from xiangqi_bot.board import make_empty_board
 from xiangqi_bot.game import session as game
+from xiangqi_bot.game.state import Side
 
 from .conftest import LogCollector, MockDevice
 
@@ -19,14 +20,14 @@ from .conftest import LogCollector, MockDevice
 def _make_session(collector: LogCollector) -> game.GameSession:
     dev = MockDevice()
     s = game.GameSession(dev, collector.log, collector.on_state, None)
-    s.my_side = "red"
-    s._turn = "black"
+    s.state.my_side = Side.RED
+    s.state.turn = Side.BLACK
     s._running = True
-    s.game_over = False
-    s.board = make_empty_board()
-    s.board[9][4] = "r_K"
-    s.board[0][4] = "b_k"
-    s.prev_board = [row[:] for row in s.board]
+    s.state.game_over = False
+    s.state.board = make_empty_board()
+    s.state.board[9][4] = "r_K"
+    s.state.board[0][4] = "b_k"
+    s.state.prev_board = [row[:] for row in s.state.board]
     return s
 
 
@@ -38,7 +39,7 @@ def test_checkmate_true(collector: LogCollector, monkeypatch: pytest.MonkeyPatch
 
     result = s._checkmate_probe()
     assert result is True
-    assert s.game_over is True
+    assert s.state.game_over is True
 
 
 def test_checkmate_false(collector: LogCollector, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,7 +50,7 @@ def test_checkmate_false(collector: LogCollector, monkeypatch: pytest.MonkeyPatc
 
     result = s._checkmate_probe()
     assert result is False
-    assert s.game_over is False
+    assert s.state.game_over is False
 
 
 def test_checkmate_engine_error(collector: LogCollector, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,5 +65,5 @@ def test_checkmate_engine_error(collector: LogCollector, monkeypatch: pytest.Mon
 
     result = s._checkmate_probe()
     assert result is False
-    assert s.game_over is False
+    assert s.state.game_over is False
     assert any("引擎绝杀探测失败" in line for line in collector.logs)

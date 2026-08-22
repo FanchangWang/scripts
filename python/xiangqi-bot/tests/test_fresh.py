@@ -5,7 +5,9 @@ from __future__ import annotations
 import numpy as np
 
 from xiangqi_bot.board import START_SQUARES, make_empty_board
+from xiangqi_bot.game import opening
 from xiangqi_bot.game import session as game
+from xiangqi_bot.game.state import Phase, Side
 
 from .conftest import LogCollector, MockDevice
 
@@ -31,14 +33,15 @@ def _make_session(
     s = game.GameSession(dev, collector.log, collector.on_state, None)
 
     def fake_init(corrected: np.ndarray) -> bool:
-        s.board = [row[:] for row in board]
-        s.my_side = side
-        s.phase, s._turn = s._analyze_opening()
-        s.prev = corrected
+        my_side = Side(side)
+        s.state.board = [row[:] for row in board]
+        s.state.prev_board = [row[:] for row in board]
+        s.state.my_side = my_side
+        s.state.phase = opening.detect_phase(board, my_side)
         return True
 
-    s._capture = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
-    s._init_from_corrected = fake_init  # type: ignore[method-assign]
+    s.capture.grab = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
+    s._initialize = fake_init  # type: ignore[method-assign]
     started: list[int] = []
     s._start_flow = lambda: started.append(1)  # type: ignore[method-assign]
     return s, started
@@ -53,8 +56,8 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     s, started = _make_session(b, "black", collector)
     s.start()
     assert started, "场景1：对方走一步应自动开局"
-    assert s.phase == "开局", f"场景1：应判为开局，实际 {s.phase}"
-    assert s._turn == "black", f"场景1：应轮到黑方，实际 {s._turn}"
+    assert s.state.phase == "开局", f"场景1：应判为开局，实际 {s.state.phase}"
+    assert s.state.turn == Side.BLACK, f"场景1：应轮到黑方，实际 {s.state.turn}"
 
     # 场景2：我方红方，无人走棋（开局局面），应自动开局
     collector.clear()
@@ -72,7 +75,7 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     s.start()
     assert not started, "场景3：双方各走一步不应自动开局"
 
-    # 场景4：残局（棋子 < 20），不应自动开局
+    # 场景4：残局（棋子 < 24），不应自动开局
     collector.clear()
     b = make_empty_board()
     b[0][4] = "b_k"
@@ -88,6 +91,4 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     b = _full_board("black")
     _move_piece(b, 2, 7, 2, 4)
     _move_piece(b, 0, 7, 2, 6)
-    s, started = _make_session(b, "black", collector)
-    phase, _ = s._analyze_opening()
-    assert phase != "开局", "场景5：对方走多步不满足刚开局"
+    assert opening.detect_phase(b, Side.BLACK) != Phase.OPENING, "场景5：对方走多步不满足刚开局"

@@ -81,16 +81,17 @@ xiangqi-bot/
 │   ├── board.py                    # 网格坐标、记谱/FEN 转换、开局默认格
 │   ├── vision.py                   # 透视矫正、模板匹配、两图对比
 │   ├── engine.py                   # pikafish UCI 长进程客户端
-│   ├── game/                       # 对局状态机（mixin 拆分）
+│   ├── game/                       # 对局模块（数据结构 + 纯函数 + IO 类 + 薄控制层）
 │   │   ├── __init__.py             # 导出 GameSession
-│   │   ├── _base.py                # _SessionAttrs 基类 + 抽象方法契约
-│   │   ├── session.py              # 主类（状态 + _flow + start + _reset + _analyze_opening）
-│   │   ├── self_move.py            # SelfMoveMixin（_do_move / _verify_and_classify）
-│   │   ├── enemy_move.py           # EnemyMoveMixin（_wait_for_enemy_move / _apply_enemy_move）
-│   │   ├── game_over.py            # GameOverMixin（_checkmate_probe / _detect_resignation_board）
-│   │   ├── capture.py              # CaptureMixin（_capture / _take_screenshot / _correct_from_raw）
-│   │   ├── board_diff.py           # BoardDiffMixin（_analyze_board_with_prev_board / _infer_move）
-│   │   └── auto_next.py            # AutoNextMixin（_auto_next_game / _scan_gameover_interact）
+│   │   ├── state.py                # Side/Move/Change/GameState/FrameResult/VerifyOutcome
+│   │   ├── opening.py              # 开局分析纯函数（detect_side/detect_phase/infer_turn）
+│   │   ├── moves.py                # 走法推断/应用/格式化纯函数
+│   │   ├── classifier.py           # 帧分类纯函数（self/enemy 帧分类 + 认输疑似判断）
+│   │   ├── recognition.py          # 棋盘识别纯函数（矫正图 → 布局+变动）
+│   │   ├── draw.py                 # 和棋决策纯函数
+│   │   ├── capture.py              # Capture IO 类（截图/矫正/点击/和棋弹窗）
+│   │   ├── auto_next.py            # AutoNext IO 类（结算交互 + 等待摆棋）
+│   │   └── session.py              # GameSession 薄控制层（编排主循环，不继承任何类）
 │   └── web/                        # 网页前端（index.html / app.js / style.css）
 ├── pikafish/
 │   ├── pikafish-bmi2.exe           # 引擎（必须在其目录运行，依赖 pikafish.nnue）
@@ -123,66 +124,68 @@ xiangqi-bot/
 6. 矫正格心经逆单应映射回原图坐标，ADB 点击落子
 7. `MOVE_VERIFY_COUNT=5` 帧逐帧分类校验（按变动格数 0/1/2/3/4/>4），命中即写入内存；失败整步重试或补点重跑
 
-### 走棋校验分类（`_verify_and_classify`）
+### 走棋校验分类（`_verify`）
 
-`MOVE_VERIFY_COUNT=5` 帧逐帧校验，按变动格数 `n` 分类：
+`MOVE_VERIFY_COUNT=5` 帧逐帧校验，每帧由纯函数 `classifier.classify_self_frame` 按变动格数 `n` 分类：
 
 | `n` | 处理 |
 |---|---|
-| 0 | 保持 `stationary=True`，不做认输检测 |
-| ≥1 | `stationary=False`，清零 `_resign_streak`（走棋中间态不可能是结算画面） |
-| 1（最后一帧 + `_is_lifted_only`） | `"_lifted_only_"`：提子未落，外层补点重跑（不消耗重试次数） |
-| 2（`_infer_move` 命中） | `_apply_self_move` + `_checkmate_probe` → `"_done_ok_"` |
-| 2（兜底） | 我方吃子 + 敌方在同终点反吃 → `_apply_self_then_enemy` → `"_done_ok_"` |
-| 3 | `_classify_n3`：敌方在终点反吃 / 敌方另有走棋 |
+| 0 | STATIONARY，不做认输检测 |
+| 1（最后一帧 + `_is_lifted_only`） | LIFTED_ONLY：提子未落，外层补点重跑（不消耗重试次数） |
+| 2（`moves.infer` 命中） | `_apply_self_move` + `_checkmate_probe` → DONE_OK |
+| 2（兜底） | 我方起点空 + 敌方起点空 + 终点是敌方棋 → `_apply_self_then_enemy` → DONE_OK |
+| 3 | `_classify_n3`：敌方在终点反吃 / 我方走棋+敌方占我原位 |
 | 4 | `_classify_n4`：我方走棋 + 敌方走棋 |
-| >4 | 变动过多（结束画面/棋盘重置），不做处理 |
+| >4 且双方将帅缺失 | RESIGN_SUSPECT（更新认输 streak） |
 
-5 次全没命中后：认输续帧 while 循环（仅 `_resign_streak > 0` 时进入），confirmed → `"_done_end_"`
+5 次全没命中后：认输续帧 while 循环（仅 `resign_streak > 0` 时进入），confirmed → DONE_END。
+最终返回 `VerifyOutcome` 枚举：DONE_OK / DONE_END / LIFTED_ONLY / STATIONARY / TRANSIENT。
 
 ### 走棋主流程（`_do_move`）
 
 1. `_compute_move()` → `(fen, move)`
-2. `_unpack_move(fen, move)` → `(r1, c1, r2, c2, piece)` + 设置 `_highlight`
+2. `_unpack_move(fen, move)` → `(r1, c1, r2, c2, piece)` + 设置 highlight
 3. `_attempt_move(r1, c1, r2, c2)`：**只做 ADB 点击**（起子 + `TAP_HOLD_INTERVAL_MS` 间隔 + 落子）
-4. `_verify_and_classify(r1, c1, r2, c2, piece)` → `bool | str`
-   - `"_done_ok_"` → return True
-   - `"_done_end_"` → return False
-   - `"_lifted_only_"` → `_tap_cell` 补点 + 重跑 `_verify_and_classify`（不消耗 `SELF_MOVE_ATTEMPTS`）
-   - `True`（stationary）→ 外层重走（整步重新点击）
-   - `False` → break（中止）
+4. `_verify(r1, c1, r2, c2, piece)` → `VerifyOutcome`
+   - `DONE_OK` → return True
+   - `DONE_END` → return False
+   - `LIFTED_ONLY` → `capture.tap(r2,c2)` 补点 + 重跑 `_verify`（不消耗 `SELF_MOVE_ATTEMPTS`）
+   - `STATIONARY` → 外层重走（整步重新点击）
+   - `TRANSIENT` → break（中止）
 5. `SELF_MOVE_ATTEMPTS=2` 次用完 → "走棋尝试失败" → return False
 
 ### 自动检测敌方走棋（`_wait_for_enemy_move`）
 
 - 连续截图（无额外延时），无限循环（直到用户中断或对局结束）
-- 每轮次开头快照 `prev_board = board`，作为变动对比基准
-- `n==0`：重置提子/噪声计数，continue（不做认输检测）
-- `n==1` + 敌方提子：提示一次「检测到敌方提起棋子」，continue
-- `n==2` + `_infer_move` 命中 → `_apply_enemy_move` + return
-- 其余（`n==1` 非提子 / `n>2`）：fallthrough_noisy → `_detect_resignation_board`
-  - confirmed → `_finish_game` + return
-  - suspect → 延时 `RESIGN_SUSPECT_WAIT_MS` 复检
-  - none → `_noisy_count += 1`；达 `ENEMY_NOISY_MAX` → 暂停自动对弈（不提交变动）
+- 每轮次开头 `state.snapshot_prev()`，作为变动对比基准
+- 每帧由纯函数 `classifier.classify_enemy_frame` 分类：
+  - `Move`（n==2 infer 命中）→ `_apply_enemy_move` + return
+  - `"lifted"`（n==1 敌方提子）→ 提示一次「检测到敌方提起棋子」，continue
+  - `"silent"`（n==0）→ 重置提子/噪声计数，continue
+  - `"noisy"` → `_update_resign`：
+    - confirmed → `_finish_game` + return
+    - suspect → 延时 `RESIGN_SUSPECT_WAIT_MS` 复检
+    - none → `noisy_count += 1`；达 `ENEMY_NOISY_MAX` → 暂停自动对弈（不提交变动）
 
-### 认输检测（`_detect_resignation_board`）
+### 认输检测（`_update_resign`）
 
-基于棋盘布局（非图像），检测双方将/帅是否同时缺失：
+纯函数 `classifier.is_resign_suspect` 判断双方将/帅是否同时缺失，控制层维护 streak，
+返回 `ResignResult` 枚举：
 
-- 双方将/帅均缺失 → `_resign_streak += 1`，达 `RESIGN_CONFIRM_COUNT=3` → `"confirmed"`
-- 单方或双方都在 → `_resign_streak = 0` → `"none"`
+- 双方将/帅均缺失 → `resign_streak += 1`，达 `RESIGN_CONFIRM_COUNT=3` → `CONFIRMED`
+- 未达阈值 → `SUSPECT`（延时复检）
+- 单方或双方都在 → `resign_streak = 0` → `NONE`
 
 ### 自动下一局（`_auto_next_game`）
 
 对局结束后若 `auto_next_game` 开启且未中断，自动开始下一局：
 
-1. `_scan_gameover_interact()`：scan/setup 状态机
-   - `mode="scan"`：扫结算文字，按钮类点击 / 遮罩类（段位提升/铜钱/领取）发返回键
-   - 未命中且棋子出现 → 切 `mode="setup"`
-   - `mode="setup"`：连续 2 帧 count 相同且 `diff_cells` 无变动 → 返回 corrected
-   - count 归零 → 回退 `mode="scan"` 继续扫结算文字
-   - 共用同一循环 + `GAMEOVER_SCAN_MAX` 截图上限（不再分两阶段重复 `analyze_board`）
-2. `_reset()` + `_init_from_corrected(corrected)` 初始化下一局
+1. `auto_next_handler.scan_and_wait()`：单循环扫描结算文字 + 等待摆棋
+   - 扫到按钮类（下一关/晋级赛/重新挑战/再来一局）→ 点击；遮罩类（段位提升/铜钱/领取）→ 发返回键
+   - 同一文字连续操作上限 `GAMEOVER_RETRY_MAX=3`，不同文字出现时重新计数
+   - 无文字时分析棋盘：32 子直接返回；否则连续 `BOARD_STABLE_THRESHOLD=3` 帧棋盘相同返回
+   - 总超时 `AUTO_NEXT_TIMEOUT_S=180`
+2. `state.reset()` + `_initialize(corrected)` 初始化下一局
 3. 残局模式（棋子 < `ENDGAME_MODE_PIECE_COUNT=31`）固定红方先走
 
 流程期间 `_auto_next=True`（`_status()` 返回 `auto_next`），网页端按钮状态保持不变。
@@ -232,7 +235,7 @@ xiangqi-bot/
 ```powershell
 uv run python -m xiangqi_bot                              # 启动网页服务（端口 8900，自动开浏览器）
 .\check.ps1                                               # 一键 ruff format + ruff check + ty check
-uv run pytest tests/ -v                                  # 全部测试（30 场景）
+uv run pytest tests/ -v                                  # 全部测试（31 场景）
 uv run python scripts/regenerate_templates.py            # 从矫正棋盘重新切割棋子模板
 uv run python scripts/detect_board_corners.py <截图> [--save-board]  # 探测四角坐标
 uv run python scripts/generate_text_templates.py         # 从结算截图重新生成结算文字模板
@@ -261,12 +264,11 @@ uv run python scripts/compare_piece_templates.py        # 对比模板相似度
 | `ENDGAME_PIECE_COUNT` | 24 | 可识别棋子数低于该值视为残局（轮次无法静态推断） |
 | `ENDGAME_MODE_PIECE_COUNT` | 31 | 残局模式（如「下一关」）棋子数上限，固定红先 |
 | `AUTO_NEXT_GAME` | True | 对局结束后自动开始下一局（网页端开关默认值，运行时可实时修改） |
-| `GAMEOVER_SCAN_MAX` | 15 | 扫描结算文字/等待摆棋完毕截图次数上限 |
-| `GAMEOVER_SCAN_INTERVAL_MS` | 500 | 扫描间隔 |
+| `AUTO_NEXT_TIMEOUT_S` | 180 | 结算交互 + 摆棋等待总超时（秒） |
+| `GAMEOVER_SCAN_INTERVAL_MS` | 300 | 扫描间隔 |
 | `GAMEOVER_TEXT_THRESHOLD` | 0.75 | 结算文字模板匹配阈值 |
 | `GAMEOVER_TEMPLATE_W` | 1080 | 结算文字模板基准宽度（匹配前等比缩放） |
-| `BOARD_STABLE_THRESHOLD` | 3 | 结算文字消失后连续识别到棋子的帧数阈值 |
-| `GAMEOVER_TAP_VERIFY_MS` | 2000 | 点击结算按钮后的校验延时（动画未结束时点击可能无响应） |
+| `BOARD_STABLE_THRESHOLD` | 3 | 结算文字消失后连续相同棋盘帧数 |
 | `GAMEOVER_RETRY_MAX` | 3 | 同一按钮/遮罩连续操作上限（不同文字出现时重新计数） |
 | `GAMEOVER_BUTTON_WORDS` | 下一关/晋级赛/重新挑战/再来一局 | 按钮类（点击）优先级 |
 | `GAMEOVER_BACK_WORDS` | 段位提升/铜钱/领取 | 文字/遮罩类（发送返回键） |

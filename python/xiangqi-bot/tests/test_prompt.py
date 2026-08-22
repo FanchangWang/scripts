@@ -8,6 +8,7 @@ import numpy as np
 from xiangqi_bot import adb_client
 from xiangqi_bot.board import START_SQUARES, make_empty_board
 from xiangqi_bot.game import session as game
+from xiangqi_bot.game.state import Phase, Side
 
 from .conftest import RAW_SCREENSHOTS, LogCollector
 
@@ -61,25 +62,25 @@ def test_prompt_turn(collector: LogCollector) -> None:
         s = game.GameSession(dev, collector.log, collector.on_state, None)
 
         def fake_init(corrected: np.ndarray) -> bool:
-            s.board = [row[:] for row in board]
-            s.my_side = "red"
-            s.phase, s._turn = "残局", None
-            s.prev_board = [row[:] for row in s.board]
+            s.state.board = [row[:] for row in board]
+            s.state.prev_board = [row[:] for row in board]
+            s.state.my_side = Side.RED
+            s.state.phase = Phase.ENDGAME
+            s.state.initialized = True
             return True
 
         def fake_start_flow() -> None:
-            # 替换 _start_flow：不执行真正 try/finally，只保留语义——启动时设 running=True + emit
             s._running = True
             s._emit()
 
-        s._capture = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
-        s._init_from_corrected = fake_init  # type: ignore[method-assign]
+        s.capture.grab = lambda: np.zeros((1000, 900, 3), np.uint8)  # type: ignore[method-assign]
+        s._initialize = fake_init  # type: ignore[method-assign]
         s._confirm_start = lambda: answer == "start"  # type: ignore[method-assign]
         s._start_flow = fake_start_flow  # type: ignore[method-assign]
         s.start()
         return s
 
-    # 场景1：回答"不" -> 不开始对弈
+    # 场景1：回答"不" -> 不开始对弈，棋盘已同步未运行 -> stopped
     s = run("no")
     assert s._status() == "stopped", f"期望 stopped，实际 {s._status()}"
     assert any("未开始对弈" in m for m in collector.logs), f"应有未开始日志，{collector.logs}"

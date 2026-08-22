@@ -134,9 +134,17 @@ function appendLog(kind, msg) {
 
 // ---------- 状态栏与按钮 ----------
 function renderStatus() {
-  document.getElementById("phase").textContent = state.phase || "-";
-  const sideCn =
-    state.mySide === "red" ? "红方" : state.mySide === "black" ? "黑方" : "-";
+  // 棋盘尚无棋子 = 未成功同步（初始化失败/未开始），阵营与阶段显示 "-"
+  const synced =
+    Array.isArray(state.board) && state.board.some((row) => row.some((cell) => cell));
+  document.getElementById("phase").textContent = synced ? state.phase || "-" : "-";
+  const sideCn = !synced
+    ? "-"
+    : state.mySide === "red"
+      ? "红方"
+      : state.mySide === "black"
+        ? "黑方"
+        : "-";
   document.getElementById("side").textContent = sideCn;
   document.getElementById("flow-status").textContent = STATUS_CN[state.status] || state.status;
   applyButtons();

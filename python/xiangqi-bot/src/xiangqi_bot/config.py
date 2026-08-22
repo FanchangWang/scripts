@@ -28,6 +28,7 @@ EMPTY_MATCH_THRESHOLD = 0.8  # 低于此值判为空格
 TAP_HOLD_INTERVAL_MS = 400  # 起子→落子间隔
 MOVE_SETTLE_MS = 500  # 落子后校验截图前等待
 MOVE_VERIFY_COUNT = 5  # 校验截图次数
+SELF_MOVE_ATTEMPTS = 2  # 整步重试上限（_do_move 外层循环）
 
 # 敌方走棋检测
 ENEMY_RECHECK_WAIT_MS = 500  # 噪声帧延时复检
