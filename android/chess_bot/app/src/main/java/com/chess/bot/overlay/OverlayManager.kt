@@ -10,7 +10,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.newSingleThreadContext
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -50,9 +50,12 @@ object OverlayManager {
     private var settings: BotSettings? = null
 
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val botDispatcher = newSingleThreadContext("bot-worker")
+    private val botExecutor =
+        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "bot-worker").apply { isDaemon = true }
+        }
     private val botScope = CoroutineScope(
-        SupervisorJob() + botDispatcher + kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
+        SupervisorJob() + botExecutor.asCoroutineDispatcher() + kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
             LogBus.log(LogKind.ERROR, "后台任务未捕获异常：${e::class.java.simpleName}: ${e.message}")
             android.util.Log.e("OverlayManager", "uncaught in botScope", e)
         },

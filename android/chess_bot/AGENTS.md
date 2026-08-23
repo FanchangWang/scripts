@@ -184,11 +184,11 @@ android/chess_bot/
 ## 五、构建与外部依赖
 
 1. **OpenCV for Android**：优先 maven artifact（org.opencv:opencv，4.10+）；不可用时退回官方 sdk 解包 aar。仅用到 imgproc（matchTemplate/warpPerspective/findHomography/getPerspectiveTransform）
-2. **pikafish**（已定：**由你提供二进制**）：文件放 `third_party/pikafish/`，
-   - `third_party/pikafish/libpikafish.so` —— Gradle 拷入 `app/src/main/jniLibs/arm64-v8a/`
-     （**必须以 lib 开头、.so 结尾命名**才能被打包且安装后可 exec）
-   - `third_party/pikafish/pikafish.nnue` —— Gradle 拷入 `app/src/main/assets/`
-   - NNUE 约 40MB 级别，assets 打包即可（AAB 分发不受影响）
+2. **pikafish**（最终方案：**二进制直接入库**，third_party 中转目录已废弃）：
+   - `app/src/main/jniLibs/arm64-v8a/libpikafish.so` —— 直接入库
+     （必须以 lib 开头、.so 结尾命名；配合 `useLegacyPackaging=true` 解压后可 exec）
+   - `app/src/main/assets/pikafish.nnue` —— 直接入库
+   - NNUE 约 50MB、so 约 1.7MB，均已提交 git；构建期无拷贝任务
 3. **版本基准**：AGP/Kotlin/Compose BOM 以你本地 Android Studio（Quail 2026.1.3）向导生成的空项目为准，本文不硬编码具体版本号，避免工具链错配
 4. **工程初始化方式**（已定：**AS 向导创建空项目**）：创建参数见第九节
 
@@ -213,13 +213,7 @@ android/chess_bot/
 1. **分辨率覆盖**：`BOARD_CORNERS` 仅内置 1080x2400 与 1440x3200；其他分辨率启动时将报「未配置四角坐标」。如需支持更多设备，按 python scripts/detect_board_corners 流程补表即可
 2. **横竖屏**：按竖屏游戏设计，未处理旋转后 VirtualDisplay 尺寸变化
 3. **多用户/分身**：未适配
-4. **pikafish 二进制不入库**：`third_party/pikafish/*.nnue` 已 gitignore；`.so` 如也不希望入库可同样处理
-| M1 | 权限引导页 + 前台服务 + 截屏管线 | 屏幕截图预览显示在主界面 |
-| M2 | 悬浮窗框架（操作条 + 日志窗）+ 无障碍点击 | 点按钮可在任意界面注入点击并打日志 |
-| M3 | 视觉移植：矫正 + 模板匹配 + 布局打印 | 对 JJ 象棋实况打印 10x9 布局与 python 一致 |
-| M4 | 纯函数直译 + JUnit（翻译 python 测试场景）+ 引擎冒烟 | gradlew testDebugUnitTest 全绿；bestmove 冒烟通过 |
-| M5 | BotSession 全流程：走棋/敌方/认输/绝杀/和棋 | 真机完整对局若干盘零人工干预 |
-| M6 | 自动下一局 + 设置持久化 + 日志打磨 | 连续多局自动开下一局 |
+4. **pikafish 二进制已入库**（用户决策）：so+NNUE 随 git 分发，克隆即构建；后续若引擎升级直接替换对应路径文件
 
 ---
 
@@ -237,7 +231,7 @@ android/chess_bot/
 |---|---|
 | MediaProjection 14+ 一次性授权/服务被杀需重新授权 | 「启动按钮」统一走完整授权流程；服务 onTimeout/onDestroy 引导重启 |
 | 无障碍服务被厂商 ROM 回收/限制后台 | 引导页实时检测开启状态；文档列出 MIUI/EMUI 已知项 |
-| pikafish android 构建 | 双路径：官方 release 有 android 包则直接集成；否则 NDK 源码交叉编译（脚本化） |
+| pikafish android 构建 | 已定：用户提供的二进制直接入库；如未来需自编译再走 NDK 源码交叉编译（脚本化） |
 | 大体积 NNUE 进包 | assets 打包即可；如后续上架应用市场再评估动态下发 |
 | 悬浮窗 ComposeView 生命周期坑 | OverlayHost 统一封装 installOwner 逻辑，一次解决两处窗口 |
 | 模板匹配性能不足 | 先按 python 优先匹配策略移植；实测超标再引入降采样/ROI 裁剪，阈值不动 |
@@ -247,7 +241,7 @@ android/chess_bot/
 | 决策点 | 结论 |
 |---|---|
 | minSdk | **API 31（Android 12+）**，targetSdk 取向导默认最新 |
-| pikafish 来源 | **你提供二进制**，放 `third_party/pikafish/`（libpikafish.so + pikafish.nnue），Gradle 拷入 jniLibs/assets |
+| pikafish 来源 | ~~third_party 中转~~ **最终：二进制直接入库**（`app/src/main/jniLibs/arm64-v8a/libpikafish.so` + `app/src/main/assets/pikafish.nnue`，已提交 git） |
 | 工程骨架 | **AS 向导创建空项目**，我随后在其上填充代码 |
 
 **Android Studio 向导创建参数**：

@@ -3,19 +3,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val pikafishDir = rootProject.file("third_party/pikafish")
-
-val copyPikafishLib = tasks.register<Copy>("copyPikafishLib") {
-    from(pikafishDir.resolve("libpikafish.so"))
-    into(layout.projectDirectory.dir("src/main/jniLibs/arm64-v8a"))
-}
-
-val copyPikafishNnue = tasks.register<Copy>("copyPikafishNnue") {
-    from(pikafishDir.resolve("pikafish.nnue"))
-    into(layout.projectDirectory.dir("src/main/assets"))
-}
-
 android {
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../jks/chess_bot.jks")
+            storePassword = "chess_bot123"
+            keyPassword = "chess_bot123"
+            keyAlias = "chess_bot"
+        }
+    }
     namespace = "com.chess.bot"
     compileSdk {
         version = release(37)
@@ -54,10 +50,6 @@ android {
             useLegacyPackaging = true
         }
     }
-}
-
-tasks.named("preBuild") {
-    dependsOn(copyPikafishLib, copyPikafishNnue)
 }
 
 dependencies {
