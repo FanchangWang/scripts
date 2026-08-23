@@ -114,9 +114,9 @@ class ScreenCaptureSource private constructor() {
         return true
     }
 
-    /** 取最新一帧；未启动时返回 null。返回的是内部共享缓冲，消费方应及时使用。 */
+    /** 取最新一帧的独立副本；未启动时返回 null。副本避免与采集线程的复用缓冲互相覆盖。 */
     fun latest(): Bitmap? {
-        synchronized(lock) { return latest }
+        synchronized(lock) { return latest?.copy(Bitmap.Config.ARGB_8888, false) }
     }
 
     fun stop() {

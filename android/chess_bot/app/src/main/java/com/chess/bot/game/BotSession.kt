@@ -76,39 +76,52 @@ class BotSession(private val context: Context) {
 
     suspend fun start() {
         interrupted = false
+        // 防抖：上一次 start 未结束前忽略重复点击（单线程队列会串行执行两次全量同步）
+        if (!startGuard.compareAndSet(false, true)) {
+            LogBus.log(LogKind.WARN, "启动流程进行中，忽略重复点击")
+            return
+        }
         try {
             val corrected = capture.grab()
             if (corrected == null) {
                 emit()
                 return
             }
-            state.reset()
-            if (!initialize(corrected)) {
-                emit()
-                return
-            }
-
-            var startNow = false
-            val inferred = inferTurn(state.board, state.mySide, state.phase)
-            if (inferred != null) {
-                state.turn = inferred
-            } else {
-                startNow = confirmStart()
-                if (startNow) state.turn = state.mySide else {
-                    LogBus.log(LogKind.OK, "我方为${state.mySide.cn}方，当前棋盘为${state.phase.cn}，未开始对弈")
+            try {
+                state.reset()
+                if (!initialize(corrected)) {
                     emit()
                     return
                 }
-            }
 
-            emit()
-            if (startNow || state.phase == Phase.OPENING) startFlow()
+                var startNow = false
+                val inferred = inferTurn(state.board, state.mySide, state.phase)
+                if (inferred != null) {
+                    state.turn = inferred
+                } else {
+                    startNow = confirmStart()
+                    if (startNow) state.turn = state.mySide else {
+                        LogBus.log(LogKind.OK, "我方为${state.mySide.cn}方，当前棋盘为${state.phase.cn}，未开始对弈")
+                        emit()
+                        return
+                    }
+                }
+
+                emit()
+                if (startNow || state.phase == Phase.OPENING) startFlow()
+            } finally {
+                corrected.release()
+            }
         } catch (e: Exception) {
             LogBus.log(LogKind.ERROR, "启动棋局异常：${e::class.java.simpleName}: ${e.message}")
             running = false
             emit()
+        } finally {
+            startGuard.set(false)
         }
     }
+
+    private val startGuard = java.util.concurrent.atomic.AtomicBoolean(false)
 
     // ---------- 自动对弈主循环 ----------
 
@@ -118,8 +131,8 @@ class BotSession(private val context: Context) {
         try {
             engine.newGame(context)
             flowLoop()
-        } catch (e: EngineError) {
-            LogBus.log(LogKind.ERROR, "自动对弈异常终止：${e.message}")
+        } catch (e: Exception) {
+            LogBus.log(LogKind.ERROR, "自动对弈异常终止：${e::class.java.simpleName}: ${e.message}")
         } finally {
             running = false
             emit()
@@ -163,6 +176,10 @@ class BotSession(private val context: Context) {
         val mySide = detectSide(board)
         if (mySide == null) {
             LogBus.log(LogKind.ERROR, "无法判断我方红黑方（未识别到将/帥），请检查棋盘画面后重新同步")
+            // 打印当前识别布局，便于定位：是将/帥被误识别成其他棋子，还是该画面本就无可识别将帅
+            val count = board.sumOf { row -> row.count { it != null } }
+            LogBus.log(LogKind.INFO, "失败帧诊断：识别到 $count 个棋子")
+            Recognizer.formatLayout(board).forEach { LogBus.log(LogKind.INFO, "识别布局 $it") }
             return false
         }
         val phase = detectPhase(board, mySide)
@@ -462,28 +479,32 @@ class BotSession(private val context: Context) {
                 autoNextEnabled = autoNextEnabled,
             )
             val corrected = autoNext.scanAndWait() ?: return false
-            val keepRunning = running
-            state.reset()
-            running = keepRunning
-            if (!initialize(corrected)) return false
-            engine.newGame(context)
-            if (state.phase == Phase.ENDGAME) {
-                state.turn = Side.RED
-                LogBus.log(LogKind.OK, "残局模式：轮到红方走棋")
-            } else {
-                val inferred = inferTurn(state.board, state.mySide, state.phase)
-                if (inferred == null) {
-                    LogBus.log(
-                        LogKind.WARN,
-                        "下一局为${state.phase.cn}、无法推断轮次，自动对弈已暂停，可点击「开始棋局」重试",
-                    )
-                    running = false
-                    return true
+            try {
+                val keepRunning = running
+                state.reset()
+                running = keepRunning
+                if (!initialize(corrected)) return false
+                engine.newGame(context)
+                if (state.phase == Phase.ENDGAME) {
+                    state.turn = Side.RED
+                    LogBus.log(LogKind.OK, "残局模式：轮到红方走棋")
+                } else {
+                    val inferred = inferTurn(state.board, state.mySide, state.phase)
+                    if (inferred == null) {
+                        LogBus.log(
+                            LogKind.WARN,
+                            "下一局为${state.phase.cn}、无法推断轮次，自动对弈已暂停，可点击「开始棋局」重试",
+                        )
+                        running = false
+                        return true
+                    }
+                    state.turn = inferred
+                    LogBus.log(LogKind.OK, "下一局开始：轮到${inferred.cn}方走棋")
                 }
-                state.turn = inferred
-                LogBus.log(LogKind.OK, "下一局开始：轮到${inferred.cn}方走棋")
+                return true
+            } finally {
+                corrected.release()
             }
-            return true
         } finally {
             autoNextFlag = false
             emit()

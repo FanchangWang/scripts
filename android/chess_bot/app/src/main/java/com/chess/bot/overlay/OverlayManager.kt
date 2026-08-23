@@ -105,6 +105,8 @@ object OverlayManager {
                     x = 0
                     y = 0
                     width = ctx.resources.displayMetrics.widthPixels
+                    // 允许拖进状态栏/通知栏区域，避免遮挡棋盘上沿棋子
+                    flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 },
             ) {
                 val statusLine by BotRuntime.statusLine.collectAsState()

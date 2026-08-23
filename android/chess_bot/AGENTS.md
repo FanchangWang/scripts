@@ -207,6 +207,33 @@ android/chess_bot/
 | M5 ✅ 2026-08-23 代码完成 | **BotSession 全流程状态机**（python session.py 逐方法移植）：start/startFlow/flowLoop/doMove/computeMove/unpackMove/attemptMove/verify(5帧+认输续帧)/waitForEnemyMove/updateResign/checkmateProbe/decideDraw/autoNextGame/initialize/confirmStart/finishGame/emit；配套 Capture.kt（截屏→和棋弹窗循环→矫正、tap/back 经无障碍）、AutoNext.kt（结算交互+摆棋稳定）、TextMatcher.kt（结算文字/和棋按钮灰度模板匹配，1080 归一化）；悬浮条接真实状态机（开始=启动会话，中断=interrupt），日志窗内嵌轮次确认卡片；botScope 单线程调度器避免 ANR | assembleDebug + testDebugUnitTest 全绿；**待真机验证**：完整对局若干盘零人工干预（含敌方走棋/认输/绝杀/和棋弹窗/自动下一局） |
 | M5 补丁 ✅ | ① 修复 capture() 工厂方法导致 homography 缓存丢失（改为会话级 lazy 单例）② OpenCV init 前置到 Capture.grab/correct（修复新进程首点开始即 UnsatisfiedLinkError）③ botScope 加 CoroutineExceptionHandler（后台异常不再杀进程）④ **操作条停靠右缘 + 收起/展开**：「▶」收起为右缘「◀」小圆钮，「◀」展开；开始棋局后自动收起，中断后自动展开；END 停靠拖动方向修正 ⑤ 操作条精简：按钮标题「开始/中断」、移除测试点击⌖、顺序 [开始/中断][下一局][▶][✕] 保证退出恒在最右可见；**仅允许上下拖动**（常贴右缘）⑥ LogBus 每条日志同步镜像 adb logcat（tag=ChessBot，kind→优先级映射）⑦ 轮次确认改屏幕中央模态弹窗 ⑧ 收尾：stopWithTask + shutdown 关闭孤儿引擎进程 | 真机对局验证通过 |
 | M6 ✅ 2026-08-23 | 自动下一局/设置持久化/日志折叠与镜像 logcat 均已随 M2~M5 落地；**收尾加固**：service `stopWithTask="true"`（划掉 App 即退出）+ onDestroy 时 `OverlayManager.shutdown()`（中断会话+关闭 pikafish 子进程，杜绝孤儿引擎进程） | 真机连续多局验证通过（用户确认） |
+| M6 补丁 ✅ | ① **修复残局自动下一局死循环**：Kotlin 数组 `==` 是引用比较（python 列表是逐值比较），摆棋静止后稳定计数永不增长——改用 `contentDeepEquals` ② 日志窗加 `FLAG_LAYOUT_NO_LIMITS`，可拖进通知栏区域，不再遮挡上沿棋子 ③ **修复摆棋中间态误判终态导致「无法推断轮次」暂停**：32 子快速返回前校验 `plausibleNewGame`（detectSide+OPENING+可推断轮次），24~30 子中间帧不再进入稳定计数（记一次性日志继续等待，180s 超时兜底不变） ④ 日志窗默认高度 25%→**20% 屏高**，默认位置即不遮挡上沿棋子；需要更大空间仍可拖入通知栏 ⑤ **稳定性返回增加「双将俱全」校验**：无将/帥的画面（选关预览等）即使子数<24 且静止也不返回，日志标注缺哪个将帅 ⑥ **initialize 失败时打印完整识别布局**（r9..r0 + 棋子总数），用于定位是将帥误识别还是画面特殊 ⑦ 移除主界面截屏预览/识别棋盘/引擎冒烟调试组件（悬浮窗模式下无法使用；切回主界面预览只会显示自身） ⑧ **修复 use-after-free**：② 泄漏修复时把 `finally{release()}` 包住了 `return corrected`——返回的帧先被释放、initialize 读到全空判方失败；改为 handOffToCaller 所有权移交模式（返回路径不释放、其余路径 finally 释放） ⑨ ScreenCaptureSource.latest() 返回**独立副本**而非共享缓冲引用，消除采集线程覆写导致的串帧竞态 | 待真机复测：残局连续过关 + 日志窗拖至状态栏 + 中间态不再触发暂停 |
+
+## 十一、Android↔Python 全量对比审查（2026-08-23）
+
+> 审查方式：python 源文件逐行 ↔ Kotlin 对应文件对照；常量逐一核对；协议/时序/守卫条件比对。
+
+### 发现并已修复
+
+| # | 等级 | 问题 | 修复 |
+|---|---|---|---|
+| R1 | 高 | **结算文字优先级丢失**：python 遮罩词表优先于按钮词表、同类按列表顺序选取；Kotlin 版误改为全局分数排序——可能出现该发返回键时却点了按钮 | 新增 `TextMatcher.findGameoverScan`：先遍历 GAMEOVER_BACK_WORDS 再 BUTTON_WORDS，各词取最高分 |
+| R2 | 高 | **Mat 原生内存泄漏 ×3**：AutoNext 计数帧、start/autoNextGame 的 corrected 帧用完未 release（每帧 ~2.7MB native）；摆棋等待期每 300ms 泄漏一次，长跑必然 OOM | 全部补 try/finally release；返回给调用方的帧由调用方释放（grabBoard 已有此约定） |
+| R3 | 中 | startFlow 仅捕获 EngineError，其他运行时异常绕过「自动对弈异常终止」日志路径 | 改为捕获 Exception（外层 start 兜底不变） |
+| R4 | 低 | 快速双击「开始」会把两次全量同步排入单线程队列依次执行 | start() 加 AtomicBoolean 防抖，进行中忽略并告警 |
+
+### 确认语义等价（逐项比对无回归）
+
+常量表全值一致；fenOfBoard 行列翻转/halfmove 字段；opening 三函数判定与 deviates/singlePieceMoved；moves infer/apply/matches/formatting；classifier 六类帧分类全部守卫条件（含 captured=r2_old、n2 反吃兜底、n3 三情况、n4）、敌方四类结论；verify 五帧循环+LIFTED_ONLY 补点不消耗 attempts+认输续帧 while；enemy 循环 lift-once/noisy 计数上限/suspect 复检顺序；updateResign streak；checkmateProbe 仅 n==2 触发+异常降级；draw 阈值边界（>拒绝）；auto_next 31/32 特判+稳定阈值+重试上限+超时；engine 协议（marker 行首匹配、reversed 扫描、movetime+1s、3 次自愈、mate 分数映射、quit 仅 close）；capture 双按钮同现+决策缓存+点击失败中止。
+
+### 有意差异 / 已知限制（非 bug）
+
+1. EnemyFrame 用 sealed interface 替代 `Move | Literal` 联合类型
+2. apply/infer 等函数改名（applyMove/inferMove）避免 Kotlin 关键字冲突；GameState 用类+private set 而非 dataclass
+3. finishGame 的调用路径堆栈日志简化为 LogKind.GAMEOVER 一条（网页端专用调试信息未移植）
+4. 截屏来源为 MediaProjection 共享缓冲，识别侧拿到引用后立即拷入 Mat，理论存在单帧撕裂窗口（实测未见）
+5. 引擎 EvalFile 显式指定 filesDir 绝对路径（python 依赖 cwd 默认名，Android 无 cwd 可依赖）
+
 
 ## 十、已知限制 / 后续可选
 

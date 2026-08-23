@@ -37,7 +37,9 @@ fun LogPanelContent(
     onDrag: (Float, Float) -> Unit,
 ) {
     val config = LocalConfiguration.current
-    val maxH = (config.screenHeightDp * 0.25f).dp
+    // 默认高度压到 20% 屏高：默认位置(状态栏下方)不遮挡棋盘上沿棋子；
+    // 需要更大空间时仍可拖入通知栏区域。
+    val maxH = (config.screenHeightDp * 0.2f).dp
     val listState = rememberLazyListState()
 
     LaunchedEffect(logs.size) {

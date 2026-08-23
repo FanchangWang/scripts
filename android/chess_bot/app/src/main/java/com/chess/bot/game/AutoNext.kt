@@ -30,6 +30,7 @@ class AutoNext(
         var retryCount = 0
         var prevBoard: Board? = null
         var stableCount = 0
+        var nonTypicalLogged: Int? = null
         val startAt = System.nanoTime()
         val templates = VisionInit.loadPieceTemplates(context)
 
@@ -47,41 +48,75 @@ class AutoNext(
             delay(Const.GAMEOVER_SCAN_INTERVAL_MS)
 
             val raw = capture.screenshot()
-            val hit = raw?.let { TextMatcher.findGameoverText(context, it) }?.firstOrNull()
+            val hit = raw?.let { TextMatcher.findGameoverScan(context, it) }
             if (hit == null) {
                 val corrected = capture.grab() ?: continue
-                val board = Recognizer.analyzeBoard(corrected, templates)
-                val count = board.sumOf { row -> row.count { it != null } }
-                if (count > 0) {
-                    // 棋子出现 = 操作已生效，清空重试状态
-                    lastWord = null
-                    retryCount = 0
-                    when {
-                        count == 31 -> {
-                            LogBus.log(LogKind.INFO, "识别到 31 个棋子，暂不处理")
-                            prevBoard = board
-                            stableCount = 0
+                // 所有权移交模式：命中返回路径时把 Mat 交给调用方（由其负责 release），
+                // 其余路径在本层 finally 立即释放——严禁对已移交帧重复 release
+                var handOffToCaller = false
+                try {
+                    val board = Recognizer.analyzeBoard(corrected, templates)
+                    val count = board.sumOf { row -> row.count { it != null } }
+                    if (count > 0) {
+                        // 棋子出现 = 操作已生效，清空重试状态
+                        lastWord = null
+                        retryCount = 0
+                        when {
+                            count == 31 -> {
+                                LogBus.log(LogKind.INFO, "识别到 31 个棋子，暂不处理")
+                                prevBoard = board
+                                stableCount = 0
+                            }
+                            count == 32 && plausibleNewGame(board) -> {
+                                LogBus.log(LogKind.INFO, "识别到 32 个棋子，当做开局处理")
+                                handOffToCaller = true
+                                return corrected
+                            }
+                            prevBoard != null && boardEquals(prevBoard, board) -> {
+                                // 合理新开局 = 满员合法开局(32) 或 残局面(子数<24 且双方将/帥俱在)；
+                                // 无将帅的画面（选关预览等）与 24~30 子中间态一样继续等待
+                                val hasBothKings =
+                                    board.any { row -> row.any { it == "r_K" } } &&
+                                        board.any { row -> row.any { it == "b_k" } }
+                                val plausible = (count == 32 && plausibleNewGame(board)) ||
+                                    (count < Const.ENDGAME_PIECE_COUNT && hasBothKings)
+                                if (!plausible) {
+                                    if (nonTypicalLogged != count) {
+                                        nonTypicalLogged = count
+                                        val kings = buildString {
+                                            if (!board.any { row -> row.any { it == "r_K" } }) append("缺红帥 ")
+                                            if (!board.any { row -> row.any { it == "b_k" } }) append("缺黑將")
+                                        }.trim()
+                                        LogBus.log(
+                                            LogKind.INFO,
+                                            "等待摆棋：$count 子非典型${if (kings.isEmpty()) "" else "（$kings）"}，继续等待",
+                                        )
+                                    }
+                                    stableCount = 0
+                                } else {
+                                    stableCount++
+                                    LogBus.log(
+                                        LogKind.INFO,
+                                        "等待摆棋完毕：识别到 $count 个棋子（稳定 $stableCount/${Const.BOARD_STABLE_THRESHOLD}）",
+                                    )
+                                    if (stableCount >= Const.BOARD_STABLE_THRESHOLD) {
+                                        handOffToCaller = true
+                                        return corrected
+                                    }
+                                }
+                            }
+                            else -> {
+                                prevBoard = board
+                                stableCount = 0
+                                nonTypicalLogged = null
+                                LogBus.log(LogKind.INFO, "等待摆棋：识别到 $count 个棋子，重新计稳定")
+                            }
                         }
-                        count == 32 -> {
-                            LogBus.log(LogKind.INFO, "识别到 32 个棋子，当做开局处理")
-                            return corrected
-                        }
-                        prevBoard != null && prevBoard == board -> {
-                            stableCount++
-                            LogBus.log(
-                                LogKind.INFO,
-                                "等待摆棋完毕：识别到 $count 个棋子（稳定 $stableCount/${Const.BOARD_STABLE_THRESHOLD}）",
-                            )
-                            if (stableCount >= Const.BOARD_STABLE_THRESHOLD) return corrected
-                        }
-                        else -> {
-                            prevBoard = board
-                            stableCount = 0
-                            LogBus.log(LogKind.INFO, "等待摆棋：识别到 $count 个棋子，重新计稳定")
-                        }
+                    } else {
+                        LogBus.log(LogKind.INFO, "未识别到结算文字，棋盘为空")
                     }
-                } else {
-                    LogBus.log(LogKind.INFO, "未识别到结算文字，棋盘为空")
+                } finally {
+                    if (!handOffToCaller) corrected.release()
                 }
                 continue
             }
@@ -120,6 +155,16 @@ class AutoNext(
 
     private fun elapsedSeconds(startNanos: Long): Long =
         (System.nanoTime() - startNanos) / 1_000_000_000L
+
+    /** 逐值比较两布局（Kotlin 数组 == 是引用比较，必须用 contentDeepEquals）。 */
+    private fun boardEquals(a: Board?, b: Board): Boolean = a != null && a.contentDeepEquals(b)
+
+    /** 32 子且能推断为合法开局（全默认位或恰一方走一步）才算真开局。 */
+    private fun plausibleNewGame(board: Board): Boolean {
+        val mySide = detectSide(board) ?: return false
+        if (detectPhase(board, mySide) != Phase.OPENING) return false
+        return inferTurn(board, mySide, Phase.OPENING) != null
+    }
 
     companion object {
         fun isBackWord(word: String): Boolean = word in Const.GAMEOVER_BACK_WORDS
