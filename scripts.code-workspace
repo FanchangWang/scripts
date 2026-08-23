@@ -46,6 +46,10 @@
 		{
 			"name": "xiangqi-bot 象棋 AI",
 			"path": "python/xiangqi-bot"
+		},
+		{
+			"name": "chess_bot 象棋 AI",
+			"path": "android/chess_bot"
 		}
 	],
 	"settings": {

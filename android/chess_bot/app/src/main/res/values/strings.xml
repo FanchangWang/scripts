@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ChessBot</string>
+    <string name="accessibility_service_label">ChessBot 点击服务</string>
+    <string name="accessibility_service_desc">用于向象棋 App 注入落子手势（起子/落子/按钮点击）。</string>
+</resources>
