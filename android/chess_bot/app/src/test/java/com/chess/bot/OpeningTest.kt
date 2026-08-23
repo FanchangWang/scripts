@@ -33,12 +33,12 @@ class OpeningTest {
     }
 
     @Test
-    fun `场景3 双方各走一步不应自动开局`() {
+    fun `场景3 双方各走一步判残局且无法推断轮次`() {
         val b = TB.fullBoard(Side.BLACK)
         TB.movePiece(b, 2, 7, 2, 4)
         TB.movePiece(b, 7, 7, 7, 4)
-        assertEquals(com.chess.bot.game.Phase.MIDDLE, detectPhase(b, Side.BLACK))
-        assertNull(inferTurn(b, Side.BLACK, com.chess.bot.game.Phase.MIDDLE))
+        assertEquals(com.chess.bot.game.Phase.ENDGAME, detectPhase(b, Side.BLACK))
+        assertNull(inferTurn(b, Side.BLACK, com.chess.bot.game.Phase.ENDGAME))
     }
 
     @Test

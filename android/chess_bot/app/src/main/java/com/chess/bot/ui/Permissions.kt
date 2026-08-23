@@ -19,6 +19,13 @@ object Permissions {
     /** 悬浮窗特殊权限。 */
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 
+    /** 系统级「忽略电池优化」白名单（与 MIUI 省电策略为两个独立开关）。 */
+    fun batteryIgnoreGranted(context: Context): Boolean {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            ?: return false
+        return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
     /**
      * 无障碍服务是否已开启：解析系统设置里的已启用服务列表；
      * 部分 ROM 写入有延迟，兜底看服务实例是否存活。

@@ -33,7 +33,8 @@ object Const {
 
     // ---------- 引擎 ----------
     const val ENGINE_MOVETIME_MS = 1000
-    const val ENGINE_THREADS = 12
+    // 手机 SoC 核心数少于 PC：有意低于 python 的 12（勿在未确认目标机型核心数时调回）
+    const val ENGINE_THREADS = 8
     const val ENGINE_HASH_MB = 2048
     const val ENGINE_MATE_PROBE_MS = 200 // 绝杀判断用的短时限探测
     const val ENGINE_RULE60_MAX_PLY = 60 // 自然限招
@@ -49,10 +50,6 @@ object Const {
     // ---------- 对局结束 / 认输检测 ----------
     const val RESIGN_CONFIRM_COUNT = 3 // 双方将帅缺失需连续几帧才确认
     const val RESIGN_SUSPECT_WAIT_MS = 1000L // 单帧疑似结束时延时再采样
-
-    // ---------- 残局判断 ----------
-    const val ENDGAME_PIECE_COUNT = 24 // 可识别棋子总数少于该值视为残局
-    const val ENDGAME_MODE_PIECE_COUNT = 31 // 残局模式棋子数上限
 
     // ---------- 图片识别（矫正棋盘空间，像素） ----------
     const val DIFF_WINDOW = 10

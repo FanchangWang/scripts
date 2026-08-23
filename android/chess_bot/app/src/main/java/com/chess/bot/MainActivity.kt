@@ -1,5 +1,6 @@
 package com.chess.bot
 
+import android.content.ComponentName
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private var notificationsGranted = mutableStateOf(false)
     private var overlayGranted = mutableStateOf(false)
     private var accessibilityGranted = mutableStateOf(false)
+    private var batteryIgnoreGranted = mutableStateOf(false)
 
     private val notificationLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -62,6 +64,12 @@ class MainActivity : ComponentActivity() {
     private val accessibilityLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             accessibilityGranted.value = Permissions.accessibilityEnabled(this)
+        }
+
+    /** 系统忽略电池优化授权弹窗；返回后 onResume/batteryIgnore 重查。 */
+    private val ignoreBatteryLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            batteryIgnoreGranted.value = Permissions.batteryIgnoreGranted(this)
         }
 
     /** 屏幕捕获授权：成功即启动前台服务 + 截屏管线 + 悬浮窗。 */
@@ -96,6 +104,7 @@ class MainActivity : ComponentActivity() {
         notificationsGranted.value = Permissions.notificationsGranted(this)
         overlayGranted.value = Permissions.canDrawOverlays(this)
         accessibilityGranted.value = Permissions.accessibilityEnabled(this)
+        batteryIgnoreGranted.value = Permissions.batteryIgnoreGranted(this)
     }
 
     @Composable
@@ -166,7 +175,7 @@ class MainActivity : ComponentActivity() {
                 CheckRow(
                     title = "① 通知权限",
                     granted = notificationsGranted.value,
-                    actionLabel = "请求",
+                    actionLabel = "去设置",
                     onAction = {
                         notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                     },
@@ -184,8 +193,22 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                 )
+                // ③ 后台无限制：系统「忽略电池优化」白名单（唯一判定与设置途径）
                 CheckRow(
-                    title = "③ 无障碍服务",
+                    title = "③  省电策略[无限制]",
+                    granted = batteryIgnoreGranted.value,
+                    actionLabel = "去设置",
+                    onAction = {
+                        ignoreBatteryLauncher.launch(
+                            Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:$packageName"),
+                            ),
+                        )
+                    },
+                )
+                CheckRow(
+                    title = "④ 无障碍服务",
                     granted = accessibilityGranted.value,
                     actionLabel = "去开启",
                     onAction = {
@@ -193,7 +216,7 @@ class MainActivity : ComponentActivity() {
                     },
                 )
                 Text(
-                    "④ 屏幕捕获授权在下方按钮中一并完成（每次启动需重新授权）",
+                    "⑤ 屏幕捕获授权在下方按钮中一并完成（每次启动需重新授权）",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -232,13 +255,14 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             val prerequisitesMet =
-                notificationsGranted.value && overlayGranted.value && accessibilityGranted.value
+                notificationsGranted.value && overlayGranted.value &&
+                    accessibilityGranted.value && batteryIgnoreGranted.value
             Button(
                 onClick = { launchProjectionConsent() },
                 enabled = prerequisitesMet,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (prerequisitesMet) "授权并启动" else "请先完成 ①②③")
+                Text(if (prerequisitesMet) "授权并启动" else "请先完成 ①②③④")
             }
         }
     }

@@ -8,7 +8,6 @@ import com.chess.bot.game.Const
 import com.chess.bot.game.PIECE_CN
 import com.chess.bot.game.ROWS
 import com.chess.bot.game.correctedCenter
-import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogKind
 import org.opencv.core.Core
 import org.opencv.core.Mat
@@ -98,24 +97,6 @@ object Recognizer {
     /** 遍历 90 格，返回 10x9 布局。 */
     fun analyzeBoard(corrected: Mat, templates: Map<String, Mat>): Board =
         Array(ROWS) { r -> Array<String?>(COLS) { c -> analyzeCell(corrected, r, c, templates) } }
-
-    /**
-     * 一站式：最新帧 Bitmap -> 10x9 布局。失败返回 null（原因写入日志）。
-     */
-    fun recognize(context: Context, bitmap: Bitmap): Board? {
-        if (!VisionInit.init(context)) return null
-        val templates = VisionInit.loadPieceTemplates(context)
-        if (templates.size < 14) {
-            LogBus.log(LogKind.ERROR, "棋子模板数量不足：${templates.size}/14")
-            return null
-        }
-        val corrected = correctBoard(bitmap)
-        try {
-            return analyzeBoard(corrected, templates)
-        } finally {
-            corrected.release()
-        }
-    }
 
     /** 布局 -> 可读文本行（日志打印用）。 */
     fun formatLayout(board: Board): List<String> {

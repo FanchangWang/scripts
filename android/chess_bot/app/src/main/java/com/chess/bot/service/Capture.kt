@@ -36,6 +36,7 @@ class Capture(
     /** 截图 → 和棋弹窗处理 → 矫正，返回矫正后棋盘 Mat。 */
     suspend fun grab(): Mat? {
         // 任何 Mat 使用前必须确保 OpenCV native 已加载（新进程首个入口就在这里）
+        // 注意：启动同步阶段 running=false，dismissDraw 有意跳过——开始棋局阶段不处理和棋弹窗（对齐 python）
         if (!VisionInit.init(context)) return null
         var bmp = screenshot() ?: return null
         bmp = dismissDraw(bmp)

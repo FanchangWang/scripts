@@ -34,8 +34,15 @@ class PikafishEngine private constructor() {
             cwd.mkdirs()
             val nnue = File(cwd, "pikafish.nnue")
             if (!nnue.exists()) {
+                // 先写临时名再 rename：避免中途被杀残留截断权重文件
+                LogBus.log(LogKind.INFO, "首次启动：拷贝 NNUE 权重到 filesDir")
+                val tmp = File(cwd, "pikafish.nnue.tmp")
                 app.assets.open("pikafish.nnue").use { input ->
-                    nnue.outputStream().use { output -> input.copyTo(output) }
+                    tmp.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (!tmp.renameTo(nnue)) {
+                    tmp.copyTo(nnue, overwrite = true)
+                    tmp.delete()
                 }
             }
             val p = try {
@@ -147,6 +154,7 @@ class PikafishEngine private constructor() {
 
     private fun drain(p: Process) {
         try {
+            // JVM 流解码默认 REPLACE：非法字节替换为 U+FFFD 而非抛异常（对齐 python errors="replace"）
             p.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
                 while (true) {
                     val line = reader.readLine() ?: break

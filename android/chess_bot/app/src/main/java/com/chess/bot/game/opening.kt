@@ -13,21 +13,19 @@ fun detectSide(board: Board): Side? {
     }
 }
 
-/** 判断对局阶段：残局 / 开局（32 子未走或恰一方走一步）/ 中局。 */
+/** 判断对局阶段：开局（32 子未走或恰一方走一步）/ 残局（其余一切）。 */
 fun detectPhase(board: Board, mySide: Side): Phase {
     val count = board.sumOf { row -> row.count { it != null } }
-    if (count < Const.ENDGAME_PIECE_COUNT) return Phase.ENDGAME
+    if (count != 32) return Phase.ENDGAME
 
-    if (count == 32) {
-        val redDev = colorDeviates(board, mySide, Side.RED)
-        val blackDev = colorDeviates(board, mySide, Side.BLACK)
-        if (!redDev && !blackDev) return Phase.OPENING
-        if (redDev != blackDev) {
-            val moved = if (redDev) Side.RED else Side.BLACK
-            if (singlePieceMoved(board, mySide, moved)) return Phase.OPENING
-        }
+    val redDev = colorDeviates(board, mySide, Side.RED)
+    val blackDev = colorDeviates(board, mySide, Side.BLACK)
+    if (!redDev && !blackDev) return Phase.OPENING
+    if (redDev != blackDev) {
+        val moved = if (redDev) Side.RED else Side.BLACK
+        if (singlePieceMoved(board, mySide, moved)) return Phase.OPENING
     }
-    return Phase.MIDDLE
+    return Phase.ENDGAME
 }
 
 /** 推断轮次：仅开局可判（全默认位红先；对方刚走一步则轮到我方），其余返回 null。 */

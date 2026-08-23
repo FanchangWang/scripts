@@ -86,12 +86,9 @@ object TextMatcher {
             }
         }
         if (work !== img) work.recycle()
+        gray.release()
         return hits.sortedByDescending { it.score }
     }
-
-    /** 结算文字（按钮类 + 遮罩类合并，按分降序）。 */
-    fun findGameoverText(context: Context, img: Bitmap): List<TextHit> =
-        findText(context, img, gameoverTemplates(context), Const.GAMEOVER_TEXT_THRESHOLD)
 
     /**
      * 自动下一局扫描选词（对齐 python _scan_gameover_text 的优先级语义）：

@@ -7,14 +7,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,10 +42,16 @@ fun LogPanelContent(
     // 默认高度压到 20% 屏高：默认位置(状态栏下方)不遮挡棋盘上沿棋子；
     // 需要更大空间时仍可拖入通知栏区域。
     val maxH = (config.screenHeightDp * 0.2f).dp
-    val listState = rememberLazyListState()
+    val scroll = rememberScrollState()
 
-    LaunchedEffect(logs.size) {
-        if (logs.isNotEmpty()) listState.scrollToItem(logs.size - 1)
+    // 内容高度变化（新日志/长文本换行/展开）必然触发 maxValue 更新 → 滚到绝对底部。
+    // 用 snapshotFlow 而非一次性 withFrameNanos：与布局时序解耦，无竞态欠账。
+    LaunchedEffect(collapsed) {
+        if (collapsed) return@LaunchedEffect
+        snapshotFlow { logs.size to scroll.maxValue }
+            .collect {
+                scroll.scrollTo(scroll.maxValue)
+            }
     }
 
     Surface(
@@ -76,14 +84,13 @@ fun LogPanelContent(
                 }
             }
             if (!collapsed) {
-                LazyColumn(
-                    state = listState,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = maxH),
+                        .heightIn(max = maxH)
+                        .verticalScroll(scroll),
                 ) {
-                    items(logs.size) { i ->
-                        val event = logs[i]
+                    logs.forEach { event ->
                         Text(
                             "[${event.kind.name}] ${event.msg}",
                             color = kindColor(event.kind),

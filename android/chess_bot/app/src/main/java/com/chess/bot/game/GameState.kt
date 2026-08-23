@@ -12,7 +12,6 @@ enum class Side(val cn: String) {
 
 enum class Phase(val cn: String) {
     OPENING("开局"),
-    MIDDLE("中局"),
     ENDGAME("残局"),
 }
 
@@ -66,7 +65,7 @@ class GameState {
         private set
     var mySide = Side.RED
     var turn = Side.RED
-    var phase: Phase = Phase.MIDDLE
+    var phase: Phase = Phase.OPENING
         private set
     var initialized = false
         private set
@@ -95,7 +94,7 @@ class GameState {
         prevBoard = null
         mySide = Side.RED
         turn = Side.RED
-        phase = Phase.MIDDLE
+        phase = Phase.OPENING
         initialized = false
         halfmoveClock = 0
         gameOver = false

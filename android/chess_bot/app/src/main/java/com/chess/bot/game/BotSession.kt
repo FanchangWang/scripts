@@ -480,9 +480,8 @@ class BotSession(private val context: Context) {
             )
             val corrected = autoNext.scanAndWait() ?: return false
             try {
-                val keepRunning = running
+                // state.reset() 不触碰 running（对齐最终版 python：无 keepRunning 过渡）
                 state.reset()
-                running = keepRunning
                 if (!initialize(corrected)) return false
                 engine.newGame(context)
                 if (state.phase == Phase.ENDGAME) {
@@ -490,16 +489,17 @@ class BotSession(private val context: Context) {
                     LogBus.log(LogKind.OK, "残局模式：轮到红方走棋")
                 } else {
                     val inferred = inferTurn(state.board, state.mySide, state.phase)
-                    if (inferred == null) {
-                        LogBus.log(
-                            LogKind.WARN,
-                            "下一局为${state.phase.cn}、无法推断轮次，自动对弈已暂停，可点击「开始棋局」重试",
-                        )
-                        running = false
-                        return true
+                    if (inferred != null) {
+                        state.turn = inferred
+                        LogBus.log(LogKind.OK, "下一局开始：轮到${inferred.cn}方走棋")
+                    } else {
+                        // 闯关排局（如 24 子中局形态）：无法静态推断轮次，
+                        // 按 JJ 平台规则默认玩家（红方）先行；对齐 ENDGAME 固定红先规则
+                        state.turn = Side.RED
+                        LogBus.log(LogKind.OK, "排局模式：${state.phase.cn}、默认轮到红方走棋")
+                        Recognizer.formatLayout(state.board)
+                            .forEach { LogBus.log(LogKind.INFO, "排局 $it") }
                     }
-                    state.turn = inferred
-                    LogBus.log(LogKind.OK, "下一局开始：轮到${inferred.cn}方走棋")
                 }
                 return true
             } finally {
