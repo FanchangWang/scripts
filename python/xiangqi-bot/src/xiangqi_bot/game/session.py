@@ -102,6 +102,7 @@ class GameSession:
         # 流程控制（非棋局状态）
         self._running = False  # 自动对弈循环是否进行中
         self._auto_next = False  # 自动下一局流程进行中（网页端据此保持按钮状态不变）
+        self._start_in_progress = False  # start 启动流程进行中（防抖：忽略重复触发）
         self.auto_next_game = AUTO_NEXT_GAME  # 对局结束后是否自动下一局（网页开关可实时修改）
         self._interrupt = threading.Event()  # 中断自动对弈的事件
         self._turn_answer: str | None = None  # 网页弹窗返回的轮次确认答案
@@ -133,9 +134,14 @@ class GameSession:
 
         整个初始化流程包 try/except：任何阶段抛异常都打印 error + 堆栈，
         并推送 stopped 状态，前端可再点「开始棋局」重试。
+        进行中的 start 未结束前忽略重复触发（防连点导致排队两次全量同步）。
         """
-        self._interrupt.clear()
+        if self._start_in_progress:
+            self._log("warn", "启动流程进行中，忽略重复触发")
+            return
+        self._start_in_progress = True
         try:
+            self._interrupt.clear()
             corrected = self.capture.grab()
             if corrected is None:
                 self._emit()
@@ -169,6 +175,8 @@ class GameSession:
             self._running = False
             self._auto_next = False
             self._emit()
+        finally:
+            self._start_in_progress = False
 
     # ---------- 自动对弈 ----------
 
@@ -591,16 +599,16 @@ class GameSession:
                 inferred = opening.infer_turn(
                     self.state.board, self.state.my_side, self.state.phase
                 )
-                if inferred is None:
-                    # 摆棋中间态等无法推断轮次的局面：暂停自动对弈，等待手动「开始棋局」重新同步
-                    self._log(
-                        "error",
-                        "turn 轮次无法推断，自动对弈已暂停，可点击「开始棋局」重试",
-                    )
-                    self._running = False
-                    return True
-                self.state.turn = inferred
-                self._log("ok", f"下一局开始：轮到{self.state.turn.cn}方走棋")
+                if inferred is not None:
+                    self.state.turn = inferred
+                    self._log("ok", f"下一局开始：轮到{inferred.cn}方走棋")
+                else:
+                    # 排局（非开局形态）：无法静态推断轮次，
+                    # 按 JJ 平台规则默认玩家（红方）先行；对齐残局固定红先规则
+                    self.state.turn = Side.RED
+                    self._log("ok", f"排局模式：{self.state.phase}、默认轮到红方走棋")
+                    for line in vision.format_layout(self.state.board):
+                        self._log("info", f"排局 {line}")
             return True
         finally:
             self._auto_next = False

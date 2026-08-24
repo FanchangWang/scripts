@@ -29,10 +29,9 @@ class Side(StrEnum):
 
 
 class Phase(StrEnum):
-    """对局阶段。StrEnum 兼容现有 "开局"/"中局"/"残局" 字符串与 JSON 序列化。"""
+    """对局阶段。StrEnum 兼容现有 "开局"/"残局" 字符串与 JSON 序列化。"""
 
     OPENING = "开局"
-    MIDDLE = "中局"
     ENDGAME = "残局"
 
 
@@ -127,7 +126,7 @@ class GameState:
     prev_board: Board | None = None
     my_side: Side = Side.RED
     turn: Side = Side.RED  # 行棋方（默认红先占位）
-    phase: Phase = Phase.MIDDLE
+    phase: Phase = Phase.OPENING
     initialized: bool = False  # 本轮 _initialize 是否已成功同步棋盘（驱动 _status idle）
     halfmove_clock: int = 0
     game_over: bool = False
@@ -145,7 +144,7 @@ class GameState:
         self.prev_board = None
         self.my_side = Side.RED
         self.turn = Side.RED
-        self.phase = Phase.MIDDLE
+        self.phase = Phase.OPENING
         self.initialized = False
         self.halfmove_clock = 0
         self.game_over = False

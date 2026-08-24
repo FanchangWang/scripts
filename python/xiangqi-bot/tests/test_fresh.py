@@ -92,3 +92,14 @@ def test_fresh_one_move(collector: LogCollector) -> None:
     _move_piece(b, 2, 7, 2, 4)
     _move_piece(b, 0, 7, 2, 6)
     assert opening.detect_phase(b, Side.BLACK) != Phase.OPENING, "场景5：对方走多步不满足刚开局"
+
+
+def test_endgame_24_pieces() -> None:
+    """24 子双将俱全（残局关卡摆棋中）应判残局——回归旧三态「中局」误判事故场景"""
+    b = _full_board("red")
+    # 双方各撤 4 兵卒 -> 24 子，将帅俱全（闯关排局典型形态）
+    for r, c in ((3, 0), (3, 2), (3, 4), (3, 6), (6, 0), (6, 2), (6, 4), (6, 6)):
+        b[r][c] = None
+    assert sum(cell is not None for row in b for cell in row) == 24
+    assert opening.detect_phase(b, Side.RED) == Phase.ENDGAME
+    assert opening.infer_turn(b, Side.RED, Phase.ENDGAME) is None

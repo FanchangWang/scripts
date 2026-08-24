@@ -77,10 +77,6 @@ ENEMY_NOISY_MAX = 3  # 连续噪声帧上限，超过则暂停自动对弈
 RESIGN_CONFIRM_COUNT = 3  # 双方将帅缺失需连续几帧才确认
 RESIGN_SUSPECT_WAIT_MS = 1000  # 单帧疑似结束时延时再采样
 
-# 残局判断
-ENDGAME_PIECE_COUNT = 24  # 可识别棋子总数少于该值视为残局
-ENDGAME_MODE_PIECE_COUNT = 31  # 残局模式（如「下一关」）棋子数上限
-
 # 图片识别（矫正棋盘空间，像素）
 DIFF_WINDOW = 10
 DIFF_THRESHOLD = 8
@@ -236,6 +232,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 ### board.py — 棋盘状态与坐标转换
 
 - `START_SQUARES`：14 类棋子的开局默认格（用于轮次推断/自愈）
+- `PIECE_FEN` / `PIECE_CN`：棋子 ID -> FEN 字符 / 中文显示字（排局日志格式化用）
 - 记谱 <-> 网格（受红黑方影响）、FEN <-> 布局（互逆，按红黑方翻转）
 - `make_empty_board()` / `fen_of_board(board, side, to_move=..., halfmove_clock=0)`
   （`halfmove_clock` 为自上次吃子以来的半回合数，写入 FEN 第六字段供引擎自然限招判断）
@@ -254,11 +251,13 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - `load_gameover_text_templates()`：加载 `templates/text/*.png` 结算文字模板（灰度，带缓存）
 - `find_gameover_text(img, w, h)`：原始截图等比缩放到 `GAMEOVER_TEMPLATE_W` 宽后对全部结算文字模板做
   TM_CCOEFF_NORMED，返回所有高于阈值的 `[(文字, 屏幕x, 屏幕y, 分)]`（中心点，按分降序）
+- `format_layout(board)` → `list[str]`：布局转可读文本行（r9..r0，每格中文棋子名或 ·），供日志打印排局
 
 ### engine.py — pikafish UCI 长进程客户端
 
 - 每局只启动一个引擎子进程（cwd = `pikafish/`，引擎才能找到 `pikafish.nnue`），线程安全
-- `start()` 幂等：`uci`->`uciok`、`setoption Threads/Hash/Rule60MaxPly`、`isready`->`readyok`
+- `start()` 幂等：`uci`->`uciok`、`setoption Threads/Hash/Rule60MaxPly/EvalFile`（权重绝对路径，
+  不依赖 cwd 默认文件名）、`isready`->`readyok`
 - `newgame()`：发 `ucinewgame` + `isready`->`readyok`，通知引擎新对局开始（清 hash）；引擎未启动时先 `start()`
 - `best_move(fen, movetime_ms)` → `(move | None, score)`：`position fen` + `go movetime`，等 `bestmove`；
   无着法（终局）返回 `(None, 0)`；score 为 `info score cp/mate`（厘兵，正=行棋方占优；mate 映射 ±100000）
@@ -270,7 +269,7 @@ FEN 规则：黑 = 小写，红 = 大写。内部棋盘状态用模板文件名�
 - 后台线程持续读 stdout，一条条发指令并等待对应标记
 - **自然限招**：引擎 `Sixty Move Rule` 默认开启，`start()` 时设 `Rule60MaxPly=ENGINE_RULE60_MAX_PLY(=60)`；
   引擎依赖 FEN 第六字段（halfmove clock）感知限着临近，故 `GameState.halfmove_clock` 必须正确维护
-  （单方走一步+1，吃子归零；兵卒移动不重置），所有 `fen_of_board` 调用均需传入。中局/残局手动同步时
+  （单方走一步+1，吃子归零；兵卒移动不重置），所有 `fen_of_board` 调用均需传入。残局/排局手动同步时
   clock 从 0 起算（截图无法还原历史吃子步数，属已知折中）
 
 ### game/ — 对局模块（数据结构 + 纯函数 + IO 类 + 薄控制层）
@@ -302,8 +301,8 @@ ADB/截图等副作用封装在 `Capture`/`AutoNext` 两个 IO 类；`GameSessio
 #### opening.py — 开局分析（纯函数）
 
 - `detect_side(board)` → `Side | None`：将/帥在屏幕下方（行 6..9）则该方为我方
-- `detect_phase(board, my_side)` → `Phase`：棋子 < `ENDGAME_PIECE_COUNT` → 残局；
-  32 子未走或仅一方走一步 → 开局；其余 → 中局
+- `detect_phase(board, my_side)` → `Phase`：两态——32 子且（全默认位 或 恰一方走一步）→ 开局；
+  其余一律 → 残局
 - `infer_turn(board, my_side, phase)` → `Side | None`：仅开局推断轮次
   （全默认位红先；恰一方走一步则轮到对方），其余阶段返回 None
 - 内部 `_color_deviates`/`_expected_start_squares`/`_single_piece_moved`
@@ -357,8 +356,10 @@ ADB/截图等副作用封装在 `Capture`/`AutoNext` 两个 IO 类；`GameSessio
 
 不继承任何类。持有 `state`/`capture`/`auto_next_handler`/`engine`，编排「截图→识别→分类→应用→引擎→点击」。
 
-- 流程控制（非棋局状态）：`_running`、`_auto_next`、`auto_next_game`、`_interrupt`(Event)、`_turn_answer`/`_turn_event`
-- `start()`：清中断 → `capture.grab` → `state.reset` → `_initialize` → 推断轮次（未知时弹窗确认）→ 自动 `_start_flow`
+- 流程控制（非棋局状态）：`_running`、`_auto_next`、`_start_in_progress`（start 防抖）、
+  `auto_next_game`、`_interrupt`(Event)、`_turn_answer`/`_turn_event`
+- `start()`：进行中的 start 未结束前忽略重复触发（防抖）→ 清中断 → `capture.grab` →
+  `state.reset` → `_initialize` → 推断轮次（未知时弹窗确认）→ 自动 `_start_flow`
 - `_start_flow()`：`_running=True` → `engine.newgame()` → `_flow()`；顶层 try/except/finally 兜底
 - `_flow()`：主循环，每轮次 `state.snapshot_prev()`；我方 `_do_move` ↔ 敌方 `_wait_for_enemy_move` 交替；
   game_over 后按 `auto_next_game` 开关调 `_auto_next_game`
@@ -381,8 +382,8 @@ ADB/截图等副作用封装在 `Capture`/`AutoNext` 两个 IO 类；`GameSessio
 - `_checkmate_probe()` → bool：`engine.is_mate`（仅 n==2 干净走棋后调用）；引擎异常降级为未绝杀
 - `_decide_draw()` → `"accept"/"reject"`：读 `state.last_eval_score` 调 `draw.decide`
 - `_auto_next_game()` → bool：`auto_next_handler.scan_and_wait` → `state.reset` → `_initialize` →
-  `engine.newgame` → 轮次处理（残局固定红先，其余 `infer_turn`，无法推断则告警并暂停 flow）；
-  流程期间 `_auto_next=True`；返回是否成功进入下一局
+  `engine.newgame` → 轮次处理（残局固定红先；开局先 `infer_turn`，无法推断视为闯关排局：
+  默认玩家红方先行并打印排局布局）；流程期间 `_auto_next=True`；返回是否成功进入下一局
 - `_grab_board()` → `(Board, list[Change]) | None`：`capture.grab` + `recognition.analyze`
 - `_confirm_start()` → bool：弹窗等待网页确认（`_turn_event`，可被中断）
 - `_finish_game(reason)`：打调用路径日志 + `game_over=True` + 日志 + `_emit`
@@ -425,8 +426,8 @@ ADB/截图等副作用封装在 `Capture`/`AutoNext` 两个 IO 类；`GameSessio
 3. 连接成功进入主界面（自动走棋 / 自动检测敌方走棋**常开**，无开关）
 4. 点击「开始棋局」-> 截图识别棋盘并开始对弈（`/api/start` 调用 `start()`），无历史/已结束走全量初始化，否则增量拉取：
    - 全默认位 -> 红先；仅红偏离 -> 黑走；仅黑偏离 -> 红走
-   - 双方均偏离或残局（棋子 < `ENDGAME_PIECE_COUNT`）-> 默认我方走棋，网页弹窗确认是否开始
-   - **开局**自动开始对弈；**刚开局局面**（全棋子、对方仅走一步、轮到已方）也自动开始对弈；其余**中局/残局**只载入棋盘（stopped），等用户点「开始棋局」
+   - 双方均偏离或残局 -> 默认我方走棋，网页弹窗确认是否开始
+   - **开局**自动开始对弈；**刚开局局面**（全棋子、对方仅走一步、轮到已方）也自动开始对弈；其余**残局/排局**只载入棋盘（stopped），等用户点「开始棋局」
 5. 对弈中可「中断棋局」（暂停 flow），中断后「开始棋局」用当前棋盘数据恢复对弈
 6. 任一处绝杀/认输判定 -> `game_over`，主界面提示；`AUTO_NEXT_GAME` 开启且未中断时自动扫描结算文字
    （按钮类点击 / 段位提升发返回键）-> 等待摆棋完毕 -> 自动开始下一局；中止或失败后保持结束状态，可手动「开始棋局」重开

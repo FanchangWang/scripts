@@ -39,7 +39,11 @@ class Capture:
     # ---------- 公开接口 ----------
 
     def grab(self) -> ndarray | None:
-        """截图 → 处理和棋弹窗 → 矫正，返回矫正后棋盘图。"""
+        """截图 → 处理和棋弹窗 → 矫正，返回矫正后棋盘图。
+
+        注意：启动同步阶段 `_running=False`，`_dismiss_draw` 有意跳过——
+        开始棋局阶段不代替用户处理和棋弹窗（对齐最终版语义）。
+        """
         img = self.screenshot()
         if img is None:
             return None

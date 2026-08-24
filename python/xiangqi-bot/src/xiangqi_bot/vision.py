@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 
 from xiangqi_bot import config
-from xiangqi_bot.board import COLS, ROWS, corrected_center
+from xiangqi_bot.board import COLS, PIECE_CN, ROWS, corrected_center
 
 Templates = dict[str, np.ndarray]
 
@@ -223,3 +223,12 @@ def find_draw_dialog(img: np.ndarray, w: int = 0, h: int = 0) -> list[tuple[str,
             cy = round((y + tpl.shape[0] / 2) * scale)
             matches.append((word, cx, cy, float(result[y, x])))
     return sorted(matches, key=lambda m: m[3], reverse=True)
+
+
+def format_layout(board) -> list[str]:
+    """布局 -> 可读文本行（r9..r0，每格中文字或 ·），日志打印排局用。"""
+    lines = []
+    for r in range(ROWS - 1, -1, -1):
+        cells = " ".join(PIECE_CN.get(board[r][c], "·") for c in range(COLS))
+        lines.append(f"r{r} {cells}")
+    return lines

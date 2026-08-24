@@ -50,7 +50,7 @@ uv run python -m xiangqi_bot
 2. 连接成功进入主界面（自动走棋 / 自动检测敌方走棋**常开**，无开关）
 3. 点击「开始棋局」-> `/api/start` 截图识别棋盘并开始对弈
    - **开局**（或刚开局局面：全棋子、对方仅走一步、轮到已方）→ **自动开始对弈**
-   - 双方均偏离默认位或残局（棋子 < `ENDGAME_PIECE_COUNT`）→ 只载入棋盘，弹窗确认「是否开始棋局」
+   - 双方均偏离默认位或残局 → 只载入棋盘，弹窗确认「是否开始棋局」
 4. 对弈中可「中断棋局」，中断后「开始棋局」用当前棋盘数据恢复对弈
 5. 任一处绝杀/认输判定 → 对局结束；「自动下一局」开关开启（默认）时自动扫描结算文字
    （按钮类点击 / 段位提升/铜钱/领取发返回键）→ 等待摆棋完毕 → 自动开始下一局；开关可随时切换，
@@ -186,7 +186,7 @@ xiangqi-bot/
    - 无文字时分析棋盘：32 子直接返回；否则连续 `BOARD_STABLE_THRESHOLD=3` 帧棋盘相同返回
    - 总超时 `AUTO_NEXT_TIMEOUT_S=180`
 2. `state.reset()` + `_initialize(corrected)` 初始化下一局
-3. 残局模式（棋子 < `ENDGAME_MODE_PIECE_COUNT=31`）固定红方先走
+3. 残局关卡固定红方先走；开局形态但无法静态推断轮次时视为闯关排局——默认玩家（红方）先行，并打印完整排局布局日志
 
 流程期间 `_auto_next=True`（`_status()` 返回 `auto_next`），网页端按钮状态保持不变。
 
@@ -261,8 +261,6 @@ uv run python scripts/compare_piece_templates.py        # 对比模板相似度
 | `ENEMY_NOISY_MAX` | 3 | 连续噪声帧上限，超过则暂停自动对弈 |
 | `RESIGN_CONFIRM_COUNT` | 3 | 双方将/帅均缺失需连续几帧才确认认输 |
 | `RESIGN_SUSPECT_WAIT_MS` | 1000 | 单帧疑似结束时延时再采样（过滤瞬态误判） |
-| `ENDGAME_PIECE_COUNT` | 24 | 可识别棋子数低于该值视为残局（轮次无法静态推断） |
-| `ENDGAME_MODE_PIECE_COUNT` | 31 | 残局模式（如「下一关」）棋子数上限，固定红先 |
 | `AUTO_NEXT_GAME` | True | 对局结束后自动开始下一局（网页端开关默认值，运行时可实时修改） |
 | `AUTO_NEXT_TIMEOUT_S` | 180 | 结算交互 + 摆棋等待总超时（秒） |
 | `GAMEOVER_SCAN_INTERVAL_MS` | 300 | 扫描间隔 |

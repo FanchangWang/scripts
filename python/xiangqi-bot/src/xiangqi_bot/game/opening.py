@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from xiangqi_bot.board import COLS, ROWS, START_SQUARES, Board, piece_color
-from xiangqi_bot.config import ENDGAME_PIECE_COUNT
 from xiangqi_bot.game.state import Phase, Side
 
 
@@ -22,22 +21,21 @@ def detect_side(board: Board) -> Side | None:
 
 
 def detect_phase(board: Board, my_side: Side) -> Phase:
-    """判断对局阶段：残局 / 开局（32 子未走或恰一方走一步）/ 中局。"""
+    """判断对局阶段：开局（32 子未走或恰一方走一步）/ 残局（其余一切）。"""
     count = sum(cell is not None for row in board for cell in row)
-    if count < ENDGAME_PIECE_COUNT:
+    if count != 32:
         return Phase.ENDGAME
 
-    if count == 32:
-        red_dev = _color_deviates(board, my_side, Side.RED)
-        black_dev = _color_deviates(board, my_side, Side.BLACK)
-        if not red_dev and not black_dev:
-            return Phase.OPENING  # 双方均未走
-        if red_dev != black_dev:  # 恰一方偏离
-            moved = Side.RED if red_dev else Side.BLACK
-            if _single_piece_moved(board, my_side, moved):
-                return Phase.OPENING
+    red_dev = _color_deviates(board, my_side, Side.RED)
+    black_dev = _color_deviates(board, my_side, Side.BLACK)
+    if not red_dev and not black_dev:
+        return Phase.OPENING  # 双方均未走
+    if red_dev != black_dev:  # 恰一方偏离
+        moved = Side.RED if red_dev else Side.BLACK
+        if _single_piece_moved(board, my_side, moved):
+            return Phase.OPENING
 
-    return Phase.MIDDLE
+    return Phase.ENDGAME
 
 
 def infer_turn(board: Board, my_side: Side, phase: Phase) -> Side | None:

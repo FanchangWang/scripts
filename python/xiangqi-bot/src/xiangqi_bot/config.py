@@ -45,10 +45,6 @@ ENGINE_HASH_MB = 2048
 ENGINE_MATE_PROBE_MS = 200  # 绝杀探测短时限
 ENGINE_RULE60_MAX_PLY = 60  # 自然限招（60 步不吃子判和，对应平台规则）
 
-# 残局判断
-ENDGAME_PIECE_COUNT = 24  # 少于此值视为残局
-ENDGAME_MODE_PIECE_COUNT = 31  # 自动下一局残局模式棋子数上限
-
 # 自动下一局
 AUTO_NEXT_GAME = True  # 对局结束后自动开始下一局
 AUTO_NEXT_TIMEOUT_S = 180  # 总超时（秒）

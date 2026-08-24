@@ -109,6 +109,9 @@ class Engine:
                     proc.stdin,
                     f"setoption name Rule60MaxPly value {config.ENGINE_RULE60_MAX_PLY}",
                 )
+                # 显式指定权重绝对路径，不依赖 cwd 下默认文件名（对齐 Android 端）
+                eval_file = config.PIKAFISH_DIR / "pikafish.nnue"
+                self._write(proc.stdin, f"setoption name EvalFile value {eval_file}")
                 self._write(proc.stdin, "isready")
                 self._wait_for("readyok", 15)
             except EngineError:

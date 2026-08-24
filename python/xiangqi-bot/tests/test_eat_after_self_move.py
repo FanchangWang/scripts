@@ -45,7 +45,7 @@ def _make_session(
     s.state.lift_logged = False
     s.state.noisy_count = 0
     s.state.resign_streak = 0
-    s.state.phase = Phase.MIDDLE
+    s.state.phase = Phase.ENDGAME
     s.state.game_over = False
     s._auto_next = False
     return s

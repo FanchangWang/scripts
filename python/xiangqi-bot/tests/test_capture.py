@@ -31,7 +31,7 @@ from .conftest import LogCollector, MockDevice
 
 
 def _make_session(collector: LogCollector, board=None) -> game.GameSession:
-    """构造已初始化的 session（红方中局）。"""
+    """构造已初始化的 session（红方残局）。"""
     dev = MockDevice()
     s = game.GameSession(dev, collector.log, collector.on_state, None)
     s.capture._homography = np.eye(3)
@@ -39,7 +39,7 @@ def _make_session(collector: LogCollector, board=None) -> game.GameSession:
     s.state.turn = Side.RED
     s.state.initialized = True
     s._running = True
-    s.state.phase = Phase.MIDDLE
+    s.state.phase = Phase.ENDGAME
     s.state.game_over = False
     s._auto_next = False
     s.state.resign_streak = 0
