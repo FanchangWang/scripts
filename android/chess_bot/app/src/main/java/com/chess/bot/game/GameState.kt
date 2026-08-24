@@ -75,6 +75,7 @@ class GameState {
         private set
     var highlight : List<Pair<Int, Int>> = emptyList()
     var lastMove : String? = null
+    /** 最近一次引擎评估分（我方视角，正=我方占优）；0 = 均势（含开局未跑引擎）。 */
     var lastEvalScore = 0
     var resignStreak = 0
     var noisyCount = 0

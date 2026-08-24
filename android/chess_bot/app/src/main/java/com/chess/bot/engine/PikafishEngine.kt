@@ -4,6 +4,7 @@ import android.content.Context
 import com.chess.bot.game.Const
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogTag
 import java.io.File
 
 /** 引擎异常（对齐 python EngineError：绝不外泄底层 IO 异常）。 */
@@ -35,7 +36,7 @@ class PikafishEngine private constructor() {
             val nnue = File(cwd, "pikafish.nnue")
             if (!nnue.exists()) {
                 // 先写临时名再 rename：避免中途被杀残留截断权重文件
-                LogBus.log(LogKind.INFO, "首次启动：拷贝 NNUE 权重到 filesDir")
+                LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "首次启动：拷贝 NNUE 权重到 filesDir")
                 val tmp = File(cwd, "pikafish.nnue.tmp")
                 app.assets.open("pikafish.nnue").use { input ->
                     tmp.outputStream().use { output -> input.copyTo(output) }
@@ -65,7 +66,7 @@ class PikafishEngine private constructor() {
                 writeLine("setoption name Rule60MaxPly value ${Const.ENGINE_RULE60_MAX_PLY}")
                 writeLine("isready")
                 waitFor("readyok", 15_000)
-                LogBus.log(LogKind.OK, "pikafish 已就绪")
+                LogBus.log(LogKind.OK, LogTag.ENGINE, "pikafish 引擎已就绪")
             } catch (e: EngineError) {
                 kill(p)
                 process = null

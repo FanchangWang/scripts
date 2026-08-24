@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>悬浮日志窗 & 轮次确认弹窗 · 优化方案审核</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #0a0c10; color: #e8eaed; padding: 32px 20px 60px;
+  }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .sub { color: #9aa0a6; font-size: 13px; margin-bottom: 28px; }
+  h2 { font-size: 16px; margin: 36px 0 16px; color: #fff; }
+  h2 .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: 2px; }
+  .tag.old { background: #3c2a2a; color: #ff8a80; }
+  .tag.new { background: #1e3a2b; color: #69f0ae; }
+  .compare { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+
+  /* 手机画布：模拟棋盘 App */
+  .phone {
+    width: 390px; height: 480px; border-radius: 18px; overflow: hidden; position: relative;
+    background:
+      repeating-conic-gradient(#c9a06a 0% 25%, #ead6b0 0% 50%) 32px 120px / 240px 240px,
+      repeating-conic-gradient(#c9a06a 0% 25%, #ead6b0 0% 50%) 32px 400px / 240px 240px,
+      #ead6b0;
+    border: 1px solid #2a2f3a;
+    flex-shrink: 0;
+  }
+  .phone .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 120px; height: 18px; background: #000; border-radius: 0 0 10px 10px; z-index: 5; }
+  .label { font-size: 12px; color: #9aa0a6; text-align: center; margin-top: 10px; }
+  .issue-note {
+    max-width: 390px; font-size: 12px; line-height: 1.8; color: #bdc1c6;
+    background: #14161c; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 14px 16px;
+  }
+  .issue-note b { color: #ffd54f; }
+  .issue-note .num { display: inline-block; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: #2a2f3a; color: #fff; font-size: 11px; margin-right: 6px; }
+
+  /* ---------- 日志窗（现状） ---------- */
+  .logpanel-old {
+    position: absolute; top: 24px; left: 0; right: 0;
+    background: rgba(0,0,0,.65); border-radius: 12px; padding: 6px 10px;
+    font-size: 13px;
+  }
+  .logpanel-old .row1 { display: flex; justify-content: space-between; align-items: center; }
+  .logpanel-old .btn { background: none; border: none; color: #fff; font-size: 15px; padding: 4px 10px; cursor: pointer; min-height: 44px; }
+  .logline-old { font-size: 11px; line-height: 1.7; font-family: monospace; }
+
+  /* ---------- 日志窗（优化） ---------- */
+  .logpanel-new {
+    position: absolute; top: 24px; left: 8px; right: 8px;
+    background: rgba(20,22,28,.82); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 14px; padding: 8px 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  }
+  .handle-row { display: flex; align-items: center; gap: 8px; cursor: grab; }
+  .handle-grip { color: rgba(255,255,255,.28); font-size: 12px; letter-spacing: 1px; }
+  .statusline { font-size: 13px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eval-pos { color: #69f0ae; } .eval-neg { color: #ff8a80; } .eval-zero { color: #e8eaed; }
+  .collapse-btn {
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2);
+    background: rgba(255,255,255,.08); color: #e8eaed; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;
+  }
+  .unread-dot { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: #ff5252; border: 1.5px solid #14161c; }
+  .logbody { margin-top: 6px; max-height: 88px; overflow-y: auto; }
+  .logline { font-size: 11px; line-height: 1.75; font-family: monospace; display: flex; gap: 6px; }
+  .logline .ts { color: rgba(255,255,255,.38); flex-shrink: 0; }
+  .logline .dot { flex-shrink: 0; }
+  .c-err { color: #ff8a80; } .c-warn { color: #ffd54f; } .c-ok { color: #69f0ae; }
+  .c-move { color: #82b1ff; } .c-enemy { color: #b388ff; } .c-info { color: #e8eaed; }
+
+  .hint-chip {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: rgba(255,255,255,.75); background: rgba(20,22,28,.85);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 6px 12px; white-space: nowrap;
+  }
+
+  /* 折叠态（优化） */
+  .logpanel-collapsed {
+    position: absolute; top: 24px; left: 8px; right: 8px;
+    background: rgba(20,22,28,.82); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 14px; padding: 6px 8px 6px 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* ---------- 轮次弹窗 ---------- */
+  .dim { position: absolute; inset: 0; }
+  .dim-old { background: rgba(0,0,0,.55); }
+  .dim-new { background: rgba(0,0,0,.62); backdrop-filter: blur(1px); }
+  .dialog-old {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 320px; background: #fef7ff; color: #1d1b20; border-radius: 16px;
+    padding: 20px 18px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .dialog-old h3 { font-size: 16px; margin-bottom: 12px; }
+  .dialog-old p { font-size: 13px; color: #49454f; line-height: 1.7; margin-bottom: 16px; }
+  .dialog-old .btns { display: flex; gap: 12px; }
+  .dialog-old .btns button { flex: 1; height: 40px; border-radius: 20px; font-size: 14px; cursor: pointer; }
+  .btn-outline { background: none; border: 1px solid #79747e; color: #6750a4; }
+  .btn-fill { background: #6750a4; border: none; color: #fff; }
+
+  .dialog-new {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 330px; background: #1b1e26; border: 1px solid rgba(255,255,255,.14);
+    border-radius: 18px; padding: 20px 18px 16px; text-align: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  .dialog-new .icon {
+    width: 42px; height: 42px; margin: 0 auto 10px; border-radius: 50%;
+    background: rgba(255,213,79,.14); border: 1px solid rgba(255,213,79,.4);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .dialog-new h3 { font-size: 16px; color: #fff; margin-bottom: 10px; }
+  .chips { display: flex; justify-content: center; gap: 8px; margin-bottom: 10px; }
+  .chip { font-size: 11px; padding: 3px 10px; border-radius: 10px; background: rgba(255,255,255,.08); color: #cfd3d9; border: 1px solid rgba(255,255,255,.1); }
+  .chip.red { background: rgba(226,92,73,.16); color: #ffab91; border-color: rgba(226,92,73,.35); }
+  .chip.green { background: rgba(105,240,174,.12); color: #69f0ae; border-color: rgba(105,240,174,.3); }
+  .dialog-new p { font-size: 13px; color: #bdc1c6; line-height: 1.7; margin-bottom: 14px; }
+  .dialog-new .btns { display: flex; gap: 10px; }
+  .opt {
+    flex: 1; border-radius: 12px; padding: 10px 6px 8px; cursor: pointer; text-align: center;
+  }
+  .opt .t { font-size: 14px; font-weight: 600; display: block; margin-bottom: 3px; }
+  .opt .d { font-size: 10.5px; line-height: 1.5; display: block; }
+  .opt-no { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.16); }
+  .opt-no .t { color: #e8eaed; } .opt-no .d { color: #9aa0a6; }
+  .opt-yes { background: rgba(46,125,91,.22); border: 1px solid rgba(46,125,91,.65); }
+  .opt-yes .t { color: #69f0ae; } .opt-yes .d { color: rgba(105,240,174,.75); }
+  .wait-timer { margin-top: 12px; font-size: 11px; color: #9aa0a6; }
+  .wait-timer b { color: #ffd54f; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>悬浮日志窗 & 轮次确认弹窗 · 优化方案</h1>
+<p class="sub">左为现状，右为优化方案；下方注明对应问题编号（对应我列出的 10 条）。</p>
+
+<!-- ================= 日志窗 ================= -->
+<h2>① 悬浮日志窗（展开态）<span class="tag old">现状</span><span class="tag new">优化后</span></h2>
+<div class="compare">
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="logpanel-old">
+        <div class="row1">
+          <span>残局 · 红方 · 轮到红方 · 评估 0</span>
+          <button class="btn">▲</button>
+        </div>
+        <div class="logline-old c-err">[ERROR] 棋子模板匹配失败：第4行第7列</div>
+        <div class="logline-old c-move">[MOVE] 引擎着法：h2e2（评估分 +36）</div>
+        <div class="logline-old c-enemy">[ENEMY] 检测到对方走子：炮8平5</div>
+        <div class="logline-old c-ok">[OK] 局面同步完成</div>
+      </div>
+      <div class="hint-chip">纯黑底 · 无描边 · 英文标签 · 无时间戳</div>
+    </div>
+    <div class="label">现状</div>
+    <div class="issue-note">
+      <span class="num">1</span><b>风格割裂</b>：纯黑 0.65 无描边，与操控条新主题不一致<br>
+      <span class="num">2</span><b>折叠钮笨重</b>：TextButton 自带最小高度，符号 ▲/▼ 与操控条 ⟩/⟨ 不统一<br>
+      <span class="num">4</span><b>拖动冲突</b>：整个面板可拖动，滚动日志时易误移窗口<br>
+      <span class="num">5</span><b>无时间戳</b>，标签还是英文枚举名<br>
+      <span class="num">6</span><b>评估分无色</b>：+36 与 -12 视觉上无差异
+    </div>
+  </div>
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="logpanel-new">
+        <div class="handle-row">
+          <span class="handle-grip">⠿</span>
+          <span class="statusline">残局 · 红方 · 轮到红方 · <span class="eval-pos">评估 +36</span></span>
+          <button class="collapse-btn">⟩</button>
+        </div>
+        <div class="logbody">
+          <div class="logline"><span class="ts">21:42:07</span><span class="dot c-err">●</span><span class="c-err">棋子模板匹配失败：第4行第7列</span></div>
+          <div class="logline"><span class="ts">21:42:09</span><span class="dot c-move">●</span><span class="c-move">引擎着法：h2e2（评估分 +36）</span></div>
+          <div class="logline"><span class="ts">21:42:12</span><span class="dot c-enemy">●</span><span class="c-enemy">检测到对方走子：炮8平5</span></div>
+          <div class="logline"><span class="ts">21:42:13</span><span class="dot c-ok">●</span><span class="c-ok">局面同步完成</span></div>
+        </div>
+      </div>
+      <div class="hint-chip">标题行 = 拖动把手 ⠿ · 正文区专职滚动</div>
+    </div>
+    <div class="label">优化后</div>
+    <div class="issue-note">
+      <span class="num">1</span>深色 0xD114161C + 白 14% 描边 + 圆角，与操控条同主题<br>
+      <span class="num">2</span>折叠钮改 26dp 圆钮 <b>⟩</b>（展开）/ ⟨（收起），符号体系统一<br>
+      <span class="num">4</span>仅标题行可拖动（左侧把手图标提示），日志区专职滚动<br>
+      <span class="num">5</span>每行加 <b>HH:mm:ss</b> 时间戳，英文标签改彩色圆点（颜色保留语义）<br>
+      <span class="num">6</span>评估分着色：<b style="color:#69f0ae">正=绿</b> / <b style="color:#ff8a80">负=红</b> / 0=白，只变色不加描述文字
+    </div>
+  </div>
+</div>
+
+<h2>① 悬浮日志窗（折叠态 · 新增未读提醒）<span class="tag new">优化后</span></h2>
+<div class="compare">
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="logpanel-collapsed">
+        <span class="handle-grip">⠿</span>
+        <span class="statusline">残局 · 红方 · 轮到红方 · <span class="eval-pos">评估 +36</span></span>
+        <button class="collapse-btn">⟨<span class="unread-dot"></span></button>
+      </div>
+      <div class="hint-chip">正常运行：折叠钮无红点</div>
+    </div>
+    <div class="label">折叠态（正常）</div>
+    <div class="issue-note">
+      <span class="num">3</span>现状：折叠期间 ERROR/WARN 静默发生，用户毫不知情
+    </div>
+  </div>
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="logpanel-collapsed">
+        <span class="handle-grip">⠿</span>
+        <span class="statusline">残局 · 红方 · 轮到红方 · <span class="eval-pos">评估 +36</span></span>
+        <button class="collapse-btn" style="border-color:rgba(255,82,82,.6)">⟨<span class="unread-dot"></span></button>
+      </div>
+      <div class="hint-chip">折叠期间出现 ERROR → 红点提示</div>
+    </div>
+    <div class="label">折叠态（有未读错误）</div>
+    <div class="issue-note">
+      <span class="num">3</span>折叠期间出现 <b style="color:#ff8a80">ERROR / WARN / GAMEOVER</b> 新日志时，折叠钮右上角红点；展开阅读后自动清除
+    </div>
+  </div>
+</div>
+
+<!-- ================= 轮次弹窗 ================= -->
+<h2>② 轮次确认弹窗（无法判断哪方走棋）<span class="tag old">现状</span><span class="tag new">优化后</span></h2>
+<div class="compare">
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="dim dim-old"></div>
+      <div class="dialog-old">
+        <h3>无法判断轮到哪一方</h3>
+        <p>当前为开局，我方为红方。<br>是否由我方先走开局？</p>
+        <div class="btns">
+          <button class="btn-outline">暂不开始</button>
+          <button class="btn-fill">我方先走</button>
+        </div>
+      </div>
+      <div class="hint-chip">浅色卡片 · 与全深色悬浮体系割裂</div>
+    </div>
+    <div class="label">现状</div>
+    <div class="issue-note">
+      <span class="num">7</span><b>语义误导（最重要）</b>：「暂不开始」实际会<b>中止本次开局</b>（会话结束、需重新点开始），<b>不是</b>「等对方先走、稍后自动继续」。弹窗完全没说清后果，极易误选<br>
+      <span class="num">8</span>浅色 Material 卡片，夜间刺眼，与操控条/日志窗割裂<br>
+      <span class="num">9</span>模态等待无时间反馈（bot 后台无限轮询）<br>
+      <span class="num">10</span>无图标、按钮无后果说明
+    </div>
+  </div>
+  <div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="dim dim-new"></div>
+      <div class="dialog-new">
+        <div class="icon">♟</div>
+        <h3>无法判断轮到哪一方</h3>
+        <div class="chips">
+          <span class="chip">阶段：开局</span>
+          <span class="chip red">我方：红方</span>
+        </div>
+        <p>自动识别未能确定当前该谁走棋，<br>请确认是否由我方落子开局：</p>
+        <div class="btns">
+          <div class="opt opt-no">
+            <span class="t">暂不开始</span>
+            <span class="d">中止本次开局<br>稍后需重新点「开始」</span>
+          </div>
+          <div class="opt opt-yes">
+            <span class="t">我方先走</span>
+            <span class="d">bot 立即计算<br>并走出第一步</span>
+          </div>
+        </div>
+        <div class="wait-timer">已等待 <b>18</b> 秒 · 点弹窗外任意处 = 暂不开始</div>
+      </div>
+      <div class="hint-chip">深色卡片 · 按钮+后果说明 · 等待计时</div>
+    </div>
+    <div class="label">优化后</div>
+    <div class="issue-note">
+      <span class="num">7</span>按钮改为<b>选项卡式</b>，每个选项下方一行小字写明真实后果，消除「暂不开始=稍后自动继续」的误解<br>
+      <span class="num">8</span>深色卡片 + 白 14% 描边，与操控条/日志窗同主题；阶段/我方改为信息 chips<br>
+      <span class="num">9</span>底部显示「已等待 N 秒」<i>（可选：超过 60 秒自动选「暂不开始」，避免无人时无限挂起）</i><br>
+      <span class="num">10</span>加棋子图标；遮罩点击=暂不开始 的提示从注释变成可见文案
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

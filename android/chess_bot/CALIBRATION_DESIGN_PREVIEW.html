@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>棋盘四角校准 · 交互原型</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f3f4f6; color: #1f2329; display: flex; justify-content: center; gap: 36px;
+    padding: 32px 24px; flex-wrap: wrap;
+  }
+  h2.section-title { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: #8a9099; margin: 0; }
+
+  /* phone frame */
+  .phone {
+    width: 380px; height: 780px; background: #fff; border-radius: 38px;
+    border: 10px solid #1c1f24; position: relative; overflow: hidden; flex: none;
+    box-shadow: 0 12px 40px rgba(0,0,0,.14);
+  }
+  .notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 120px; height: 22px; background: #1c1f24; border-radius: 0 0 16px 16px; z-index: 30; }
+  .screen { position: absolute; inset: 0; display: none; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  /* app bar */
+  .appbar { height: 56px; background: #c0202e; color: #fff; display: flex; align-items: center;
+    padding: 0 14px; gap: 10px; flex: none; }
+  .appbar .back { font-size: 22px; cursor: pointer; width: 28px; user-select: none; }
+  .appbar .title { font-size: 16px; font-weight: 600; }
+  .appbar .spacer { flex: 1; }
+
+  .scroll { flex: 1; overflow-y: auto; padding: 16px 16px 28px; }
+  .scroll::-webkit-scrollbar { width: 0; }
+
+  .card { background: #fff; border: 1px solid #ebedf0; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h3 { font-size: 14px; font-weight: 600; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+  .perm-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #f2f3f5; }
+  .perm-row:last-child { border-bottom: none; }
+  .perm-ico { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; flex: none; }
+  .perm-txt { flex: 1; }
+  .perm-txt .a { font-size: 13px; font-weight: 500; }
+  .perm-txt .b { font-size: 11px; color: #8a9099; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .badge.ok { background: #e6f4ea; color: #1e8e3e; }
+  .badge.warn { background: #fdecea; color: #c0202e; }
+
+  .kv { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
+  .kv .k { color: #8a9099; }
+  .kv .v { font-weight: 600; }
+
+  .btn { width: 100%; border: none; border-radius: 12px; padding: 13px; font-size: 14px; font-weight: 600;
+    cursor: pointer; margin-top: 8px; font-family: inherit; }
+  .btn.primary { background: #c0202e; color: #fff; }
+  .btn.primary:disabled { background: #f0b8bd; cursor: not-allowed; }
+  .btn.ghost { background: #f3f4f6; color: #1f2329; }
+  .btn.teal { background: #0f6e56; color: #fff; }
+  .btn-row { display: flex; gap: 10px; }
+  .btn-row .btn { flex: 1; }
+
+  .hint { font-size: 12px; color: #8a9099; line-height: 1.6; background: #f7f8fa; border-radius: 10px; padding: 10px 12px; }
+
+  /* steps */
+  .steps { display: flex; justify-content: space-between; padding: 12px 8px 4px; flex: none; }
+  .step { flex: 1; text-align: center; position: relative; }
+  .step .num { width: 28px; height: 28px; border-radius: 50%; margin: 0 auto 5px; display: flex;
+    align-items: center; justify-content: center; font-size: 13px; font-weight: 600;
+    background: #eceef1; color: #8a9099; border: 2px solid transparent; }
+  .step.active .num { background: #c0202e; color: #fff; }
+  .step.done .num { background: #e6f4ea; color: #1e8e3e; border-color: #1e8e3e; }
+  .step .lab { font-size: 11px; color: #8a9099; }
+  .step.active .lab { color: #1f2329; font-weight: 600; }
+  .step:not(:last-child)::after { content: ""; position: absolute; top: 14px; left: 60%; width: 80%;
+    height: 2px; background: #eceef1; }
+
+  /* preview board */
+  .preview-wrap { position: relative; background: #e8c98f; border-radius: 12px; overflow: hidden; margin: 12px 0; }
+  .preview-wrap svg { display: block; width: 100%; height: auto; }
+  .scan { position: absolute; left: 0; right: 0; height: 60px;
+    background: linear-gradient(rgba(192,32,46,0), rgba(192,32,46,.35)); animation: scanmove 1.4s linear infinite; }
+  @keyframes scanmove { 0% { top: -60px; } 100% { top: 100%; } }
+  .scanline { position: absolute; left: 0; right: 0; height: 2px; background: #c0202e; }
+  .corner-marker { fill: none; stroke: #1e8e3e; stroke-width: 3; }
+  .corner-label { font-size: 13px; font-weight: 700; fill: #1e8e3e; }
+  .corner-handle { fill: #1e8e3e; stroke: #fff; stroke-width: 2; cursor: grab; }
+  .corner-handle:active { cursor: grabbing; }
+
+  .valid { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+    padding: 10px 12px; border-radius: 10px; margin-top: 6px; }
+  .valid.ok { background: #e6f4ea; color: #1e8e3e; }
+  .valid.bad { background: #fdecea; color: #c0202e; }
+  .score { font-size: 12px; color: #8a9099; margin-top: 6px; }
+
+  .toast { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+    background: rgba(31,35,41,.92); color: #fff; font-size: 13px; padding: 10px 18px; border-radius: 22px;
+    opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 50; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+
+  /* side panel */
+  .panel { width: 320px; align-self: flex-start; }
+  .panel .box { background: #fff; border: 1px solid #ebedf0; border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .panel .box h4 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: #c0202e; }
+  .panel .box ol { margin: 0; padding-left: 18px; }
+  .panel .box li { font-size: 12.5px; line-height: 1.7; color: #444; margin-bottom: 4px; }
+  .navlinks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .navlinks button { font-size: 12px; padding: 7px 11px; border-radius: 9px; border: 1px solid #d8dbdf;
+    background: #fff; cursor: pointer; font-family: inherit; }
+  .navlinks button:hover { background: #f3f4f6; }
+  .navlinks button.cur { background: #c0202e; color: #fff; border-color: #c0202e; }
+  .k { font-size: 11px; color: #8a9099; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<!-- ============ PHONE ============ -->
+<div class="phone">
+  <div class="notch"></div>
+
+  <!-- SCREEN 1: HOME -->
+  <div class="screen active" id="s-home">
+    <div class="appbar"><div class="title">象棋机器人</div><div class="spacer"></div></div>
+    <div class="scroll">
+      <div class="card">
+        <h3><span class="dot" style="background:#0f6e56"></span>权限与授权</h3>
+        <div class="perm-row">
+          <div class="perm-ico" style="background:#e6f4ea;color:#1e8e3e">①</div>
+          <div class="perm-txt"><div class="a">悬浮窗权限</div><div class="b">Overlay</div></div>
+          <span class="badge ok">已授权</span>
+        </div>
+        <div class="perm-row">
+          <div class="perm-ico" style="background:#e6f4ea;color:#1e8e3e">②</div>
+          <div class="perm-txt"><div class="a">无障碍服务</div><div class="b">Accessibility</div></div>
+          <span class="badge ok">已授权</span>
+        </div>
+        <div class="perm-row">
+          <div class="perm-ico" style="background:#e6f4ea;color:#1e8e3e">③</div>
+          <div class="perm-txt"><div class="a">屏幕捕获</div><div class="b">MediaProjection</div></div>
+          <span class="badge ok">已激活</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3><span class="dot" style="background:#c0202e"></span>棋盘四角校准</h3>
+        <div class="kv"><span class="k">当前分辨率</span><span class="v" id="home-res">1080 × 2400</span></div>
+        <div class="kv"><span class="k">校准状态</span><span class="v" id="home-status"><span class="badge warn">未校准</span></span></div>
+        <div class="hint">把屏幕坐标映射到棋盘坐标。首次使用、换皮肤或换 App 后需重新校准。校准结果写入 App 私有目录 board_corners.json（无需存储权限），运行时优先于硬编码常量、可覆盖任一内置分辨率。</div>
+        <button class="btn primary" id="calBtn" onclick="go('s-calib-perm')">开始校准</button>
+      </div>
+
+      <div class="card">
+        <h3><span class="dot" style="background:#8a9099"></span>对弈</h3>
+        <div class="hint">校准完成后即可在此授权并启动自动对弈。</div>
+        <button class="btn ghost">授权并启动</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: CALIB PERMISSION GATE -->
+  <div class="screen" id="s-calib-perm">
+    <div class="appbar"><div class="back" onclick="go('s-home')">‹</div><div class="title">棋盘四角校准</div><div class="spacer"></div></div>
+    <div class="scroll">
+      <div class="steps">
+        <div class="step active" id="st1"><div class="num">1</div><div class="lab">进入人机</div></div>
+        <div class="step" id="st2"><div class="num">2</div><div class="lab">截屏识别</div></div>
+        <div class="step" id="st3"><div class="num">3</div><div class="lab">校验</div></div>
+        <div class="step" id="st4"><div class="num">4</div><div class="lab">保存</div></div>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:#0f6e56"></span>步骤 1 / 4 · 进入人机模式</h3>
+        <div class="hint" style="background:#fff7e6;border:1px solid #fde6b8;color:#8a6d1a">
+          请打开 <b>象棋 App → 人机对战 → 选择执红</b>，停在 <b>32 子开局、未走棋</b> 状态，再点击下方按钮。<br><br>
+          黑車位于上方两角、红俥位于下方两角，算法据此定位四个角。
+        </div>
+        <button class="btn primary" onclick="openFloat('s-calib-perm')">去截图</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: CALIBRATION (preview + detect) -->
+  <div class="screen" id="s-calib">
+    <div class="appbar"><div class="back" onclick="go('s-calib-perm')">‹</div><div class="title">棋盘四角校准</div><div class="spacer"></div></div>
+    <div class="scroll">
+      <div class="steps">
+        <div class="step done" id="st1b"><div class="num">✓</div><div class="lab">进入人机</div></div>
+        <div class="step active" id="st2b"><div class="num">2</div><div class="lab">截屏识别</div></div>
+        <div class="step" id="st3b"><div class="num">3</div><div class="lab">校验</div></div>
+        <div class="step" id="st4b"><div class="num">4</div><div class="lab">保存</div></div>
+      </div>
+
+      <div class="card" style="padding:10px">
+        <div class="preview-wrap" id="preview">
+          <svg id="board" viewBox="0 0 360 420"></svg>
+          <div class="scan" id="scan" style="display:none"><div class="scanline"></div></div>
+        </div>
+        <div id="detectResult" style="display:none">
+          <svg id="overlay" viewBox="0 0 360 420" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
+          <div class="valid ok">校验通过 · 识别为 32 子开局 ✓</div>
+          <div class="score">匹配度 0.93 · 左上(46,38) 右上(314,38) 左下(46,382) 右下(314,382)</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn ghost" onclick="openFloat('s-calib')">重新截图</button>
+        <button class="btn ghost" onclick="go('s-manual')">手动微调</button>
+      </div>
+      <button class="btn primary" id="saveBtn" disabled onclick="saveCorners()">确认并保存</button>
+      <div class="hint" id="saveHint">识别通过校验后即可保存。若校验失败，可重新识别或手动微调。</div>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: MANUAL FINE-TUNE -->
+  <div class="screen" id="s-manual">
+    <div class="appbar"><div class="back" onclick="go('s-calib')">‹</div><div class="title">手动微调四角</div><div class="spacer"></div></div>
+    <div class="scroll">
+      <div class="card" style="padding:10px">
+        <div class="preview-wrap">
+          <svg id="board2" viewBox="0 0 360 420"></svg>
+          <svg id="overlay2" viewBox="0 0 360 420" style="position:absolute;inset:0;width:100%;height:100%"></svg>
+        </div>
+        <div class="hint">拖动四个绿色角标到棋盘实际四角。用于自动识别偏差时的补救。</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn ghost" onclick="resetManual()">重置</button>
+        <button class="btn teal" onclick="saveFromManual()">确认并保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: FLOATING OPERATION BAR (system overlay) -->
+  <div class="screen" id="s-float">
+    <div style="flex:1;background:#f4f5f7;position:relative;display:flex;flex-direction:column">
+      <div style="height:48px;background:#fff;border-bottom:1px solid #eef0f2;display:flex;align-items:center;padding:0 14px;font-size:14px;font-weight:600;gap:8px;color:#1f2329">
+        <span style="color:#c0202e;font-size:18px">≡</span> 象棋 · 人机对战
+      </div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;color:#aeb4bd;font-size:13px;text-align:center;padding:0 30px">
+        此处为象棋 App 的实时画面<br>（chessbot 已隐藏，仅剩悬浮操作条）
+      </div>
+      <div style="position:absolute;left:16px;right:16px;bottom:18px;background:rgba(255,255,255,.97);border:1px solid #e5e7eb;border-radius:16px;padding:10px;display:flex;gap:10px;box-shadow:0 6px 22px rgba(0,0,0,.16)">
+        <button class="btn ghost" style="flex:1" onclick="floatBack()">返回</button>
+        <button class="btn primary" style="flex:2" onclick="capture()">截图</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 5: DONE -->
+  <div class="screen" id="s-done">
+    <div class="appbar"><div class="title">棋盘四角校准</div><div class="spacer"></div></div>
+    <div class="scroll" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+      <div style="width:84px;height:84px;border-radius:50%;background:#e6f4ea;display:flex;align-items:center;justify-content:center;font-size:40px;color:#1e8e3e;margin-bottom:18px">✓</div>
+      <h2 style="margin:0 0 6px;font-size:18px">校准已保存</h2>
+      <p class="sub" style="margin:0 0 4px">写入 board_corners.json</p>
+      <p class="sub" style="margin:0 0 22px">1080 × 2400 → 四角已记录</p>
+      <button class="btn primary" style="width:200px" onclick="finishHome()">返回主界面</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<!-- ============ SIDE PANEL ============ -->
+<div class="panel">
+  <p class="k">界面说明</p>
+  <h2 class="section-title" id="pnTitle">主界面</h2>
+  <p class="sub" id="pnSub">常驻入口 + 自动触发</p>
+
+  <div class="box">
+    <h4>当前界面交互</h4>
+    <ol id="pnList"></ol>
+  </div>
+
+  <div class="box">
+    <h4>快速跳转</h4>
+    <div class="navlinks" id="navlinks"></div>
+  </div>
+
+  <div class="box">
+    <h4>设计要点</h4>
+    <ol>
+      <li>统一解析：先查 board_corners.json，再回退 Const.BOARD_CORNERS。</li>
+      <li>已校准后主界面按钮变「重新校准」，可覆盖内置/硬编码分辨率。</li>
+      <li>识别后自动校验（透视矫正→全盘识别 32 子开局）才允许保存。</li>
+      <li>存储用 App 私有目录 board_corners.json，无需存储权限，运行时优先于硬编码。</li>
+      <li>手动微调作为自动识别失败时的兜底。</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+const screens = {
+  's-home': { t:'主界面', s:'常驻入口 + 自动触发',
+    l:['查看当前分辨率与校准状态','点击「开始校准」进入向导','未校准时也会在启动时自动弹提示'] },
+  's-calib-perm': { t:'步骤 1 · 进入人机并截图', s:'点击去截图 → 悬浮操作条',
+    l:['提示打开象棋 App 人机模式、执红','停在未走棋的 32 子开局','点「去截图」隐藏 chessbot，弹出悬浮操作条','在悬浮条点「截图」捕获画面并返回步骤 2'] },
+  's-float': { t:'悬浮操作条（系统悬浮窗）', s:'chessbot 已隐藏',
+    l:['覆盖在象棋 App 之上的悬浮窗','「截图」捕获当前界面并返回 chessbot','「返回」放弃并返回上一步'] },
+  's-calib': { t:'步骤 2/3 · 重新截图', s:'捕获画面 + 角点叠加',
+    l:['显示刚截取的棋盘画面','点「重新截图」可再次弹出悬浮条重截','四角绿圈+标签+四边形叠加','校验通过才能「确认并保存」','可「手动微调」兜底'] },
+  's-manual': { t:'手动微调', s:'拖动四角兜底',
+    l:['拖动四个绿角标到棋盘实际四角','实时更新四边形','「重置」恢复自动识别结果','「确认并保存」写文件'] },
+  's-done': { t:'保存成功', s:'写 board_corners.json',
+    l:['显示成功态','「返回主界面」后状态变为已校准✓'] },
+};
+
+function go(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  const info = screens[id];
+  document.getElementById('pnTitle').textContent = info.t;
+  document.getElementById('pnSub').textContent = info.s;
+  document.getElementById('pnList').innerHTML = info.l.map(x=>`<li>${x}</li>`).join('');
+  document.querySelectorAll('#navlinks button').forEach(b=>b.classList.toggle('cur', b.dataset.s===id));
+}
+document.getElementById('navlinks').innerHTML = Object.keys(screens).map(k=>
+  `<button data-s="${k}" onclick="go('${k}')">${screens[k].t}</button>`).join('');
+
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1600);
+}
+
+/* ----- build xiangqi board ----- */
+const COLS=9, ROWS=10, BL=24, BT=18, cellW=(360-2*BL)/(COLS-1), cellH=(420-2*BT)/(ROWS-1);
+function px(c){ return BL + c*cellW; }
+function py(r){ return BT + r*cellH; }
+const pieces = [
+  [0,0,'車','b'],[0,1,'馬','b'],[0,2,'象','b'],[0,3,'士','b'],[0,4,'將','b'],[0,5,'士','b'],[0,6,'象','b'],[0,7,'馬','b'],[0,8,'車','b'],
+  [2,1,'砲','b'],[2,7,'砲','b'],
+  [3,0,'卒','b'],[3,2,'卒','b'],[3,4,'卒','b'],[3,6,'卒','b'],[3,8,'卒','b'],
+  [6,0,'兵','r'],[6,2,'兵','r'],[6,4,'兵','r'],[6,6,'兵','r'],[6,8,'兵','r'],
+  [7,1,'炮','r'],[7,7,'炮','r'],
+  [9,0,'車','r'],[9,1,'馬','r'],[9,2,'相','r'],[9,3,'仕','r'],[9,4,'帥','r'],[9,5,'仕','r'],[9,6,'相','r'],[9,7,'馬','r'],[9,8,'車','r'],
+];
+function drawBoard(svgId){
+  const svg=document.getElementById(svgId); svg.innerHTML='';
+  let s='';
+  // grid
+  for(let c=0;c<COLS;c++){ s+=`<line x1="${px(c)}" y1="${py(0)}" x2="${px(c)}" y2="${py(4)}" stroke="#7a5a2e" stroke-width="1"/>`;
+    s+=`<line x1="${px(c)}" y1="${py(5)}" x2="${px(c)}" y2="${py(9)}" stroke="#7a5a2e" stroke-width="1"/>`; }
+  for(let r=0;r<=4;r++){ s+=`<line x1="${px(0)}" y1="${py(r)}" x2="${px(8)}" y2="${py(r)}" stroke="#7a5a2e" stroke-width="1"/>`; }
+  for(let r=5;r<=9;r++){ s+=`<line x1="${px(0)}" y1="${py(r)}" x2="${px(8)}" y2="${py(r)}" stroke="#7a5a2e" stroke-width="1"/>`; }
+  // river
+  s+=`<rect x="${px(0)}" y="${py(4)}" width="${px(8)-px(0)}" height="${py(5)-py(4)}" fill="#e0b878"/>`;
+  s+=`<text x="180" y="${(py(4)+py(5))/2+4}" text-anchor="middle" font-size="11" fill="#7a5a2e" font-family="serif">楚 河</text>`;
+  s+=`<text x="180" y="${(py(4)+py(5))/2+4}" text-anchor="middle" font-size="11" fill="#7a5a2e" font-family="serif" dx="78">漢 界</text>`;
+  // pieces
+  const pr=cellW*0.42;
+  pieces.forEach(([r,c,ch,side])=>{
+    const fill = side==='r' ? '#c0202e' : '#2b2b2b';
+    s+=`<circle cx="${px(c)}" cy="${py(r)}" r="${pr}" fill="${fill}" stroke="#f3e2c0" stroke-width="2"/>`;
+    s+=`<text x="${px(c)}" y="${py(r)+pr*0.42}" text-anchor="middle" font-size="${pr*0.8}" fill="#fff" font-family="serif" font-weight="700">${ch}</text>`;
+  });
+  svg.innerHTML=s;
+}
+drawBoard('board'); drawBoard('board2');
+
+/* ----- corner overlay ----- */
+const corners = [ {x:px(0),y:py(0),lab:'左上'}, {x:px(8),y:py(0),lab:'右上'},
+                 {x:px(0),y:py(9),lab:'左下'}, {x:px(8),y:py(9),lab:'右下'} ];
+function drawOverlay(ovId, drag){
+  const ov=document.getElementById(ovId); let s='';
+  s+=`<polygon points="${corners.map(c=>c.x+','+c.y).join(' ')}" fill="rgba(30,142,62,.12)" stroke="#1e8e3e" stroke-width="2"/>`;
+  corners.forEach((c,i)=>{
+    s+=`<circle cx="${c.x}" cy="${c.y}" r="13" class="corner-marker"/>`;
+    if(drag){ s+=`<circle cx="${c.x}" cy="${c.y}" r="11" class="corner-handle" data-i="${i}"/>`; }
+    const lx = c.x<180 ? c.x-2 : c.x+2, anchor = c.x<180?'end':'start';
+    const ly = c.y<60 ? c.y+24 : c.y-16;
+    s+=`<text x="${lx}" y="${ly}" text-anchor="${anchor}" class="corner-label">${c.lab}</text>`;
+  });
+  ov.innerHTML=s;
+  if(drag) enableDrag(ovId);
+}
+function detect(){
+  document.getElementById('scan').style.display='block';
+  document.getElementById('detectResult').style.display='none';
+  document.getElementById('saveBtn').disabled=true;
+  setTimeout(()=>{
+    document.getElementById('scan').style.display='none';
+    drawOverlay('overlay', false);
+    document.getElementById('detectResult').style.display='block';
+    document.getElementById('saveBtn').disabled=false;
+    go('s-calib');
+    setStep('st2b','active'); setStep('st3b','active');
+    toast('识别完成 · 校验通过');
+  }, 1500);
+}
+function setStep(id, cls){ const e=document.getElementById(id); e.className='step '+cls;
+  if(cls==='done') e.querySelector('.num').textContent='✓'; }
+
+let floatOrigin='s-calib-perm';
+function openFloat(origin){ floatOrigin=origin; go('s-float'); }
+function floatBack(){ go(floatOrigin); }
+function capture(){
+  go('s-calib');
+  document.getElementById('detectResult').style.display='none';
+  document.getElementById('saveBtn').disabled=true;
+  detect();
+}
+function saveCorners(){ go('s-done'); }
+function finishHome(){
+  go('s-home');
+  document.getElementById('home-status').innerHTML='<span class="badge ok">已校准</span>';
+  document.getElementById('calBtn').textContent='重新校准';
+  toast('主界面状态已更新为已校准');
+}
+
+/* ----- manual drag ----- */
+function enableDrag(ovId){
+  const ov=document.getElementById(ovId);
+  ov.querySelectorAll('.corner-handle').forEach(h=>{
+    h.addEventListener('pointerdown', e=>{
+      e.preventDefault(); const i=+h.dataset.i;
+      const move=ev=>{
+        const rect=ov.getBoundingClientRect();
+        let x=(ev.clientX-rect.left)/rect.width*360;
+        let y=(ev.clientY-rect.top)/rect.height*420;
+        x=Math.max(8,Math.min(352,x)); y=Math.max(8,Math.min(412,y));
+        corners[i].x=x; corners[i].y=y; drawOverlay(ovId, true);
+      };
+      const up=()=>{ document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up); };
+      document.addEventListener('pointermove',move); document.addEventListener('pointerup',up);
+    });
+  });
+}
+function resetManual(){ corners[0]={x:px(0),y:py(0)}; corners[1]={x:px(8),y:py(0)};
+  corners[2]={x:px(0),y:py(9)}; corners[3]={x:px(8),y:py(9)}; drawOverlay('overlay2', true); }
+function saveFromManual(){ go('s-done'); }
+
+/* init manual overlay on first open */
+let manualInit=false;
+const obs=new MutationObserver(()=>{ if(!manualInit && document.getElementById('s-manual').classList.contains('active')){ drawOverlay('overlay2', true); manualInit=true; } });
+obs.observe(document.getElementById('s-manual'), {attributes:true, attributeFilter:['class']});
+</script>
+</body>
+</html>

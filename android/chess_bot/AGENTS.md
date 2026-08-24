@@ -22,9 +22,11 @@
 | halfmove_clock | 吃子归零/非吃 +1，写入 FEN 供引擎自然限招 |
 
 **UI 强制要求**：
-1. 主界面有启动按钮；点击后创建**悬浮操作条**
-2. 操作条两个控件：**开始/中断棋局** 按钮、**自动下一局** 开关（默认开）
-3. **日志框悬浮在屏幕上方**（不遮挡棋子）：状态行（棋盘阶段/阵营/状态）+ 滚动操作日志
+1. 主界面三段式：① 权限与授权（4 项）② 棋盘四角校准 ③ 对弈；每段 Card 条目为「序号圆徽标 + 标题，右侧值/状态徽章」行样式
+2. 对弈段启动按钮：点击后走 MediaProjection 授权 → 创建**悬浮操作条**；运行中按钮变「停止并退出悬浮窗」
+3. 操作条两个控件：**开始/中断棋局** 按钮、**自动下一局** 开关（默认开）
+4. **日志框悬浮在屏幕上方**（不遮挡棋子）：状态行（棋盘阶段/阵营/走棋方/**评估分**）+ 滚动操作日志
+5. 校准流程 2 步：① 进入人机模式（App 退后台、悬浮截图条）② 截屏识别（回 App 显示识别中→结果→可选手动微调）→ 保存回主界面
 
 ---
 
@@ -100,7 +102,8 @@ autoNextGame / initialize / confirmStart / finishGame / emit
   gameOver/highlight/lastMove/lastEvalScore/resignStreak/noisyCount/liftLogged）
 - mySide/turn/phase 非可选 + initialized 标志的结论沿用；flow 入口保证 turn 已定；
   computeMove 以 initialized 兜底防占位值流入 FEN
-- confirmStart 弹窗：悬浮日志窗内嵌确认卡片（「我方先走开始」/「暂不开始」两按钮），
+- confirmStart 弹窗：屏幕中央模态深色弹窗（TurnConfirmDialog：琥珀 ♟ 图标+阶段/我方 chips+
+  左右并排选项卡各带后果说明；不自动选择，点遮罩=暂不开始），
   替代原网页 prompt_turn；同样可被中断
 - finishGame 的调用路径日志简化为协程调用栈（可选保留）
 
@@ -127,9 +130,16 @@ autoNextGame / initialize / confirmStart / finishGame / emit
 
 - WindowManager.LayoutParams TYPE_APPLICATION_OVERLAY；内容为 ComposeView
 - ComposeView 挂到 WindowManager 时需手工安装 LifecycleOwner/SavedStateRegistryOwner
-  （封装 OverlayWindow 基类处理，两处窗口共用）
-- 操作条：底部居中可拖动；日志窗：顶部，最大高度不超过屏幕 1/4，可折叠成单行状态条
-- 日志渲染 SharedFlow<LogEvent> 最近 N=100 条；kind→颜色映射对齐网页样式
+  （封装 OverlayWindow 基类处理，各窗口共用）
+- 操作条：底部居中可拖动（仅上下），可收起为右缘小圆钮（收起态 9dp 状态点：绿=运行/灰=暂停；
+  长按收起钮=中断棋局+自动展开）；日志窗：顶部，最大高度不超过屏幕 20%，可折叠成单行状态条
+  （折叠期间 WARN/ERROR/GAME 记未读红点，展开即清除）
+- 三个悬浮窗（操控条/日志窗/轮次弹窗）统一深色主题：0xD114161C 底 + 白 14% 描边 + 圆角
+- 校准悬浮截图条（CalibrationCaptureOverlay）复用同一封装；截图后**先 bringHome 再 dismiss**
+  （Android 10+ 后台启动限制：悬浮窗可见才有豁免权，时序反了回不了 App）
+- 日志渲染 SharedFlow<LogEvent> 最近 N=100 条；`LogEvent(kind, tag, msg, time)` 双维度
+  （kind→颜色：ERROR红/WARN黄/OK绿/MOVE蓝/ENEMY紫/GAME橙/DEBUG 半透明弱化；
+  tag→[模块] 前缀）；仅日志窗标题行可拖（⠿ 把手），正文区专职滚动
 
 ### 9. 性能预算
 
@@ -156,27 +166,36 @@ android/chess_bot/
 │       │   └── pikafish.nnue
 │       ├── jniLibs/arm64-v8a/libpikafish.so
 │       └── java/com/chess/bot/
-│           ├── MainActivity.kt           # Compose：权限引导 + 完整日志 + 启动按钮
+│           ├── MainActivity.kt           # Compose：三段式主界面（权限/校准/对弈）+ 日志 + 校准屏分支渲染
 │           ├── ui/                       # 主题/组件
+│           │   ├── CalibrationSession.kt # 校准状态机（HOME/STEP1/RECOGNIZING/RESULT/MANUAL）
+│           │   └── CalibrationUi.kt      # 校准 Card / Step1 / 识别中 / 结果页 / 手动微调屏
 │           ├── overlay/
 │           │   ├── OverlayHost.kt        # WindowManager 封装 + Compose 生命周期桥
-│           │   ├── ControlBarOverlay.kt  # 操作条：开始/中断 + 自动下一局开关
-│           │   └── LogPanelOverlay.kt    # 顶部日志窗：状态行 + 滚动日志 + 确认轮次卡片
+│           │   ├── OverlayManager.kt     # 操作条/日志窗创建、拖动、回调、BotRuntime 运行态(含 playActive)
+│           │   ├── ControlBarOverlay.kt  # 操作条：开始/中断 + 自动下一局开关（深色主题）
+│           │   ├── LogPanelOverlay.kt    # 顶部日志窗：状态行(阶段·阵营·走棋方·评估分着色) + 滚动日志 + 折叠未读红点
+│           │   ├── TurnConfirmDialog.kt  # 轮次确认中央模态弹窗（深色，左右并排选项卡+后果说明）
+│           │   └── CalibrationCaptureOverlay.kt  # 校准悬浮截图条（返回/截图）
 │           ├── service/
-│           │   ├── BotForegroundService.kt   # mediaProjection 型前台服务总入口
+│           │   ├── BotForegroundService.kt   # mediaProjection 型前台服务总入口（EXTRA_CALIBRATION 区分校准/对弈）
 │           │   └── ScreenCaptureSource.kt    # VirtualDisplay/ImageReader 最新帧
 │           ├── accessibility/
 │           │   └── BotAccessibilityService.kt # 手势点击
 │           ├── engine/PikafishEngine.kt       # 子进程 UCI 客户端
 │           ├── vision/
-│           │   ├── Homography.kt / BoardGeometry.kt   #矫正/逆映射/网格↔记谱
+│           │   ├── Homography.kt / BoardGeometry.kt   #矫正/逆映射/网格↔记谱（四角先查 Store 再回退硬编码）
+│           │   ├── BoardCornerDetector.kt             # 棋盘四角自动识别（角车模板多尺度匹配）
 │           │   ├── TemplateMatcher.kt                 #TM_CCOEFF_NORMED
+│           │   ├── VisionInit.kt                      # OpenCV init + 模板加载 + Store attach
 │           │   └── Recognition.kt
 │           ├── game/
 │           │   ├── state.kt opening.kt moves.kt classifier.kt draw.kt   # 纯函数直译
 │           │   └── BotSession.kt                                        # 状态机
-│           ├── data/BotSettings.kt               # DataStore：自动下一局默认值等
-│           └── log/LogBus.kt                     # LogKind + SharedFlow
+│           ├── data/
+│           │   ├── BotSettings.kt               # DataStore：自动下一局默认值等
+│           │   └── BoardCornersStore.kt         # 校准四角持久化 board_corners.json（手动优先）
+│           └── log/LogBus.kt                     # LogEvent(kind+tag+time) SharedFlow + logcat 镜像
 ```
 
 ---
@@ -211,6 +230,11 @@ android/chess_bot/
 | 审查裁决 ✅ 2026-08-24 | **F1** 废除 AutoNext 的 hasBothKings 过滤（画蛇添足）：回归 python 原语义——31 跳过、其余静止帧稳定 x/3 即返回，不做将帅/子数过滤；若未来要加校验应针对 32 子做初始位置/仅走一步校验。**F2** 删除死代码：TextMatcher.findGameoverText、Recognizer.recognize。**F3** 明确 start 同步阶段不处理和棋弹窗为有意行为（对齐 python），Capture.grab 加注释 |
 | 审查补丁 ✅ 2026-08-24 | **修复 F1 简化时误删的核心前置条件**：稳定计数必须满足「prevBoard 存在且 contentDeepEquals 逐值相等」，否则 prevBoard=board、stableCount=0 并打「重新计稳定」——恢复 python 的双分支结构（此前 F1 整块重写时把相等累加/重置两分支错误压成了无条件 stable++，会导致变化中的棋盘也被判稳定返回）。**补回 count==32 快速返回**（当做开局处理，首帧即返，无需稳定计数）——F1 重写同样漏掉了该分支，至此 scanAndWait 与 python 分支结构完全一致：31 跳过 / 32 快速返回 / 相等累加 / 否则重置 | assembleDebug + testDebugUnitTest 全绿 |
 | 审计问题处理 ✅ 2026-08-24 | **P1 已修复**：TextMatcher.findText 循环后补 `gray.release()`（此前每次调用泄漏 ~2.5MB native 灰度图，dismissDraw 每帧/AutoNext 每 300ms 各调一次，长会话必然 OOM）。**P2 复核后无需修改**：JVM 流解码默认 REPLACE 容错，非法字节不会抛异常（与 python errors="replace" 等价），已加注释固化。**P2b 已修复**：NNUE 首启拷贝改为「临时名 + rename」原子写入，杜绝中途被杀残留截断权重。**P3 裁决维持 8**：手机 SoC 核心数少于 PC，有意偏离 python 的 12，Const.kt 已注释说明勿擅自调回 | assembleDebug + testDebugUnitTest 全绿 |
+| M7 ✅ 2026-08-24 | **棋盘四角自动识别与记录**（对应 python scripts/detect_board_corners.py）：① BoardCornerDetector.kt（Kotlin 移植：estimateScale/nonMaxSuppression/orderCorners 四角排序；detect 用角车模板 `b_r`/`r_R` 多尺度 TM_CCOEFF_NORMED 匹配；validateAsOpening 透视矫正后比对开局 32 子）② BoardCornersStore.kt（App 私有目录 `board_corners.json`，原子写 tmp+rename；优先级 手动校准 > Const.BOARD_CORNERS 硬编码）③ Homography.get() 改先查 Store 再回退硬编码 + invalidate() 失效缓存；VisionInit.init 末尾 attach(context) ④ CalibrationSession.kt（状态机 HOME/RESULT/MANUAL：moveTaskToBack 隐藏 App→悬浮条截图→detect+validate→RESULT；手动微调 manualCorners 覆盖）⑤ CalibrationCaptureOverlay.kt（底部悬浮条 返回/截图，复用 OverlayHost）⑥ CalibrationUi.kt（主界面 CalibrationCard 开始校准/重新校准 + 结果页四角叠加 + 手动拖动微调）⑦ MainActivity 按 CalibrationSession.screen 分支渲染。交互：步骤一去截图（隐藏 App 显悬浮条）/ 步骤二重新截图（同逻辑）/ 手动微调保留 / 默认执红 / 保存回主界面 / 已校准按钮变重新校准 / 手动优先覆盖内置 | assembleDebug + testDebugUnitTest 全绿（新增 5 纯函数单测：estimateScale/orderCorners×2/nonMaxSuppression×2）；**待真机验证**：OpenCV detect/validateAsOpening 识别率 + 悬浮条跨 App 截图流程 |
+
+| M8 ✅ 2026-08-24 | **主界面三段式重构 + 截图崩溃修复**：① 主界面改为「权限与授权 / 棋盘四角校准 / 对弈」三段式（对齐 `CALIBRATION_DESIGN_PREVIEW.html`）：`MainActivity.HomeContent` 重写；新增 `calibrationProjectionLauncher`、`Step1Screen` 分支、`SectionTitle`；移除旧 `StartOrStopButton` ② `ui/CalibrationUi.kt` 新增 `PlayCard(permsOk, calibrated, captureActive, onStart, onStop)`（对弈段：4 权限未齐或当前分辨率未校准则禁用并提示原因；captureActive 时显「停止并退出悬浮窗」）；`CalibrationCard(permsOk, onStart)` 去掉坐标映射说明、权限未齐按钮禁用并提示 ③ `CalibrationSession` 新增 `projectionRequest` 注入、`onGoScreenshot`/`onProjectionGranted`/`cancelStep1`；开始校准只切 STEP1 不预申请录屏 ④ `BotForegroundService.start(..., calibration: Boolean)` + `EXTRA_CALIBRATION`：校准模式仅持截屏管线、不弹对弈控制条 ⑤ **截图崩溃修复**：`BoardCornerDetector.detect` 把灰度截图(CV_8UC1)与 BGR 模板(CV_8UC3)做 matchTemplate 触发 -215 Assertion；新增 `toGrayMat` 在 `findPeaks` 内把模板统一转灰度再匹配，匹配后 release 临时 Mat | assembleDebug + testDebugUnitTest 全绿；**待真机验证**：OpenCV detect/validateAsOpening 识别率 + 悬浮条跨 App 截图与校准保存流程 |
+| M9 ✅ 2026-08-24 | **校准/微调体验闭环 + 对弈按钮解耦 + 评估分上标题**：① **截图流程重排**：`onScreenshot` 改「同步抓帧 → bringHome → dismiss 悬浮条 → RECOGNIZING loading 屏 → 后台 detect+validate → RESULT」；新增 `CalibrationScreen.RECOGNIZING` 枚举 + `recognizing` 状态防抖（finally 复位）。**关键时序**：`bringHome` 必须在 `dismiss()` **之前**——Android 10+ 后台 Activity 启动受限，悬浮窗（TYPE_APPLICATION_OVERLAY）可见时才豁免，先 dismiss 会导致回不了 App；bringHome 改 `NEW_TASK\|CLEAR_TOP\|SINGLE_TOP` Intent ② **微调页崩溃修复**：外层 `Column.verticalScroll` 给子项无限高度约束，内部 `Box.verticalScroll` 抛 IllegalStateException；预览区加 `heightIn(max=屏高×55%)` 有界化 ③ **微调交互**：角标圈统一 `30dp×zoom` 跟随图片缩放（选中态仅靠边框色区分）；offset 减半径改**圆心对齐**（修复保存坐标偏移半圈的真 bug，与结果页 Canvas 圆心绘制对齐）；`detectTapGestures` 单击即切换选中（`detectDragGestures.onDragStart` 需过触摸阈值，纯点击不触发）；方向键长按连发 `HoldButton`（按下立即一步、300ms 后每 60ms 连发，`collectIsPressedAsState`）；标签「微调：」「图片缩放：」；预览图下方实时显示 4 角标中心点坐标 ④ **校准步骤 2 步制**：步骤 1 进入人机模式 → 步骤 2 截屏识别，微调为步骤 2 子功能 ⑤ **对弈按钮解耦**：`BotRuntime.playActive` StateFlow——仅对弈模式（非校准）启动成功置位，ACTION_STOP/onDestroy 复位；主界面 CTA 改用 playActive 而非 `ScreenCaptureSource.active`，校准持管线不再把按钮误显为「停止并退出悬浮窗」 ⑥ **悬浮日志窗状态行**追加第四段「评估 <分>」（正数带 +，开局未跑引擎=0 即均势；只显数值不加优劣势描述）；`computeMove` 拿到引擎分后立即 `emit()` ⑦ 主界面：权限/校准条目统一序号圆徽标+右侧状态徽章行样式（PermRow/InfoRow）；Card 内标题去重（保留 SectionTitle）；运行日志标题行（含 ▼/▶ 开关）移出 Card、收起时不渲染 Card ⑧ `Const.BOARD_CORNERS` 新增 1080x2376 预设、微调 2400/3200 实测数值；agp 9.3.1→9.3.2 | assembleDebug + testDebugUnitTest 全绿；真机验证通过（校准全流程/微调交互） |
+| M10 ✅ 2026-08-24 | **日志体系重构（kind+tag 双维度）+ 悬浮窗深色统一**：① `LogBus` 重构为 `LogEvent(kind, tag, msg, time)`：Kind=DEBUG/INFO/OK/WARN/ERROR/MOVE/ENEMY/GAME（原 GAMEOVER→GAME、新增 DEBUG 弱化级）；Tag 枚举=系统/服务/引擎/视觉/校准/对局/我方/对方/交互/下一局；time=HH:mm:ss（ThreadLocal SimpleDateFormat）；logcat 镜像带 `[KIND/TAG]` 前缀 ② BotSession 等 **~80 处调用点重梳**：FEN/评估计算/点击坐标/逐帧变动/「引擎着法」归 DEBUG（评估分并入我方 MOVE 行「走棋 h2e2：…（评估 +120）」）；残局/下一局/排局开始归 GAME；「flow 流程结束！」→ DEBUG；测试目录无直接 LogBus 引用，单测无需改 ③ **悬浮操控条/日志窗/轮次弹窗统一深色主题**（0xD114161C 底+白14%描边+圆角）：操控条重写（开始绿/中断红、MiniSwitch 30x16dp、收起态圆钮 9dp 状态点绿=运行灰=暂停、收起态**长按=中断+自动展开**、退出确认两分支统一 3 秒超时还原）；日志窗重写（仅标题行可拖 ⠿ 把手、正文专职滚动、26dp 圆形折叠钮 ⟩/⟨、折叠期间 WARN/ERROR/GAME 计未读红点、评估分独立数据流着色 正绿/负红/0白、DEBUG 行半透明弱化、折叠钮贴最右侧——状态行 `weight(1f)` 占满+文本 maxLines=1 省略号）；轮次弹窗 `TurnConfirmDialog.kt` 独立文件对齐 `TURN_LOG_PREVIEW.html` 设计稿（琥珀 ♟ 图标+「阶段：开局/我方：红方」chips+说明文案+**左右并排**选项卡各带后果说明：暂不开始=中性「中止本次开局」/我方先走=绿「bot 立即计算」+底部「已等待 N 秒 · 点弹窗外=暂不开始」，**不自动选择必须人工点击**，点遮罩=暂不开始） ④ 主界面日志框 `heightIn(max=320dp)+verticalScroll`+新日志自动滚底，不再撑开页面 | assembleDebug + testDebugUnitTest 全绿；真机验证通过（用户确认全部测试 OK） |
 
 ## 十一、Android↔Python 全量对比审查（2026-08-23）
 
@@ -233,14 +257,14 @@ android/chess_bot/
 
 1. EnemyFrame 用 sealed interface 替代 `Move | Literal` 联合类型
 2. apply/infer 等函数改名（applyMove/inferMove）避免 Kotlin 关键字冲突；GameState 用类+private set 而非 dataclass
-3. finishGame 的调用路径堆栈日志简化为 LogKind.GAMEOVER 一条（网页端专用调试信息未移植）
+3. finishGame 的调用路径堆栈日志简化为 LogKind.GAME 一条（网页端专用调试信息未移植）
 4. 截屏来源为 MediaProjection 共享缓冲，识别侧拿到引用后立即拷入 Mat，理论存在单帧撕裂窗口（实测未见）
 5. 引擎 EvalFile 显式指定 filesDir 绝对路径（python 依赖 cwd 默认名，Android 无 cwd 可依赖）
 
 
 ## 十、已知限制 / 后续可选
 
-1. **分辨率覆盖**：`BOARD_CORNERS` 仅内置 1080x2400 与 1440x3200；其他分辨率启动时将报「未配置四角坐标」。如需支持更多设备，按 python scripts/detect_board_corners 流程补表即可
+1. **分辨率覆盖**：`BOARD_CORNERS` 内置 1080x2376 / 1080x2400 / 1440x3200；M7 已支持首次运行自动识别并持久化当前分辨率四角（App 私有 `board_corners.json`，手动校准优先级高于硬编码、可覆盖任一内置分辨率），故任意分辨率均可经一次校准后使用，无需手补表。识别率依赖角车棋子清晰度，必要时用手动微调兜底
 2. **横竖屏**：按竖屏游戏设计，未处理旋转后 VirtualDisplay 尺寸变化
 3. **多用户/分身**：未适配
 4. **pikafish 二进制已入库**（用户决策）：so+NNUE 随 git 分发，克隆即构建；后续若引擎升级直接替换对应路径文件

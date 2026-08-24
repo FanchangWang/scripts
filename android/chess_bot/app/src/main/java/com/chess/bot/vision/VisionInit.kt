@@ -3,8 +3,10 @@ package com.chess.bot.vision
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.chess.bot.data.BoardCornersStore
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogTag
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Mat
@@ -24,11 +26,12 @@ object VisionInit {
         synchronized(this) {
             if (initialized) return true
             if (!OpenCVLoader.initLocal()) {
-                LogBus.log(LogKind.ERROR, "OpenCV 本地库初始化失败")
+                LogBus.log(LogKind.ERROR, LogTag.VISION, "OpenCV 本地库初始化失败")
                 return false
             }
             initialized = true
-            LogBus.log(LogKind.OK, "OpenCV 已初始化")
+            BoardCornersStore.attach(context)
+            LogBus.log(LogKind.OK, LogTag.VISION, "OpenCV 已初始化")
         }
         return true
     }
@@ -53,7 +56,7 @@ object VisionInit {
                 bmp.recycle()
                 map[id] = bgr
             }
-            LogBus.log(LogKind.INFO, "已加载 ${map.size} 张棋子模板")
+            LogBus.log(LogKind.DEBUG, LogTag.VISION, "已加载 ${map.size} 张棋子模板")
             pieceTemplates = map
             map
         }

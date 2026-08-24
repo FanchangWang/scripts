@@ -21,17 +21,24 @@ import com.chess.bot.data.BotSettings
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogEvent
 import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogTag
 
 /** 跨悬浮窗/后续 BotSession 共享的运行态。 */
 object BotRuntime {
     /** 自动对弈是否运行中（M2 为占位开关，M5 接真实状态机）。 */
     val running = MutableStateFlow(false)
 
+    /** 对弈模式是否运行（对弈控制条已弹出）；校准仅持截屏管线时不置位，主界面「对弈」按钮据此显示。 */
+    val playActive = MutableStateFlow(false)
+
     /** 自动下一局开关（默认开，DataStore 持久化）。 */
     val autoNext = MutableStateFlow(true)
 
     /** 悬浮日志窗状态行：阶段 / 阵营 / 运行状态。 */
     val statusLine = MutableStateFlow("未同步 · 未运行")
+
+    /** 最近一次引擎评估分（我方视角，正=我方占优）；悬浮窗据此给「评估」段着色。 */
+    val evalScore = MutableStateFlow(0)
 
     /** 无法推断轮次时悬浮日志窗弹出确认卡片。 */
     val pendingTurnConfirm = MutableStateFlow(false)
@@ -56,13 +63,16 @@ object OverlayManager {
         }
     private val botScope = CoroutineScope(
         SupervisorJob() + botExecutor.asCoroutineDispatcher() + kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
-            LogBus.log(LogKind.ERROR, "后台任务未捕获异常：${e::class.java.simpleName}: ${e.message}")
+            LogBus.log(LogKind.ERROR, LogTag.SYSTEM, "后台任务未捕获异常：${e::class.java.simpleName}: ${e.message}")
             android.util.Log.e("OverlayManager", "uncaught in botScope", e)
         },
     )
 
     private val logs = mutableStateListOf<LogEvent>()
     private val collapsed = mutableStateOf(false)
+
+    /** 日志窗折叠期间出现过 WARN/ERROR/GAME：折叠钮显示红点，展开阅读后清除。 */
+    private val unreadAlert = mutableStateOf(false)
 
     /** 操作条收起态：收起后仅剩右缘「◀」小圆钮。 */
     private val barCollapsed = mutableStateOf(false)
@@ -89,6 +99,11 @@ object OverlayManager {
                 LogBus.events.collect { event ->
                     logs.add(event)
                     while (logs.size > 100) logs.removeAt(0)
+                    if (collapsed.value &&
+                        (event.kind == LogKind.WARN || event.kind == LogKind.ERROR || event.kind == LogKind.GAME)
+                    ) {
+                        unreadAlert.value = true
+                    }
                 }
             }
             uiScope.launch {
@@ -110,11 +125,17 @@ object OverlayManager {
                 },
             ) {
                 val statusLine by BotRuntime.statusLine.collectAsState()
+                val evalScore by BotRuntime.evalScore.collectAsState()
                 LogPanelContent(
                     statusLine = statusLine,
+                    evalScore = evalScore,
                     collapsed = collapsed.value,
+                    unreadAlert = unreadAlert.value,
                     logs = logs,
-                    onToggleCollapse = { collapsed.value = !collapsed.value },
+                    onToggleCollapse = {
+                        collapsed.value = !collapsed.value
+                        if (!collapsed.value) unreadAlert.value = false
+                    },
                     onDrag = { dx, dy -> dragLog(dx, dy) },
                 )
             }
@@ -141,11 +162,12 @@ object OverlayManager {
                     onConfirmExit = ::onConfirmExit,
                     onCancelExit = ::onCancelExit,
                     onToggleCollapse = { barCollapsed.value = !barCollapsed.value },
+                    onLongPressInterrupt = ::onCollapsedLongPress,
                     onDragY = { dy -> dragControl(dy) },
                 )
             }
         }
-        LogBus.log(LogKind.OK, "悬浮操作条与日志窗已显示")
+        LogBus.log(LogKind.OK, LogTag.SYSTEM, "悬浮操作条与日志窗已显示")
     }
 
     fun dismissAll() {
@@ -200,7 +222,7 @@ object OverlayManager {
         val s = ensureSession(ctx)
         if (BotRuntime.running.value) {
             s.interrupt()
-            LogBus.log(LogKind.WARN, "已请求中断棋局")
+            LogBus.log(LogKind.WARN, LogTag.PLAY, "已请求中断棋局")
             barCollapsed.value = false // 中断后展开，方便再次操作
         } else {
             scopeLaunchStart(ctx)
@@ -210,28 +232,36 @@ object OverlayManager {
     private fun scopeLaunchStart(ctx: Context) {
         barCollapsed.value = true // 开始后自动收起到右缘，避免遮挡棋盘/按钮
         botScope.launch { ensureSession(ctx).start() }
-        LogBus.log(LogKind.INFO, "开始棋局：同步棋盘并启动对弈")
+        LogBus.log(LogKind.INFO, LogTag.PLAY, "开始棋局：同步棋盘并启动对弈")
+    }
+
+    /** 收起态长按「⟨」：直接中断棋局并自动展开（展开即反馈，方便再次开始）。 */
+    private fun onCollapsedLongPress() {
+        if (!BotRuntime.running.value) return
+        session?.interrupt()
+        LogBus.log(LogKind.WARN, LogTag.PLAY, "已请求中断棋局（收起态长按）")
+        barCollapsed.value = false
     }
 
     private fun onAutoNextChange(value: Boolean) {
         BotRuntime.autoNext.value = value
-        LogBus.log(LogKind.INFO, "自动下一局已${if (value) "开启" else "关闭"}")
+        LogBus.log(LogKind.INFO, LogTag.NEXT, "自动下一局已${if (value) "开启" else "关闭"}")
         uiScope.launch { settings?.setAutoNextEnabled(value) }
     }
 
 
 
-    /** ✕ 第一段：进入内联确认态（进行中提示先中断；空闲 3 秒未确认自动还原）。 */
+    /** ✕ 第一段：进入内联确认态；两种文案统一 3 秒未确认自动还原。 */
     private fun onRequestClose() {
         exitPromptJob?.cancel()
-        if (BotRuntime.running.value) {
-            exitPrompt.value = "棋局进行中：将自动中断棋局并退出，是否确认？"
-            return
+        exitPrompt.value = if (BotRuntime.running.value) {
+            "棋局进行中：将自动中断棋局并退出，是否确认？"
+        } else {
+            "确认退出 ChessBot？"
         }
-        exitPrompt.value = "确认退出 ChessBot？"
         exitPromptJob = uiScope.launch {
             kotlinx.coroutines.delay(3000)
-            if (exitPrompt.value == "确认退出 ChessBot？") exitPrompt.value = null
+            exitPrompt.value = null
         }
     }
 
@@ -240,7 +270,7 @@ object OverlayManager {
         val ctx = appContext ?: return
         if (BotRuntime.running.value) {
             session?.interrupt()
-            LogBus.log(LogKind.WARN, "已中断棋局")
+            LogBus.log(LogKind.WARN, LogTag.PLAY, "已中断棋局")
         }
         exitPromptJob?.cancel()
         exitPrompt.value = null

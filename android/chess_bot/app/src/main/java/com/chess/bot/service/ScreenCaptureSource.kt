@@ -53,6 +53,7 @@ class ScreenCaptureSource private constructor() {
                     ?: run {
                         com.chess.bot.log.LogBus.log(
                             com.chess.bot.log.LogKind.ERROR,
+                            com.chess.bot.log.LogTag.SERVICE,
                             "getMediaProjection 返回 null",
                         )
                         return false
@@ -60,6 +61,7 @@ class ScreenCaptureSource private constructor() {
             } catch (e: Exception) {
                 com.chess.bot.log.LogBus.log(
                     com.chess.bot.log.LogKind.ERROR,
+                    com.chess.bot.log.LogTag.SERVICE,
                     "getMediaProjection 异常：${e::class.java.simpleName}: ${e.message}",
                 )
                 android.util.Log.e(TAG, "getMediaProjection 失败", e)
@@ -77,6 +79,7 @@ class ScreenCaptureSource private constructor() {
                 // 用户从系统面板停止投屏或授权被回收：清理并通知
                 com.chess.bot.log.LogBus.log(
                     com.chess.bot.log.LogKind.WARN,
+                    com.chess.bot.log.LogTag.SERVICE,
                     "屏幕捕获已停止（系统回收），请重新点击启动",
                 )
                 stop()
@@ -108,7 +111,8 @@ class ScreenCaptureSource private constructor() {
         started = true
         active.value = true
         com.chess.bot.log.LogBus.log(
-            com.chess.bot.log.LogKind.INFO,
+            com.chess.bot.log.LogKind.DEBUG,
+            com.chess.bot.log.LogTag.SERVICE,
             "VirtualDisplay 已创建：${width}x${height}@$dpi",
         )
         return true

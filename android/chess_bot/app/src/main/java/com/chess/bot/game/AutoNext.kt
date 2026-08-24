@@ -3,6 +3,7 @@ package com.chess.bot.game
 import android.content.Context
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogTag
 import com.chess.bot.service.Capture
 import com.chess.bot.vision.Recognizer
 import com.chess.bot.vision.TextMatcher
@@ -27,7 +28,7 @@ class AutoNext(
 
     /** 返回摆棋完毕的矫正帧；中断/超时/失败返回 null。 */
     suspend fun scanAndWait(): Mat? {
-        LogBus.log(LogKind.INFO, "开始扫描结算文字……")
+        LogBus.log(LogKind.INFO, LogTag.NEXT, "开始扫描结算画面")
         var lastWord: String? = null
         var retryCount = 0
         var prevBoard: Board? = null
@@ -38,13 +39,14 @@ class AutoNext(
         while (true) {
             if (!shouldContinue()) return null
             if (!autoNextEnabled()) {
-                LogBus.log(LogKind.WARN, "自动下一局已关闭，中止扫描")
+                LogBus.log(LogKind.WARN, LogTag.NEXT, "自动下一局已关闭，中止扫描")
                 return null
             }
             if (elapsedSeconds(startAt) > Const.AUTO_NEXT_TIMEOUT_S) {
                 LogBus.log(
                     LogKind.WARN,
-                    "${Const.AUTO_NEXT_TIMEOUT_S}秒未完成结算交互+摆棋，中止自动下一局，请手动处理",
+                    LogTag.NEXT,
+                    "${Const.AUTO_NEXT_TIMEOUT_S}秒未完成结算交互与摆棋，中止自动下一局，请手动处理",
                 )
                 return null
             }
@@ -66,32 +68,36 @@ class AutoNext(
                     if (retryCount > Const.GAMEOVER_RETRY_MAX) {
                         LogBus.log(
                             LogKind.ERROR,
+                            LogTag.NEXT,
                             "遮罩「$word」发送返回键 ${Const.GAMEOVER_RETRY_MAX} 次仍无响应，中止自动下一局，请手动处理",
                         )
                         return null
                     }
                     LogBus.log(
                         LogKind.INFO,
-                        "识别到文字「$word」，发送返回键（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
+                        LogTag.NEXT,
+                        "识别到遮罩文字「$word」，发送返回键（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
                     )
                     if (!capture.back()) {
-                        LogBus.log(LogKind.ERROR, "自动下一局交互失败")
+                        LogBus.log(LogKind.ERROR, LogTag.NEXT, "自动下一局交互失败（返回键）")
                         return null
                     }
                 } else {
                     if (retryCount > Const.GAMEOVER_RETRY_MAX) {
                         LogBus.log(
                             LogKind.ERROR,
+                            LogTag.NEXT,
                             "结算按钮「$word」点击 ${Const.GAMEOVER_RETRY_MAX} 次仍无响应，中止自动下一局，请手动处理",
                         )
                         return null
                     }
                     LogBus.log(
-                        LogKind.MOVE,
-                        "识别到结算按钮「$word」，点击 ($x,$y) 开始下一局（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
+                        LogKind.INFO,
+                        LogTag.NEXT,
+                        "识别到结算按钮「$word」，点击进入下一局（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
                     )
                     if (!capture.tapXy(x, y)) {
-                        LogBus.log(LogKind.ERROR, "自动下一局交互失败")
+                        LogBus.log(LogKind.ERROR, LogTag.NEXT, "自动下一局交互失败（点击结算按钮）")
                         return null
                     }
                 }
@@ -106,7 +112,7 @@ class AutoNext(
                 val board = Recognizer.analyzeBoard(corrected, templates)
                 val count = board.sumOf { row -> row.count { it != null } }
                 if (count == 0) {
-                    LogBus.log(LogKind.INFO, "未识别到结算文字，棋盘为空")
+                    LogBus.log(LogKind.DEBUG, LogTag.NEXT, "未识别到结算文字，棋盘为空")
                 } else {
                     // 棋子出现 = 操作已生效，清空重试状态
                     lastWord = null
@@ -117,20 +123,21 @@ class AutoNext(
                     // prevBoard 存在性 + contentDeepEquals 前置条件不可省略
                     when {
                         count == 31 -> {
-                            LogBus.log(LogKind.INFO, "识别到 31 个棋子，暂不处理")
+                            LogBus.log(LogKind.DEBUG, LogTag.NEXT, "识别到 31 个棋子（提子未落过渡态），暂不处理")
                             prevBoard = board
                             stableCount = 0
                         }
                         count == 32 -> {
-                            LogBus.log(LogKind.INFO, "识别到 32 个棋子，当做开局处理")
+                            LogBus.log(LogKind.INFO, LogTag.NEXT, "识别到 32 个棋子，按新开局处理")
                             handOffToCaller = true
                             return corrected
                         }
                         prevBoard != null && boardEquals(prevBoard, board) -> {
                             stableCount++
                             LogBus.log(
-                                LogKind.INFO,
-                                "等待摆棋完毕：识别到 $count 个棋子（稳定 $stableCount/${Const.BOARD_STABLE_THRESHOLD}）",
+                                LogKind.DEBUG,
+                                LogTag.NEXT,
+                                "等待摆棋：识别到 $count 个棋子（稳定 $stableCount/${Const.BOARD_STABLE_THRESHOLD}）",
                             )
                             if (stableCount >= Const.BOARD_STABLE_THRESHOLD) {
                                 handOffToCaller = true
@@ -140,7 +147,7 @@ class AutoNext(
                         else -> {
                             prevBoard = board
                             stableCount = 0
-                            LogBus.log(LogKind.INFO, "等待摆棋：识别到 $count 个棋子，重新计稳定")
+                            LogBus.log(LogKind.DEBUG, LogTag.NEXT, "等待摆棋：识别到 $count 个棋子，重新计稳定")
                         }
                     }
                 }

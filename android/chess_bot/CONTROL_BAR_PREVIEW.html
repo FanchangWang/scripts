@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>悬浮操控条样式优化方案 · 审核预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #1a1d24; color: #e8eaed; padding: 32px 24px;
+  }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .sub { color: #9aa0a6; font-size: 13px; margin-bottom: 28px; }
+  .grid { display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-start; }
+  .col h2 { font-size: 15px; margin-bottom: 4px; }
+  .col .desc { font-size: 12px; color: #9aa0a6; margin-bottom: 14px; max-width: 340px; line-height: 1.6; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: 2px; }
+  .tag.now { background: #3c4043; color: #9aa0a6; }
+  .tag.new { background: #1e3a2a; color: #6fd697; }
+
+  /* 手机画布：模拟棋盘背景 */
+  .phone {
+    width: 300px; height: 560px; border-radius: 18px; position: relative; overflow: hidden;
+    background:
+      radial-gradient(circle at 25% 20%, rgba(255,255,255,.03), transparent 60%),
+      repeating-linear-gradient(0deg, #b08850 0px, #b08850 52px, #a37c48 52px, #a37c48 104px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.06) 0px, rgba(0,0,0,.06) 26px, transparent 26px, transparent 52px);
+    border: 3px solid #2b2f3a;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+  .phone::before { /* 顶部日志窗示意 */
+    content: "残局 · 红方 · 轮到红方 · 评估 +35";
+    position: absolute; top: 18px; left: 0; right: 0; height: 30px;
+    background: rgba(0,0,0,.65); color: #fff; font-size: 11px;
+    display: flex; align-items: center; padding: 0 10px; justify-content: space-between;
+  }
+  .phone::after { content: "▲"; position: absolute; top: 22px; right: 8px; color: #fff; font-size: 10px; }
+
+  /* ========== 现状操控条（浅色） ========== */
+  .bar-now {
+    position: absolute; right: 8px; bottom: 180px;
+    background: rgba(250,250,250,.95); border-radius: 16px;
+    padding: 8px 10px; display: flex; align-items: center; gap: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.25); font-size: 12px;
+  }
+  .bar-now .btn-main {
+    background: #6750a4; color: #fff; border: none; border-radius: 20px;
+    padding: 6px 16px; font-size: 12px; cursor: pointer;
+  }
+  .bar-now .switch { width: 34px; height: 18px; background: #9aa0a6; border-radius: 9px; position: relative; }
+  .bar-now .switch.on { background: #6750a4; }
+  .bar-now .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    background: #fff; border-radius: 50%; transition: .2s;
+  }
+  .bar-now .switch.on::after { left: 18px; }
+  .bar-now .round {
+    width: 34px; height: 34px; border-radius: 50%; background: #fafafa;
+    border: 1px solid #9aa0a6; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; cursor: pointer;
+  }
+  .bar-now .round.x { border-color: #b3261e; color: #b3261e; }
+
+  /* ========== 优化方案操控条（深色半透明） ========== */
+  .bar-new {
+    position: absolute; right: 10px; bottom: 190px;
+    background: rgba(20,22,28,.82); border: 1px solid rgba(255,255,255,.14);
+    backdrop-filter: blur(8px);
+    border-radius: 22px; padding: 8px 10px;
+    display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45); font-size: 12px;
+  }
+  .bar-new .btn-main {
+    border: none; border-radius: 18px; padding: 7px 18px; font-size: 12.5px; cursor: pointer;
+    font-weight: 600; transition: .15s;
+  }
+  .bar-new .btn-start { background: #2e7d5b; color: #fff; }
+  .bar-new .btn-stop  { background: #c0392b; color: #fff; }
+  .bar-new .next { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 2px; }
+  .bar-new .next .lbl { color: #c8cdd4; font-size: 10.5px; }
+  .bar-new .mini-switch { width: 30px; height: 16px; background: #4a4f58; border-radius: 8px; position: relative; cursor: pointer; }
+  .bar-new .mini-switch.on { background: #2e7d5b; }
+  .bar-new .mini-switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+    background: #fff; border-radius: 50%; transition: .2s;
+  }
+  .bar-new .mini-switch.on::after { left: 16px; }
+  .bar-new .round {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; cursor: pointer; color: #d3d7dd;
+  }
+  .bar-new .round.x { border-color: rgba(227,100,90,.7); color: #e3645a; }
+  .bar-new .sep { width: 1px; height: 22px; background: rgba(255,255,255,.15); }
+
+  /* 收起态（优化）：带运行状态点 */
+  .collapsed-new {
+    position: absolute; right: 6px; bottom: 300px;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(20,22,28,.82); border: 1px solid rgba(255,255,255,.25);
+    display: flex; align-items: center; justify-content: center; font-size: 15px; color: #d3d7dd;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  }
+  .collapsed-new .dot {
+    position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; border-radius: 50%;
+    background: #4ade80; border: 2px solid rgba(20,22,28,.9);
+  }
+  .collapsed-now {
+    position: absolute; right: 6px; bottom: 300px;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #fafafa; border: 1px solid #6750a4;
+    display: flex; align-items: center; justify-content: center; font-size: 13px; color: #6750a4;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  }
+
+  /* 退出确认态 */
+  .exit-new {
+    position: absolute; right: 10px; bottom: 190px;
+    background: rgba(20,22,28,.88); border: 1px solid rgba(227,100,90,.4);
+    border-radius: 16px; padding: 10px 12px; width: 190px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  .exit-new .q { font-size: 11.5px; color: #e8eaed; line-height: 1.5; margin-bottom: 8px; }
+  .exit-new .btns { display: flex; gap: 8px; }
+  .exit-new .btns button {
+    flex: 1; border: none; border-radius: 14px; padding: 5px 0; font-size: 11.5px; cursor: pointer;
+  }
+  .exit-new .ok { background: #c0392b; color: #fff; }
+  .exit-new .no { background: rgba(255,255,255,.12); color: #d3d7dd; }
+
+  /* 说明区 */
+  .notes { margin-top: 36px; max-width: 720px; }
+  .notes h3 { font-size: 15px; margin-bottom: 10px; }
+  .notes ol { padding-left: 20px; }
+  .notes li { font-size: 13px; line-height: 1.9; color: #c8cdd4; }
+  .notes li b { color: #fff; }
+  .legend { display: flex; gap: 18px; margin: 14px 0 6px; font-size: 12px; color: #9aa0a6; }
+  .legend .st { display: inline-block; width: 26px; height: 14px; border-radius: 7px; vertical-align: -2px; margin-right: 5px; }
+</style>
+</head>
+<body>
+
+<h1>悬浮操控条 · 样式与交互优化方案</h1>
+<div class="sub">左为现状，右为优化方案（深色半透明 + 状态色按钮 + 收起态状态点）。背景为示意棋盘，位置贴近真机布局。</div>
+
+<div class="grid">
+
+  <!-- ============ 现状 ============ -->
+  <div class="col">
+    <h2>现状 <span class="tag now">浅色 Surface</span></h2>
+    <div class="desc">浅色 0.95 不透明底、按钮同色不分状态、Switch 全尺寸、圆钮 34dp、收起态无运行指示。</div>
+    <div class="phone">
+      <div class="bar-now">
+        <button class="btn-main">中断</button>
+        <span>下一局</span>
+        <span class="switch on"></span>
+        <span class="round">▶</span>
+        <span class="round x">✕</span>
+      </div>
+    </div>
+    <div class="legend" style="margin-top:14px">
+      <span><span class="st" style="background:rgba(250,250,250,.95)"></span>操作条浅色</span>
+      <span><span class="st" style="background:rgba(0,0,0,.65)"></span>日志窗深色</span>
+    </div>
+  </div>
+
+  <!-- ============ 方案A：展开态 ============ -->
+  <div class="col">
+    <h2>方案 · 展开态 <span class="tag new">深色半透明 + 状态色</span></h2>
+    <div class="desc">黑色 0.82 半透明 + 毛玻璃，与日志窗同风格；「开始」绿 /「中断」红随 running 切换；下一局改纵向紧凑开关；圆钮 38dp、加分隔线。</div>
+    <div class="phone">
+      <div class="bar-new">
+        <button class="btn-main btn-start">开始</button>
+        <span class="sep"></span>
+        <span class="next">
+          <span class="lbl">下一局</span>
+          <span class="mini-switch on"></span>
+        </span>
+        <span class="sep"></span>
+        <span class="round">⟩</span>
+        <span class="round x">✕</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 方案B：运行中 + 收起态 ============ -->
+  <div class="col">
+    <h2>方案 · 运行中 / 收起态 <span class="tag new">状态反馈</span></h2>
+    <div class="desc">运行中按钮变红「中断」；收起态圆钮右上角显示绿色运行状态点（暂停=灰）；退出确认改为独立小卡片，两分支统一 3 秒超时自动还原。</div>
+    <div class="phone">
+      <!-- 收起态 -->
+      <div class="collapsed-new">
+        ⟨
+        <span class="dot"></span>
+      </div>
+      <!-- 运行中退出确认 -->
+      <div class="exit-new" style="bottom:250px">
+        <div class="q">棋局进行中：将自动中断棋局并退出，是否确认？</div>
+        <div class="btns">
+          <button class="ok">确认退出</button>
+          <button class="no">取消</button>
+        </div>
+      </div>
+      <!-- 运行中展开态示例（上方） -->
+      <div class="bar-new" style="bottom:330px">
+        <button class="btn-main btn-stop">中断</button>
+        <span class="sep"></span>
+        <span class="next">
+          <span class="lbl">下一局</span>
+          <span class="mini-switch on"></span>
+        </span>
+        <span class="sep"></span>
+        <span class="round">⟩</span>
+        <span class="round x">✕</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <h3>交互优化点（不涉及布局大改）</h3>
+  <ol>
+    <li><b>风格统一</b>：操作条改深色半透明（rgba 黑 0.82 + 细白描边），与顶部日志窗一致，棋盘上不刺眼。</li>
+    <li><b>状态色按钮</b>：「开始」绿色 / 「中断」红色，扫一眼即知运行状态。</li>
+    <li><b>收起态状态点</b>：「⟨」圆钮右上角加 9dp 状态点——绿色=对弈运行中，灰色=已暂停；不用展开也能确认 bot 在跑。</li>
+    <li><b>符号语义</b>：「▶/◀」改为「⟩/⟨」（收拢/展开向右缘），避免箭头方向与实际动作混淆。</li>
+    <li><b>触控目标</b>：圆钮 34dp→38dp，按钮间距 6dp→8dp，减少误触。</li>
+    <li><b>退出确认超时统一</b>：修复「运行中」确认提示不会 3 秒自动还原的分支遗漏（现状只有空闲态有超时）。</li>
+    <li><b>可选</b>：收起态长按「⟨」直接中断棋局（运行中快速暂停，无需展开）。此项实现成本低，默认建议加。</li>
+  </ol>
+</div>
+
+</body>
+</html>

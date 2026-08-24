@@ -1,5 +1,6 @@
 package com.chess.bot.vision
 
+import com.chess.bot.data.BoardCornersStore
 import com.chess.bot.game.COLS
 import com.chess.bot.game.Const
 import com.chess.bot.game.ROWS
@@ -22,7 +23,9 @@ object Homography {
     fun get(width: Int, height: Int): Mat {
         val key = width to height
         cache[key]?.let { return it }
-        val corners = Const.BOARD_CORNERS[key]
+        // 优先手动校准 JSON，其次硬编码；均无则抛错（校准流程会在此之前拦截）
+        val corners = BoardCornersStore.get(width, height)
+            ?: Const.BOARD_CORNERS[key]
             ?: throw IllegalArgumentException("未配置 ${width}x${height} 分辨率的棋盘四角坐标")
         val src = MatOfPoint2f(
             Point(corners[0].first, corners[0].second),
@@ -40,6 +43,11 @@ object Homography {
         dst.release()
         synchronized(cache) { cache[key] = h }
         return h
+    }
+
+    /** 失效某分辨率的单应缓存（手动校准覆盖后需调用）。 */
+    fun invalidate(width: Int, height: Int) {
+        synchronized(cache) { cache.remove(width to height) }
     }
 
     /** 矫正空间点 -> 源截图屏幕坐标（逆透视映射）。 */
