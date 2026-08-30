@@ -9,3 +9,6 @@
 local.properties
 .idea/
 app/release/
+*.obk
+*.obk-shm
+*.obk-wal
