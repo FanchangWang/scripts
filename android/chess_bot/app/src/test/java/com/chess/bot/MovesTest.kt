@@ -10,8 +10,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import com.chess.bot.TestBoards as TB
 import org.junit.Test
+import com.chess.bot.TestBoards as TB
 
 /** 走法推断/应用测试。 */
 class MovesTest {

@@ -1,5 +1,10 @@
 pluginManagement {
     repositories {
+        // 插件仓库增加阿里镜像加速
+        maven("https://maven.aliyun.com/repository/google")
+        maven("https://maven.aliyun.com/repository/public")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
+
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -17,6 +22,11 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // 优先阿里镜像
+        maven("https://maven.aliyun.com/repository/google")
+        maven("https://maven.aliyun.com/repository/public")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
+
         google()
         mavenCentral()
     }

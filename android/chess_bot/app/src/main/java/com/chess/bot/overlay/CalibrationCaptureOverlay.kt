@@ -2,7 +2,6 @@ package com.chess.bot.overlay
 
 import android.content.Context
 import android.view.Gravity
-import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding

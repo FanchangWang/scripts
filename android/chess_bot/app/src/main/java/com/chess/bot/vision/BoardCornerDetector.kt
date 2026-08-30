@@ -105,7 +105,8 @@ object BoardCornerDetector {
         val th0 = tmplGray.rows()
         val tw0 = tmplGray.cols()
         val all = mutableListOf<Peak>()
-        val kernel = Mat.ones(minDistance.coerceAtLeast(1), minDistance.coerceAtLeast(1), CvType.CV_8U)
+        val kernel =
+            Mat.ones(minDistance.coerceAtLeast(1), minDistance.coerceAtLeast(1), CvType.CV_8U)
         for (i in 0 until nScales) {
             val scale =
                 if (nScales <= 1) scaleMin else scaleMin + (scaleMax - scaleMin) * i / (nScales - 1)
@@ -158,10 +159,23 @@ object BoardCornerDetector {
         val scaleMax = minOf(MAX_SCALE, baseScale * (1 + SCALE_RANGE_FACTOR))
         val nScales = maxOf(15, ((scaleMax - scaleMin) / 0.03).roundToInt() + 1)
         val minDistance = maxOf(10, (baseScale * 40).roundToInt())
-        var peaks = findPeaks(gray, tmpl, scaleMin, scaleMax, nScales, DEFAULT_MATCH_THRESHOLD, minDistance)
+        var peaks =
+            findPeaks(gray, tmpl, scaleMin, scaleMax, nScales, DEFAULT_MATCH_THRESHOLD, minDistance)
         if (peaks.size < 2) {
-            LogBus.log(LogKind.DEBUG, LogTag.CALIB, "$label 窄范围仅 ${peaks.size} 个峰，扩大尺度重试")
-            peaks = findPeaks(gray, tmpl, MIN_SCALE, MAX_SCALE, 45, FALLBACK_MATCH_THRESHOLD, minDistance)
+            LogBus.log(
+                LogKind.DEBUG,
+                LogTag.CALIB,
+                "$label 窄范围仅 ${peaks.size} 个峰，扩大尺度重试"
+            )
+            peaks = findPeaks(
+                gray,
+                tmpl,
+                MIN_SCALE,
+                MAX_SCALE,
+                45,
+                FALLBACK_MATCH_THRESHOLD,
+                minDistance
+            )
         }
         return peaks
     }

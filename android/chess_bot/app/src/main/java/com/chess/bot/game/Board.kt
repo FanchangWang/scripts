@@ -64,6 +64,16 @@ fun fullStartBoard(side: Side = Side.RED): Board {
     return b
 }
 
+/**
+ * 棋盘 180° 旋转（行翻转 + 列翻转）。
+ *
+ * 我方执黑时屏幕棋盘相对 ICCS 标准方向（黑上红下、a 列在左）恰为 180° 旋转；
+ * 开局库 vkey 计算前必须归一化到标准方向（返回的 ICCS 着法经 squareToGrid(iccs, mySide)
+ * 再转回屏幕网格，两条链路对称）。
+ */
+fun rotateBoard180(board: Board): Board =
+    Array(ROWS) { r -> Array(COLS) { c -> board[ROWS - 1 - r][COLS - 1 - c] } }
+
 /** 矫正空间格心：格边长 100，中心 (50+100c, 50+100r)。 */
 fun correctedCenter(r: Int, c: Int): Pair<Double, Double> =
     Const.CORRECT_CELL * (c + 0.5) to Const.CORRECT_CELL * (r + 0.5)

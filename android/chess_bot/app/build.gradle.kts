@@ -16,13 +16,18 @@ android {
     compileSdk {
         version = release(37)
     }
+    // 开局库 .obk 与引擎权重 .nnue 体积大，存为不压缩资产：
+    // 拷贝更快、且 openFd().length 可取精确字节长度用于换库检测
+    androidResources {
+        noCompress += listOf("obk", "nnue")
+    }
 
     defaultConfig {
         applicationId = "com.chess.bot"
         minSdk = 31
         targetSdk = 37
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -51,12 +56,19 @@ android {
             useLegacyPackaging = true
         }
     }
+    testOptions {
+        // JVM 单测中 LogBus 依赖 android.util.Log，未 mock 时返回默认值而非抛 "not mocked"
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
@@ -68,7 +80,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.opencv)
     testImplementation(libs.junit)
-//    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)

@@ -10,14 +10,13 @@ import com.chess.bot.vision.TextMatcher
 import com.chess.bot.vision.VisionInit
 import kotlinx.coroutines.delay
 import org.opencv.core.Mat
-import kotlin.math.roundToInt
 
 /**
  * 结算画面交互 + 等待摆棋（移植 python auto_next.py scan_and_wait）。
  *
  * 单循环：先扫结算文字（按钮点击 / 遮罩发返回键，同一文字重试上限）；
- * 无文字时分析棋盘：31 子（提子未落过渡态）跳过；其余静止帧稳定 x/3 即返回，
- * 对齐 python 原语义，不做将帅/子数过滤。
+ * 无文字时分析棋盘，摆棋稳定判定复用共享 SettleWaiter
+ * （31 子提子未落过渡态跳过 / 32 子按新开局快速返回 / 其余逐值稳定计数）。
  */
 class AutoNext(
     private val context: Context,
@@ -31,8 +30,7 @@ class AutoNext(
         LogBus.log(LogKind.INFO, LogTag.NEXT, "开始扫描结算画面")
         var lastWord: String? = null
         var retryCount = 0
-        var prevBoard: Board? = null
-        var stableCount = 0
+        val waiter = SettleWaiter(LogTag.NEXT)
         val startAt = System.nanoTime()
         val templates = VisionInit.loadPieceTemplates(context)
 
@@ -104,7 +102,7 @@ class AutoNext(
                 continue
             }
 
-            // ---------- 分析棋盘 ----------
+            // ---------- 分析棋盘（稳定判定复用 SettleWaiter） ----------
             val corrected = capture.grab() ?: continue
             // 所有权移交：命中返回路径时 Mat 归调用方释放；其余路径本层 finally 立即释放
             var handOffToCaller = false
@@ -117,38 +115,9 @@ class AutoNext(
                     // 棋子出现 = 操作已生效，清空重试状态
                     lastWord = null
                     retryCount = 0
-
-                    // 对齐 python 原语义：31 子为提子未落过渡态跳过；
-                    // 其余仅当「与上一帧逐值相等」时累加稳定计数，否则重置——
-                    // prevBoard 存在性 + contentDeepEquals 前置条件不可省略
-                    when {
-                        count == 31 -> {
-                            LogBus.log(LogKind.DEBUG, LogTag.NEXT, "识别到 31 个棋子（提子未落过渡态），暂不处理")
-                            prevBoard = board
-                            stableCount = 0
-                        }
-                        count == 32 -> {
-                            LogBus.log(LogKind.INFO, LogTag.NEXT, "识别到 32 个棋子，按新开局处理")
-                            handOffToCaller = true
-                            return corrected
-                        }
-                        prevBoard != null && boardEquals(prevBoard, board) -> {
-                            stableCount++
-                            LogBus.log(
-                                LogKind.DEBUG,
-                                LogTag.NEXT,
-                                "等待摆棋：识别到 $count 个棋子（稳定 $stableCount/${Const.BOARD_STABLE_THRESHOLD}）",
-                            )
-                            if (stableCount >= Const.BOARD_STABLE_THRESHOLD) {
-                                handOffToCaller = true
-                                return corrected
-                            }
-                        }
-                        else -> {
-                            prevBoard = board
-                            stableCount = 0
-                            LogBus.log(LogKind.DEBUG, LogTag.NEXT, "等待摆棋：识别到 $count 个棋子，重新计稳定")
-                        }
+                    if (waiter.feed(board) is SettleWaiter.Feed.Ready) {
+                        handOffToCaller = true
+                        return corrected
                     }
                 }
             } finally {
@@ -159,9 +128,6 @@ class AutoNext(
 
     private fun elapsedSeconds(startNanos: Long): Long =
         (System.nanoTime() - startNanos) / 1_000_000_000L
-
-    /** 逐值比较两布局（Kotlin 数组 == 是引用比较，必须用 contentDeepEquals）。 */
-    private fun boardEquals(a: Board?, b: Board): Boolean = a != null && a.contentDeepEquals(b)
 
     companion object {
         fun isBackWord(word: String): Boolean = word in Const.GAMEOVER_BACK_WORDS

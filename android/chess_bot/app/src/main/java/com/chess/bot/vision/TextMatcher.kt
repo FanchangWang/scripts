@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import com.chess.bot.game.Const
 import org.opencv.core.Core
 import org.opencv.core.Mat
-import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
 data class TextHit(val word: String, val x: Int, val y: Int, val score: Double)
@@ -26,7 +25,8 @@ object TextMatcher {
         for (name in (context.assets.list(dir) ?: emptyArray()).sorted()) {
             if (!name.endsWith(".png")) continue
             val bytes = context.assets.open("$dir/$name").use { it.readBytes() }
-            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+            val bmp =
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
             val rgba = Mat()
             org.opencv.android.Utils.bitmapToMat(bmp, rgba)
             bmp.recycle()

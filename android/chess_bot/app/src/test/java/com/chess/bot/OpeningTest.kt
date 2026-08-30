@@ -4,9 +4,12 @@ import com.chess.bot.game.Side
 import com.chess.bot.game.detectPhase
 import com.chess.bot.game.detectSide
 import com.chess.bot.game.inferTurn
+import com.chess.bot.game.plausibleNewGame
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.chess.bot.TestBoards as TB
 
@@ -56,5 +59,30 @@ class OpeningTest {
         TB.movePiece(b, 2, 7, 2, 4)
         TB.movePiece(b, 0, 7, 2, 6)
         assertNotEquals(com.chess.bot.game.Phase.OPENING, detectPhase(b, Side.BLACK))
+    }
+
+    // ---------- plausibleNewGame（2026-08-28 审计 §二.E 32 子分支校验） ----------
+
+    @Test
+    fun `红方视角全默认位判完整新开局`() {
+        assertTrue(plausibleNewGame(TB.fullBoard(Side.RED), Side.RED))
+    }
+
+    @Test
+    fun `黑方视角全默认位判完整新开局`() {
+        assertTrue(plausibleNewGame(TB.fullBoard(Side.BLACK), Side.BLACK))
+    }
+
+    @Test
+    fun `走一步后不再是完整新开局`() {
+        val b = TB.fullBoard(Side.RED)
+        TB.movePiece(b, 7, 7, 7, 4)
+        assertFalse(plausibleNewGame(b, Side.RED))
+    }
+
+    @Test
+    fun `视角与棋盘朝向不符判非新开局`() {
+        // 棋盘为红下黑上，却按黑方视角（黑下红上）比对
+        assertFalse(plausibleNewGame(TB.fullBoard(Side.RED), Side.BLACK))
     }
 }

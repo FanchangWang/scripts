@@ -12,30 +12,32 @@ fun isResignSuspect(board: Board, mySide: Side): Boolean {
 }
 
 /**
- * 我方走棋后单帧分类，按变动格数 n==0/1/2/3/4/>4 分派。
+ * 我方走棋后单帧分类，按变动格数 n 分派。
+ * 只校验「走棋是否成功」或返回对应 SelfFrameResult（LIFTED/NOISY/SILENT）及 selfMove/enemyMove。
+ * 不再有 myMoveSettled 兜底：SELF_DONE 的判定即「起点变空 + 落点成为我方棋子」，已直接覆盖；
+ * 动画中尚未 settle 的敌方中途格不影响该判定，故兜底分支不可达（已与用户确认移除）。
  */
 fun classifySelfFrame(
     changes: List<Change>,
     newBoard: Board,
     expected: Move,
     mySide: Side,
-    isLastFrame: Boolean,
-): FrameClass {
+): SelfFrame {
     return when {
-        changes.isEmpty() -> FrameClass(FrameResult.STATIONARY)
+        changes.isEmpty() -> SelfFrame(SelfFrameResult.SILENT)
 
         changes.size == 1 -> {
-            if (isLastFrame && isLiftedOnly(changes[0], expected, newBoard)) {
-                FrameClass(FrameResult.LIFTED_ONLY)
+            if (isLiftedOnly(changes[0], expected, newBoard)) {
+                SelfFrame(SelfFrameResult.LIFTED)
             } else {
-                FrameClass(FrameResult.TRANSIENT)
+                SelfFrame(SelfFrameResult.NOISY)
             }
         }
 
         changes.size == 2 -> {
             inferMove(changes)?.let { moved ->
                 if (moveMatches(moved, expected)) {
-                    return FrameClass(FrameResult.SELF_DONE, selfMove = moved)
+                    return SelfFrame(SelfFrameResult.SELF_DONE, selfMove = moved)
                 }
             }
             enemyRecaptureN2(changes, newBoard, expected, mySide)?.let { enemy ->
@@ -45,39 +47,40 @@ fun classifySelfFrame(
                 }?.old
                 val captured = r2Old?.takeIf { pieceColor(it) != mySide }
                 val selfMove = Move(expected.src, expected.dst, expected.piece, captured)
-                return FrameClass(FrameResult.SELF_THEN_ENEMY, selfMove, enemy)
+                return SelfFrame(SelfFrameResult.SELF_THEN_ENEMY, selfMove, enemy)
             }
-            FrameClass(FrameResult.TRANSIENT)
+            SelfFrame(SelfFrameResult.NOISY)
         }
 
         changes.size == 3 -> classifyN3(changes, newBoard, expected, mySide)
-            ?: FrameClass(FrameResult.TRANSIENT)
+            ?: SelfFrame(SelfFrameResult.NOISY)
 
         changes.size == 4 -> classifyN4(changes, expected, mySide)
-            ?: FrameClass(FrameResult.TRANSIENT)
+            ?: SelfFrame(SelfFrameResult.NOISY)
 
-        else -> if (isResignSuspect(newBoard, mySide)) {
-            FrameClass(FrameResult.RESIGN_SUSPECT)
-        } else {
-            FrameClass(FrameResult.TRANSIENT)
-        }
+        // n>4：无法归入上述任一模式 → NOISY（含双方将帅缺失的终局签名，由 verifyForSelfMove 尾部查结束画面）
+        else -> SelfFrame(SelfFrameResult.NOISY)
     }
 }
 
-/** 敌方走棋检测单帧分类。 */
+/** 敌方走棋检测单帧分类（返回 EnemyFrame data class，result 判断、enemyMove 取移动数据）。 */
 fun classifyEnemyFrame(changes: List<Change>, mySide: Side): EnemyFrame {
     return when (changes.size) {
-        0 -> EnemyFrame.Silent
+        0 -> EnemyFrame(EnemyFrameResult.SILENT)
         1 -> {
             val only = changes[0]
             if (only.old != null && only.new == null && pieceColor(only.old) != mySide) {
-                EnemyFrame.Lifted
+                EnemyFrame(EnemyFrameResult.LIFTED)
             } else {
-                EnemyFrame.Noisy
+                EnemyFrame(EnemyFrameResult.NOISY)
             }
         }
-        2 -> inferMove(changes)?.let { EnemyFrame.Moved(it) } ?: EnemyFrame.Noisy
-        else -> EnemyFrame.Noisy
+
+        2 -> inferMove(changes)?.let { EnemyFrame(EnemyFrameResult.MOVED, it) } ?: EnemyFrame(
+            EnemyFrameResult.NOISY
+        )
+
+        else -> EnemyFrame(EnemyFrameResult.NOISY)
     }
 }
 
@@ -120,7 +123,7 @@ private fun classifyN3(
     newBoard: Board,
     expected: Move,
     mySide: Side,
-): FrameClass? {
+): SelfFrame? {
     val lookup = changes.associate { (it.r to it.c) to (it.old to it.new) }
     val srcPair = lookup[expected.src] ?: return null
     val dstPair = lookup[expected.dst] ?: return null
@@ -136,8 +139,8 @@ private fun classifyN3(
         r1Old == piece && r1New == null && r2New == piece &&
         third.old != null && third.new == null && pieceColor(third.old) != mySide
     ) {
-        return FrameClass(
-            FrameResult.SELF_DONE,
+        return SelfFrame(
+            SelfFrameResult.SELF_DONE,
             Move(expected.src, expected.dst, piece, destCaptured),
         )
     }
@@ -149,7 +152,7 @@ private fun classifyN3(
         if (third.old == ePiece && third.new == null) {
             val selfMove = Move(expected.src, expected.dst, piece, destCaptured)
             val enemyMove = Move(xCell, expected.dst, ePiece, piece)
-            return FrameClass(FrameResult.SELF_THEN_ENEMY, selfMove, enemyMove)
+            return SelfFrame(SelfFrameResult.SELF_THEN_ENEMY, selfMove, enemyMove)
         }
     }
 
@@ -159,13 +162,13 @@ private fun classifyN3(
         if (r1Old == piece && r2New == piece && third.old == ePiece && third.new == null) {
             val selfMove = Move(expected.src, expected.dst, piece, destCaptured)
             val enemyMove = Move(xCell, expected.src, ePiece, null)
-            return FrameClass(FrameResult.SELF_THEN_ENEMY, selfMove, enemyMove)
+            return SelfFrame(SelfFrameResult.SELF_THEN_ENEMY, selfMove, enemyMove)
         }
     }
     return null
 }
 
-private fun classifyN4(changes: List<Change>, expected: Move, mySide: Side): FrameClass? {
+private fun classifyN4(changes: List<Change>, expected: Move, mySide: Side): SelfFrame? {
     val lookup = changes.associate { (it.r to it.c) to (it.old to it.new) }
     val srcPair = lookup[expected.src] ?: return null
     val dstPair = lookup[expected.dst] ?: return null
@@ -177,5 +180,5 @@ private fun classifyN4(changes: List<Change>, expected: Move, mySide: Side): Fra
     val enemyMove = inferMove(rest) ?: return null
     val captured = r2Old?.takeIf { pieceColor(it) != mySide }
     val selfMove = Move(expected.src, expected.dst, expected.piece, captured)
-    return FrameClass(FrameResult.SELF_THEN_ENEMY, selfMove, enemyMove)
+    return SelfFrame(SelfFrameResult.SELF_THEN_ENEMY, selfMove, enemyMove)
 }

@@ -41,6 +41,27 @@ fun inferTurn(board: Board, mySide: Side, phase: Phase): Side? {
     return null
 }
 
+/** 32 子全部位于开局默认格（完整新开局，2026-08-28 审计 §二.E 的 32 子分支校验）。 */
+fun plausibleNewGame(board: Board, mySide: Side): Boolean =
+    board.contentDeepEquals(fullStartBoard(mySide))
+
+/**
+ * 31 子是否全部位于开局默认格（即「标准开局缺 1 子」）。
+ * 用于在 waitForBoardSettled 区分两种 31 子局面：
+ * - 全在初始位置 → 提子过渡态（对方刚提子，棋盘暂时少 1 子），应继续等待 32 子；
+ * - 有子已离初始位置 → 残局（已开下），应走稳定计数后返回、轮到我方走，不应无限等待。
+ */
+fun allOnInitialSquares(board: Board, mySide: Side): Boolean {
+    val start = fullStartBoard(mySide)
+    for (r in 0 until ROWS) {
+        for (c in 0 until COLS) {
+            val p = board[r][c]
+            if (p != null && p != start[r][c]) return false
+        }
+    }
+    return true
+}
+
 // ---------- 内部 ----------
 
 private fun expectedStartSquares(mySide: Side, color: Side): Set<Pair<Int, Int>> {

@@ -16,7 +16,17 @@ import java.util.Locale
  * - ENEMY：对方着法
  * - GAME：对局节点（开局确认 / 下一局开始 / 对局结束）
  */
-enum class LogKind { DEBUG, INFO, OK, WARN, ERROR, MOVE, ENEMY, GAME }
+enum class LogKind {
+    DEBUG, INFO, OK, WARN, ERROR, MOVE, ENEMY, GAME;
+
+    /** 等级序（文件日志级别过滤用；事件级按 INFO 归档）。 */
+    fun rank(): Int = when (this) {
+        DEBUG -> 0
+        INFO, OK, MOVE, ENEMY, GAME -> 1
+        WARN -> 2
+        ERROR -> 3
+    }
+}
 
 /** 模块标签：日志来源，悬浮窗中作为前缀展示（替代手工「[校准]」等前缀）。 */
 enum class LogTag(val cn: String) {
@@ -56,6 +66,12 @@ object LogBus {
         val event = LogEvent(kind, tag, msg, timeFmt.get()!!.format(Date()))
         _events.tryEmit(event)
         mirrorToLogcat(event)
+        writeToSessionFile(kind, tag, msg)
+    }
+
+    /** 会话文件落盘（FileLogger 未启动时为空操作；任何异常不得影响主流程）。 */
+    private fun writeToSessionFile(kind: LogKind, tag: LogTag, msg: String) {
+        runCatching { FileLogger.write(kind, tag, msg) }
     }
 
     /** 同步镜像一条到 adb logcat（tag=ChessBot）。 */

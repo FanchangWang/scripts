@@ -45,6 +45,7 @@ object CalibrationSession {
         private set
     val validationPassed = mutableStateOf(false)
     val errorMsg = mutableStateOf<String?>(null)
+
     /** 截图识别进行中（防抖：识别期间忽略再次点击「截图」）。 */
     val recognizing = mutableStateOf(false)
     var width = 0
@@ -133,7 +134,11 @@ object CalibrationSession {
                 errorMsg.value = null
                 manualCorners = null
                 screen.value = CalibrationScreen.RESULT
-                LogBus.log(LogKind.OK, LogTag.CALIB, "识别完成，开局校验${if (ok) "通过" else "未通过"}")
+                LogBus.log(
+                    LogKind.OK,
+                    LogTag.CALIB,
+                    "识别完成，开局校验${if (ok) "通过" else "未通过"}"
+                )
             } catch (e: Exception) {
                 frame.recycle()
                 capturedBitmap = null

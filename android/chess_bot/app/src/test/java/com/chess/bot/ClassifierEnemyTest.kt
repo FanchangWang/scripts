@@ -3,6 +3,7 @@ package com.chess.bot
 import com.chess.bot.game.Board
 import com.chess.bot.game.Change
 import com.chess.bot.game.EnemyFrame
+import com.chess.bot.game.EnemyFrameResult
 import com.chess.bot.game.Move
 import com.chess.bot.game.Side
 import com.chess.bot.game.classifyEnemyFrame
@@ -23,30 +24,30 @@ class ClassifierEnemyTest {
             Change(7, 4, null, "b_c"),
         )
         val frame = classifyEnemyFrame(changes, Side.RED)
-        assertEquals(EnemyFrame.Moved(Move(7 to 7, 7 to 4, "b_c", null)), frame)
+        assertEquals(EnemyFrame(EnemyFrameResult.MOVED, Move(7 to 7, 7 to 4, "b_c", null)), frame)
     }
 
     @Test
     fun `n1 敌方提子 Lifted`() {
         val frame = classifyEnemyFrame(listOf(Change(7, 7, "b_c", null)), Side.RED)
-        assertEquals(EnemyFrame.Lifted, frame)
+        assertEquals(EnemyFrame(EnemyFrameResult.LIFTED), frame)
     }
 
     @Test
     fun `n1 我方棋子消失不算提子`() {
         val frame = classifyEnemyFrame(listOf(Change(5, 5, "r_P", null)), Side.RED)
-        assertEquals(EnemyFrame.Noisy, frame)
+        assertEquals(EnemyFrame(EnemyFrameResult.NOISY), frame)
     }
 
     @Test
     fun `n0 Silent`() {
-        assertEquals(EnemyFrame.Silent, classifyEnemyFrame(emptyList(), Side.RED))
+        assertEquals(EnemyFrame(EnemyFrameResult.SILENT), classifyEnemyFrame(emptyList(), Side.RED))
     }
 
     @Test
     fun `n大于2 Noisy`() {
         val changes = (0 until 3).map { Change(it, 0, null, "b_p") }
-        assertEquals(EnemyFrame.Noisy, classifyEnemyFrame(changes, Side.RED))
+        assertEquals(EnemyFrame(EnemyFrameResult.NOISY), classifyEnemyFrame(changes, Side.RED))
     }
 
     @Test

@@ -41,7 +41,13 @@ object BoardCornersStore {
                     val obj = JSONObject(f.readText())
                     if (obj.has(key)) return parseEntry(obj.getJSONArray(key))
                 }
-            }.onFailure { e -> LogBus.log(LogKind.WARN, LogTag.CALIB, "读取校准 JSON 失败：${e.message}") }
+            }.onFailure { e ->
+                LogBus.log(
+                    LogKind.WARN,
+                    LogTag.CALIB,
+                    "读取校准 JSON 失败：${e.message}"
+                )
+            }
         }
         return Const.BOARD_CORNERS[width to height]
     }
@@ -51,12 +57,18 @@ object BoardCornersStore {
         get(width, height, context) != null
 
     /** 写入某分辨率四角，合并保留其它分辨率；原子写（临时文件 + rename）。 */
-    fun put(width: Int, height: Int, corners: List<Pair<Double, Double>>, context: Context? = null) {
+    fun put(
+        width: Int,
+        height: Int,
+        corners: List<Pair<Double, Double>>,
+        context: Context? = null
+    ) {
         val ctx = context?.applicationContext ?: appContext
-            ?: throw IllegalStateException("BoardCornersStore 未注入 Context")
+        ?: throw IllegalStateException("BoardCornersStore 未注入 Context")
         require(corners.size == 4) { "四角需恰好 4 个点" }
         val f = file(ctx)
-        val obj = if (f.exists()) runCatching { JSONObject(f.readText()) }.getOrDefault(JSONObject()) else JSONObject()
+        val obj =
+            if (f.exists()) runCatching { JSONObject(f.readText()) }.getOrDefault(JSONObject()) else JSONObject()
         obj.put("${width}x${height}", buildEntry(corners))
         val tmp = File(ctx.filesDir, "$FILE_NAME.tmp")
         tmp.writeText(obj.toString(2))

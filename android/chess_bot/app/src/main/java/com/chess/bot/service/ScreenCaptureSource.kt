@@ -11,6 +11,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.view.WindowManager
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -29,6 +30,10 @@ class ScreenCaptureSource private constructor() {
 
     @Volatile
     private var started = false
+
+    /** 停采标志：置位后采集回调立即丢弃帧，避免 reader.close() 在另一线程关闭 Image 时崩溃。 */
+    @Volatile
+    private var teardown = false
 
     private var projection: MediaProjection? = null
     private var reader: ImageReader? = null
@@ -73,7 +78,9 @@ class ScreenCaptureSource private constructor() {
         thread = ht
         handler = Handler(ht.looper)
 
-        // 新版 Android 要求：必须在 createVirtualDisplay 之前注册回调
+        // 新版 Android 要求：必须在 createVirtualDisplay 之前注册回调。
+        // 注意：回调注册到【主线程 looper】，而非采集线程 handler——否则 stop() 退出采集线程后，
+        // 系统再 post onStop 会命中"dead thread"并触发 Handler 警告。
         mp.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
                 // 用户从系统面板停止投屏或授权被回收：清理并通知
@@ -84,11 +91,16 @@ class ScreenCaptureSource private constructor() {
                 )
                 stop()
             }
-        }, handler)
+        }, Handler(Looper.getMainLooper()))
 
         val newReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, MAX_IMAGES)
         newReader.setOnImageAvailableListener({ r ->
             val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
+            // 停采已开始（stop() 在另一线程置位）：丢弃该帧，避免读已关闭的 Image
+            if (teardown) {
+                image.close()
+                return@setOnImageAvailableListener
+            }
             try {
                 consume(image, width, height)
             } finally {
@@ -109,6 +121,7 @@ class ScreenCaptureSource private constructor() {
         )
 
         started = true
+        teardown = false
         active.value = true
         com.chess.bot.log.LogBus.log(
             com.chess.bot.log.LogKind.DEBUG,
@@ -128,6 +141,9 @@ class ScreenCaptureSource private constructor() {
             active.value = false
             return
         }
+        // 先置停采标志：采集线程若正在 consume() 会因 Image 被关闭而抛异常，
+        // 由 consume() 的 catch + 监听回调顶部的 teardown 判断双重兜底，绝不崩溃。
+        teardown = true
         started = false
         active.value = false
         synchronized(lock) { latest = null }
@@ -144,24 +160,29 @@ class ScreenCaptureSource private constructor() {
     }
 
     private fun consume(image: android.media.Image, width: Int, height: Int) {
-        val plane = image.planes[0]
-        val rowStride = plane.rowStride
-        val pixelStride = plane.pixelStride
-        var bmp = bufferBitmap
-        val bufferWidth = rowStride / pixelStride
-        if (bmp == null || bmp.width != bufferWidth || bmp.height != height) {
-            bmp = Bitmap.createBitmap(bufferWidth, height, Bitmap.Config.ARGB_8888)
-            bufferBitmap = bmp
-        }
-        bmp.copyPixelsFromBuffer(plane.buffer)
-        val snapshot =
-            if (rowStride == width * pixelStride) {
-                bmp
-            } else {
-                // 行对齐带 padding：裁出有效区域副本
-                Bitmap.createBitmap(bmp, 0, 0, width, height)
+        try {
+            val plane = image.planes[0]
+            val rowStride = plane.rowStride
+            val pixelStride = plane.pixelStride
+            var bmp = bufferBitmap
+            val bufferWidth = rowStride / pixelStride
+            if (bmp == null || bmp.width != bufferWidth || bmp.height != height) {
+                bmp = Bitmap.createBitmap(bufferWidth, height, Bitmap.Config.ARGB_8888)
+                bufferBitmap = bmp
             }
-        synchronized(lock) { latest = snapshot }
+            bmp.copyPixelsFromBuffer(plane.buffer)
+            val snapshot =
+                if (rowStride == width * pixelStride) {
+                    bmp
+                } else {
+                    // 行对齐带 padding：裁出有效区域副本
+                    Bitmap.createBitmap(bmp, 0, 0, width, height)
+                }
+            synchronized(lock) { latest = snapshot }
+        } catch (e: IllegalStateException) {
+            // Image 已被 reader.close() 在另一线程关闭（典型：停采竞态）。丢弃该帧即可。
+            android.util.Log.w(TAG, "consume 跳过已关闭帧：${e.message}")
+        }
     }
 
     companion object {

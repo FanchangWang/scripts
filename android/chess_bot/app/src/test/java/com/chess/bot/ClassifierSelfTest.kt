@@ -2,11 +2,11 @@ package com.chess.bot
 
 import com.chess.bot.game.Board
 import com.chess.bot.game.Change
-import com.chess.bot.game.FrameResult
+import com.chess.bot.game.GameState
 import com.chess.bot.game.Move
+import com.chess.bot.game.SelfFrameResult
 import com.chess.bot.game.Side
 import com.chess.bot.game.classifySelfFrame
-import com.chess.bot.game.GameState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,8 +26,8 @@ class ClassifierSelfTest {
         val changes = listOf(Change(7, 3, "r_R", null), Change(0, 3, "b_r", "r_R"))
         val expected = Move(7 to 3, 0 to 3, "r_R")
 
-        val fc = classifySelfFrame(changes, after, expected, Side.RED, false)
-        assertEquals(FrameResult.SELF_DONE, fc.result)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        assertEquals(SelfFrameResult.SELF_DONE, fc.result)
         assertEquals(Move(7 to 3, 0 to 3, "r_R", "b_r"), fc.selfMove)
 
         val state = GameState()
@@ -42,12 +42,12 @@ class ClassifierSelfTest {
     }
 
     @Test
-    fun `n2 不匹配 expected 则 TRANSIENT`() {
+    fun `n2 不匹配 expected 则 Noisy`() {
         val b = TB.empty().also { it[7][3] = "r_R"; it[5][5] = "b_r" }
         val after = TB.copy(b).also { it[5][5] = null; it[5][4] = "b_r" }
         val changes = listOf(Change(5, 5, "b_r", null), Change(5, 4, null, "b_r"))
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, false)
-        assertEquals(FrameResult.TRANSIENT, fc.result)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
     @Test
@@ -58,8 +58,8 @@ class ClassifierSelfTest {
         )
         val after = TB.empty().also { it[0][3] = "b_c" }
         val expected = Move(7 to 3, 0 to 3, "r_R")
-        val fc = classifySelfFrame(changes, after, expected, Side.RED, false)
-        assertEquals(FrameResult.SELF_THEN_ENEMY, fc.result)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertNull(fc.selfMove?.captured)
         assertEquals(Move(5 to 5, 0 to 3, "b_c", "r_R"), fc.enemyMove)
     }
@@ -67,20 +67,19 @@ class ClassifierSelfTest {
     // ---------- n==1 ----------
 
     @Test
-    fun `n1 最后一帧提起未落 LIFTED_ONLY 否则 TRANSIENT`() {
+    fun `n1 提起未落 Lifted`() {
         val b = TB.empty().also { it[7][3] = "r_R"; it[9][4] = "r_K" }
         val lifted = TB.copy(b).also { it[7][3] = null }
         val changes = listOf(Change(7, 3, "r_R", null))
 
-        val notLast = classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED, false)
-        assertEquals(FrameResult.TRANSIENT, notLast.result)
-
-        val last = classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED, true)
-        assertEquals(FrameResult.LIFTED_ONLY, last.result)
+        // 新模型不再区分「是否最后一帧」：n==1 且正是我方起点提子即判 Lifted（循环会持续等到落定）
+        val fc =
+            classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.LIFTED, fc.result)
     }
 
     @Test
-    fun `n1 非提子 TRANSIENT`() {
+    fun `n1 非提子 Noisy`() {
         val b = TB.empty().also { it[7][3] = "r_R"; it[5][5] = "b_r" }
         val after = TB.copy(b).also { it[5][5] = null }
         val fc = classifySelfFrame(
@@ -88,17 +87,21 @@ class ClassifierSelfTest {
             after,
             Move(7 to 3, 0 to 3, "r_R"),
             Side.RED,
-            true,
         )
-        assertEquals(FrameResult.TRANSIENT, fc.result)
+        assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
     // ---------- n==0 ----------
 
     @Test
-    fun `n0 STATIONARY`() {
-        val fc = classifySelfFrame(emptyList(), TB.fullBoard(Side.RED), Move(7 to 3, 0 to 3, "r_R"), Side.RED, false)
-        assertEquals(FrameResult.STATIONARY, fc.result)
+    fun `n0 Silent`() {
+        val fc = classifySelfFrame(
+            emptyList(),
+            TB.fullBoard(Side.RED),
+            Move(7 to 3, 0 to 3, "r_R"),
+            Side.RED,
+        )
+        assertEquals(SelfFrameResult.SILENT, fc.result)
     }
 
     // ---------- n==3 ----------
@@ -116,8 +119,8 @@ class ClassifierSelfTest {
         )
         val expected = Move(8 to 4, 9 to 4, "r_P")
 
-        val fc = classifySelfFrame(changes, after, expected, Side.RED, false)
-        assertEquals(FrameResult.SELF_THEN_ENEMY, fc.result)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
 
         val state = GameState()
         state.replaceBoard(TB.copy(b))
@@ -146,8 +149,8 @@ class ClassifierSelfTest {
             Change(0, 3, null, "r_R"),
         )
         val expected = Move(7 to 3, 0 to 3, "r_R")
-        val fc = classifySelfFrame(changes, after, expected, Side.RED, false)
-        assertEquals(FrameResult.SELF_THEN_ENEMY, fc.result)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertEquals(Move(5 to 5, 7 to 3, "b_c", null), fc.enemyMove)
     }
 
@@ -167,15 +170,15 @@ class ClassifierSelfTest {
             Change(7, 7, "b_c", null),
             Change(7, 4, null, "b_c"),
         )
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, false)
-        assertEquals(FrameResult.SELF_THEN_ENEMY, fc.result)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertEquals(Move(7 to 7, 7 to 4, "b_c", null), fc.enemyMove)
     }
 
     // ---------- n>4 ----------
 
     @Test
-    fun `n大于4 有将帅 TRANSIENT`() {
+    fun `n大于4 有将帅 Noisy`() {
         val b = TB.fullBoard(Side.RED)
         val after = TB.copy(b)
         val changes = mutableListOf<Change>()
@@ -183,16 +186,16 @@ class ClassifierSelfTest {
             after[i][0] = "b_p"
             changes.add(Change(i, 0, null, "b_p"))
         }
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, false)
-        assertEquals(FrameResult.TRANSIENT, fc.result)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
     @Test
-    fun `n大于4 双方将帅缺失 RESIGN_SUSPECT`() {
+    fun `n大于4 双方将帅缺失 Noisy`() {
         val after = TB.empty() // 无任何将帅
         val changes = (0 until 5).map { Change(it, 0, null, "b_p") }
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, false)
-        assertEquals(FrameResult.RESIGN_SUSPECT, fc.result)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
     @Test
@@ -204,8 +207,8 @@ class ClassifierSelfTest {
             Change(5, 5, "b_c", null),
         )
         val after = TB.empty().also { it[0][3] = "b_c" }
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, false)
-        assertEquals(FrameResult.SELF_THEN_ENEMY, fc.result)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertNull(fc.selfMove?.captured)
         assertTrue(Board::class.java.isInstance(after))
     }

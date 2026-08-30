@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.view.accessibility.AccessibilityEvent
+import com.chess.bot.accessibility.BotAccessibilityService.Companion.instance
 
 /**
  * 手势点击服务：替代 python 版的 ADB input tap。

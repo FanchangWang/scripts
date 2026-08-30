@@ -13,7 +13,7 @@ object Permissions {
     fun notificationsGranted(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < 33) return true
         return context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
+                android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
     /** 悬浮窗特殊权限。 */
@@ -40,7 +40,7 @@ object Permissions {
         if (enabled != null) {
             val found = enabled.split(':').any {
                 ComponentName.unflattenFromString(it) == expected ||
-                    it.equals(expected.flattenToString(), ignoreCase = true)
+                        it.equals(expected.flattenToString(), ignoreCase = true)
             }
             if (found) return true
         }

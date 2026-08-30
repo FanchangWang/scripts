@@ -12,8 +12,8 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
-import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.SavedStateRegistryController
+import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 
 /**
@@ -96,9 +96,19 @@ class OverlayHost(private val context: Context) {
         view = null
         owner.moveToDestroyed()
         try {
-            windowManager.removeViewImmediate(v)
+            // 非 immediate：removeView 把 DIE 调度到下一轮消息循环，
+            // 避免在窗口自身输入事件派发途中移除窗口而抛异常（如信息框长按中断）
+            windowManager.removeView(v)
         } catch (_: Exception) {
             // 窗口已被系统移除
+        }
+    }
+
+    /** 视图完成首帧布局后回调（参数=测量宽高，像素）；用于在窗口创建后按真实内容高度校正位置。 */
+    fun postLayout(action: (Int, Int) -> Unit) {
+        val v = view ?: return
+        v.post {
+            if (v.height > 0) action(v.width, v.height)
         }
     }
 }
