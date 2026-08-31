@@ -1,0 +1,47 @@
+# ============================================================
+# cnn/ 目录 .gitignore
+# 设计原则：仅提交「脚本」+「最终训练产物」+「源资产」+「人工标注」。
+# 其余全部是 step_1 ~ step_8 运行期生成、可重跑得到的中间产物，一律忽略。
+#
+# 保留项：
+#   *.py                  —— 全部脚本（step_1_..step_8_、yolo_common.py）
+#   export/               —— 最终训练产物（chess_pieces.onnx + model_info.json）
+#   yolo11n-cls.pt        —— 源资产：YOLO 预训练权重（训练 step_6 的输入）
+#
+# 忽略项：各 step 的中间产物（体积大且可重生成）
+# ============================================================
+
+# --- Python 缓存（父级 .gitignore 已含，此处显式列出便于本目录独立使用）---
+__pycache__/
+*.py[cod]
+
+# --- step_3 切格输出：raw/N/*.png -> cells_cut/<state>/<img>/<class>/ ---
+cells_cut/
+
+# --- step_4 去重输出：cells_dedup/<class>/ ---
+cells_dedup/
+
+# --- step_5 构建的数据集（含 preprocess.json，可重生成）---
+dataset_yolo/
+
+# --- step_6 训练运行目录（Ultralytics 自动生成，含 runs/chess_pieces/weights）---
+runs/
+
+# --- step_7 模板匹配校验可视化产物 ---
+raw_cv/
+
+# --- step_8 CNN 推理校验可视化产物 ---
+raw_cnn/
+
+# --- step_2 生成的棋子模板产物 ---
+templates/
+
+# --- step_1 采集的原始截图：体积大、可重新截屏得到 ---
+#   截图(png)与人手标注(csv)一并忽略；raw/3/labels.csv 与同目录图片强关联，跟随一起忽略。
+#   （不整目录排除 raw/，否则 git 不进入该目录、后续 ! 放行规则无法生效）
+raw/**/*.png
+raw/**/*.csv
+
+# --- 日志 ---
+*.log
+log.txt
