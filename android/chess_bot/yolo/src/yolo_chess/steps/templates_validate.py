@@ -224,7 +224,7 @@ def main() -> int:
 
         summary_path = out_dir / "_summary.txt"
         summary_path.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
-        print(f"[{state_cn(state)}] 标注图: {out_dir}  摘要: {summary_path}")
+        print(f"[{state_cn(state)}]\n标注图: {out_dir}\n摘要: {summary_path}")
 
     print("\n=== 验证完成 ===")
     return 0

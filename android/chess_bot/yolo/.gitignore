@@ -8,6 +8,7 @@ build/
 
 # 产物（脚本运行生成，不入库）
 shared/raw/
+shared/raw_bak/
 shared/weights/
 shared/templates/
 shared/templates_validate/
