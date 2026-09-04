@@ -1,13 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#   "ultralytics",
-#   "numpy",
-#   "onnx>=1.12.0,<2.0.0",
-#   "onnxruntime",
-#   "onnxslim>=0.1.82",
-# ]
-# ///
 """脚本3：用 Ultralytics YOLO11n-cls 训练棋子分类模型并导出。
 
 流程：
@@ -20,8 +10,9 @@
   uv run step_6_train_yolo.py                         # 默认训练 + 导出 onnx
   uv run step_6_train_yolo.py --export all           # 同时导出 onnx + ncnn + tflite
   uv run step_6_train_yolo.py --epochs 120 --batch 128 --imgsz 64
-依赖：  ultralytics（会自动拉取 torch，首次安装/运行较重）；
-      导出 onnx 需 onnx / onnxruntime / onnxslim（已加进 dependencies，避免每次运行临时 AutoUpdate）。
+依赖：  见 cnn/pyproject.toml（ultralytics / numpy / onnx / onnxruntime / onnxslim /
+      torch[CUDA cu128] 等），已统一由 uv 在项目级 pyproject.toml 管理，
+      不再用 /// script 内联声明，避免每次运行临时 AutoUpdate 或误装 CPU 版 torch。
 """
 
 import argparse
@@ -137,6 +128,8 @@ def main() -> int:
     ap.add_argument("--batch", type=int, default=128, help="默认 128，若有问题可改 64")
     ap.add_argument("--imgsz", type=int, default=CELL_OUT, help="输入尺寸（默认 64，与切格一致）")
     ap.add_argument("--name", default="chess_pieces", help="runs 子目录名")
+    ap.add_argument("--device", default="auto",
+                    help="训练设备：auto(默认，自动选 CUDA) / cuda / cpu")
     ap.add_argument("--export", default="onnx",
                     help="导出格式：onnx / ncnn / tflite / all（逗号分隔）")
     args = ap.parse_args()
@@ -170,6 +163,7 @@ def main() -> int:
         epochs=args.epochs,
         batch=args.batch,
         imgsz=args.imgsz,
+        device=args.device,
         project=str(RUNS_ROOT),
         name=args.name,
         exist_ok=True,

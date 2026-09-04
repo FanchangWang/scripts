@@ -12,3 +12,4 @@ app/release/
 *.obk
 *.obk-shm
 *.obk-wal
+.vscode/

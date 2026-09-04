@@ -4,8 +4,9 @@
 # 其余全部是 step_1 ~ step_8 运行期生成、可重跑得到的中间产物，一律忽略。
 #
 # 保留项：
-#   *.py                  —— 全部脚本（step_1_..step_8_、yolo_common.py）
+#   *.py                  —— 全部脚本（step_1_..step_8_、step_11_..step_13_、yolo_common.py）
 #   export/               —— 最终训练产物（chess_pieces.onnx + model_info.json）
+#   corner/export/        —— 最终训练产物（board_corners.onnx + model_info.json，step_12 导出）
 #   yolo11n-cls.pt        —— 源资产：YOLO 预训练权重（训练 step_6 的输入）
 #
 # 忽略项：各 step 的中间产物（体积大且可重生成）
@@ -41,6 +42,12 @@ templates/
 #   （不整目录排除 raw/，否则 git 不进入该目录、后续 ! 放行规则无法生效）
 raw/**/*.png
 raw/**/*.csv
+
+# --- 棋盘4角定位（step_11~13）生成产物：数据集/训练runs/可视化 ---
+#   全部位于独立子目录 corner/，与 step_2~8 的 dataset_yolo/ runs/ raw_cnn/ 互不干扰。
+#   （corner/runs/ 已被上方全局 runs/ 规则覆盖；此处显式列出 dataset 与 viz）
+corner/dataset/
+corner/viz/
 
 # --- 日志 ---
 *.log

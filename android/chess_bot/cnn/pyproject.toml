@@ -1,0 +1,28 @@
+[project]
+name = "chess_bot"
+version = "0.1.0"
+description = "JJ象棋 bot"
+readme = "README.md"
+authors = [
+    { name = "古月玄", email = "2651919937@qq.com" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "ultralytics",
+  "numpy>=1.26",
+  "opencv-python>=4.11.0",
+  "onnx>=1.12.0,<2.0.0",
+  "onnxruntime",
+  "onnxslim>=0.1.82",
+  "torch",
+  "torchvision",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://mirrors.nju.edu.cn/pytorch/whl/cu128/"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
