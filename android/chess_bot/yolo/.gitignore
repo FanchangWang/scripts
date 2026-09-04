@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# 产物（脚本运行生成，不入库）
+shared/raw/
+shared/weights/
+shared/templates/
+shared/templates_validate/
+cls/cells/
+cls/cells_dedup/
+cls/dataset/
+cls/runs/
+cls/validate_output/
+det/dataset/
+det/runs/
+det/validate_output/
+corners.json
+weights/
+
+# IDE
+.vscode/
+.idea/

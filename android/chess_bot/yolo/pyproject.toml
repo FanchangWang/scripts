@@ -1,0 +1,84 @@
+[project]
+name = "yolo-chess"
+version = "0.1.0"
+description = "YOLO 棋子分类 + 棋盘四角检测训练工具"
+readme = "README.md"
+authors = [
+    { name = "古月玄", email = "2651919937@qq.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.2",
+    "onnx>=1.22.0",
+    "onnxruntime>=1.29.0",
+    "onnxslim>=0.1.96",
+    "opencv-python>=5.0.0.93",
+    "questionary>=2.1.1",
+    "torch",
+    "torchvision",
+    "ultralytics>=8.4.138",
+]
+
+[project.scripts]
+yolo-chess = "yolo_chess.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://mirrors.nju.edu.cn/pytorch/whl/cu128/"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
+    "ty>=0.0.77",
+]
+
+[tool.ty.environment]
+python = ".venv"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", # 标准
+    "I", # 导入
+    "UP", "RUF", # 代码现代化
+    "B", "BLE", "T10", # Bug
+    "SIM", "C4", "PERF", "PIE", # 简化与性能
+    "N", # 命名
+    "PTH", # 路径
+    "PT", # 测试
+    "TRY", # 异常
+]
+ignore = [
+    "E501",   # 忽略超长行 (交给 ruff format 自动处理)
+    "TRY003", # 允许在 raise Exception(...) 中写长文字说明
+    "RUF012", # 允许在类定义中定义可变对象属性 (非常适合 YAML/JSON 配置类)
+    "RUF001", # 中文项目大量使用全角标点，不视为歧义
+    "RUF002",
+    "RUF003",  # 中文项目大量使用全角标点，不视为歧义
+    "PT018",   # 测试中复合断言保留单行（便于一眼看清多条件关系）
+    "BLE001",  # CLI 工具允许捕获 Exception
+    "N806",    # H 作为 homography 矩阵变量名是惯例
+    "TRY300",  # try/except 后直接 return 更直观
+    "PERF401", # 显式循环 append 比 extend 更易读
+]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

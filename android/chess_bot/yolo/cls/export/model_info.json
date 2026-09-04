@@ -1,0 +1,75 @@
+{
+  "task": "classification",
+  "arch": "yolo11n-cls.pt",
+  "num_classes": 16,
+  "imgsz": 64,
+  "input_shape": [
+    1,
+    3,
+    64,
+    64
+  ],
+  "input_dtype": "float32",
+  "input_layout": "NCHW",
+  "color_order": "RGB（cv2 裁出的格子是 BGR，喂模型前需 cvtColor(BGR2RGB)）",
+  "preprocess": {
+    "scale": 255.0,
+    "mean": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "std": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "class_keys": [
+    "b_a",
+    "b_b",
+    "b_c",
+    "b_k",
+    "b_n",
+    "b_p",
+    "b_r",
+    "empty",
+    "lift",
+    "r_A",
+    "r_B",
+    "r_C",
+    "r_K",
+    "r_N",
+    "r_P",
+    "r_R"
+  ],
+  "class_cn": [
+    "黑士",
+    "黑象",
+    "黑砲",
+    "黑将",
+    "黑馬",
+    "黑卒",
+    "黑車",
+    "空格",
+    "提子",
+    "红仕",
+    "红相",
+    "红炮",
+    "红帥",
+    "红傌",
+    "红兵",
+    "红俥"
+  ],
+  "exports": {
+    "onnx": "chess_pieces.onnx"
+  },
+  "train_metrics": {
+    "final_epoch": 120,
+    "final_val_top1": 1.0,
+    "final_val_loss": 0.00709,
+    "final_train_loss": 0.0015,
+    "best_val_top1": 1.0,
+    "best_val_top1_epoch": 62
+  }
+}
