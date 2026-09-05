@@ -22,7 +22,6 @@ from yolo_chess.common import (
 )
 
 # 仅用 opening/mate/endgame 三态；lift 与 mate 高度相似且占比过大，对训练不利
-_DET_STATES = [d for d in sorted(SHARED_RAW.iterdir()) if d.is_dir() and d.name != STATE_LIFT]
 SEED = 42
 VAL_RATIO = 0.2
 CORNER_HALF = 65
@@ -34,9 +33,16 @@ def _ascii_stem(nskey: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "_", nskey)[:40] + "_" + h
 
 
+def _det_states() -> list[Path]:
+    if not SHARED_RAW.exists():
+        return []
+    return [d for d in sorted(SHARED_RAW.iterdir()) if d.is_dir() and d.name != STATE_LIFT]
+
+
 def main() -> int:
     """构建四角数据集主函数。"""
     random.seed(SEED)
+    _DET_STATES = _det_states()
     samples: list[tuple[Path, np.ndarray, str]] = []
     skipped: list[tuple[Path, str]] = []
     res_counter: dict[tuple[int, int], int] = {}

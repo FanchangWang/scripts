@@ -20,6 +20,9 @@ cls/validate_output/
 det/dataset/
 det/runs/
 det/validate_output/
+pose/dataset/
+pose/runs/
+pose/validate_output/
 corners.json
 weights/
 

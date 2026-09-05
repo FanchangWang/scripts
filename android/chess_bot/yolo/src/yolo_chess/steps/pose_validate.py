@@ -1,8 +1,11 @@
-"""det_validate.py —— 校验「棋盘4角定位」检测模型（导出的 ONNX）的像素级精度。"""
+"""pose_validate.py —— 校验「棋盘4角定位」pose 模型（导出的 ONNX）的像素级精度。
+
+与 det_validate 的区别：推断直接由 4 个关键点给出角点（省去「每类 argmax」步骤），
+其余误差/格心位移统计、可视化、判定逻辑完全对齐 det_validate。
+"""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import cv2
@@ -12,7 +15,7 @@ from yolo_chess.common import (
     COLS,
     CORRECT_CELL,
     DEFAULT_CORNERS,
-    DET_EXPORT,
+    POSE_ROOT,
     PROJECT_ROOT,
     ROWS,
     STATE_CN,
@@ -27,6 +30,7 @@ from yolo_chess.common import (
     iter_state_images,
     prepare_output_dir,
 )
+from yolo_chess.common.pose import POSE_MODEL, _decode_pose_row, _onnx_imgsz
 from yolo_chess.common.vision import (
     CORNER_NAMES,
     _draw_boxes,
@@ -35,9 +39,7 @@ from yolo_chess.common.vision import (
     _stats,
 )
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent.parent / "det" / "validate_output"
-DET_MODEL = DET_EXPORT / "board_corners.onnx"
-DET_INFO = DET_EXPORT / "model_info.json"
+OUTPUT_DIR = POSE_ROOT / "validate_output"
 
 TOL_GOOD = 10.0
 TOL_WARN = 25.0
@@ -48,9 +50,9 @@ PARAMS = [
     Param(
         "weights",
         "str",
-        default=str(DET_MODEL),
+        default=str(POSE_MODEL),
         cn="模型路径",
-        desc="导出的 ONNX 模型（由「训练四角检测模型」导出）",
+        desc="导出的 ONNX 模型（由「训练 pose 四角模型」导出）",
     ),
     Param(
         "states",
@@ -69,8 +71,8 @@ PARAMS = [
 ]
 
 
-class OnnxDetector:
-    """ultralytics 导出的 YOLO-Detect ONNX 推理：letterbox + 每类 argmax 解码角点。"""
+class OnnxPoseDetector:
+    """ultralytics 导出的 YOLO-Pose ONNX 推理：letterbox + 取 cls 最高候选解码 bbox+4 关键点。"""
 
     def __init__(self, model_path: Path, imgsz: int):
         import onnxruntime as ort
@@ -83,43 +85,35 @@ class OnnxDetector:
         self.out_name = self.sess.get_outputs()[0].name
         self.imgsz = imgsz
 
-    def predict(self, img_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray, list]:
-        """推理一副图，返回 (角点 4x2 原图坐标, 每角置信 4, 每角框 list[(x1,y1,x2,y2)])。"""
+    def predict(self, img_bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray, tuple]:
+        """推理一副图，返回 (角点 4x2 原图坐标, 每角关键点置信 4, 主目标框 (x1,y1,x2,y2))。"""
         lb, r, left, top = _letterbox(img_bgr, self.imgsz)
         rgb = cv2.cvtColor(lb, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         inp = rgb.transpose(2, 0, 1)[None]
-        out = self.sess.run([self.out_name], {self.in_name: inp})[0]
-        out = np.asarray(out, dtype=np.float32).reshape(8, -1).T  # (N, 8) = [cx,cy,w,h, c0..c3]
+        out = np.asarray(self.sess.run([self.out_name], {self.in_name: inp})[0], dtype=np.float32)
 
+        # ⚠ T5 校验点：首次部署务必先跑一次实推理、打印 out.shape，确认通道顺序。
+        # 标准 Ultralytics pose 导出布局：每候选 4+nc+3*nk 通道；
+        # 本配置 nc=1 nk=4 => 17 通道 = [cx,cy,w,h, cls, kp0x,kp0y,kp0c, ..., kp3x,kp3y,kp3c]
+        row = _decode_pose_row(out, nk=4, nc=1)
         pts = np.full((4, 2), np.nan, dtype=np.float64)
-        cf = np.full(4, np.nan, dtype=np.float64)
-        boxes: list[tuple[float, float, float, float]] = []
-        for c in range(4):
-            scores = out[:, 4 + c]
-            k = int(np.argmax(scores))
-            cx, cy, w, h = out[k, :4]
+        kc = np.full(4, np.nan, dtype=np.float64)
+        box: tuple[float, float, float, float] = (np.nan, np.nan, np.nan, np.nan)
+        if row is not None:
+            cx, cy, w, h = row[0:4]
             cx0, cy0 = (cx - left) / r, (cy - top) / r
             w0, h0 = w / r, h / r
-            pts[c] = [cx0, cy0]
-            cf[c] = float(scores[k])
-            boxes.append((cx0 - w0 / 2, cy0 - h0 / 2, cx0 + w0 / 2, cy0 + h0 / 2))
-        return pts, cf, boxes
-
-
-def _onnx_imgsz(model_path: Path) -> int | None:
-    """从 model_info.json 读取导出时的 imgsz。"""
-    info_path = model_path.with_name("model_info.json")
-    if not info_path.exists():
-        return None
-    try:
-        info = json.loads(info_path.read_text(encoding="utf-8"))
-        return int(info.get("imgsz", 0)) or None
-    except (ValueError, TypeError, OSError):
-        return None
+            box = (cx0 - w0 / 2, cy0 - h0 / 2, cx0 + w0 / 2, cy0 + h0 / 2)
+            kp = row[5 : 5 + 3 * 4].reshape(4, 3)  # (x, y, conf) * 4
+            for i in range(4):
+                pts[i, 0] = (kp[i, 0] - left) / r
+                pts[i, 1] = (kp[i, 1] - top) / r
+                kc[i] = float(kp[i, 2])
+        return pts, kc, box
 
 
 def main() -> int:
-    """四角精度验证主函数。"""
+    """pose 四角精度验证主函数。"""
     args = interactive_args(PARAMS)
     if args is None:
         return 0
@@ -130,7 +124,7 @@ def main() -> int:
     if not weights.is_absolute():
         weights = PROJECT_ROOT / weights
     if not weights.exists():
-        print(f"未找到模型: {weights}\n请先运行「训练四角检测模型」导出 ONNX")
+        print(f"未找到模型: {weights}\n请先运行「训练 pose 四角模型」导出 ONNX")
         return 1
 
     try:
@@ -148,7 +142,7 @@ def main() -> int:
     else:
         auto_note = "（与导出一致）"
 
-    model = OnnxDetector(weights, args.imgsz)
+    model = OnnxPoseDetector(weights, args.imgsz)
 
     print(f"模型     : {weights}")
     print(f"状态     : {states}")
@@ -190,15 +184,15 @@ def main() -> int:
                 st_skipped += 1
                 continue
 
-            pts, cf, pred_boxes = model.predict(img)
+            pts, kc, pred_box = model.predict(img)
 
             if np.isnan(pts).any():
                 missing = [CORNER_NAMES[i] for i in range(4) if np.isnan(pts[i, 0])]
                 print(f"⚠ 角点缺失: {st}/{p.name} 缺={missing}")
                 skipped_no_det += 1
                 continue
-            confs.append(cf)
-            st_conf.append(cf)
+            confs.append(kc)
+            st_conf.append(kc)
 
             gt = np.array(DEFAULT_CORNERS[key], dtype=np.float64)
             err = np.linalg.norm(pts - gt, axis=1)
@@ -237,7 +231,7 @@ def main() -> int:
             )
 
             _draw_corners(img, pts, color_pred)
-            _draw_boxes(img, pred_boxes, color_pred)
+            _draw_boxes(img, [pred_box], color_pred)
             _draw_corners(img, gt, color_gt)
             cv2.imwrite(str(out_dir / f"{p.stem}.png"), img)
             n_viz += 1
@@ -321,7 +315,7 @@ def main() -> int:
     )
 
     cfa = np.array(confs, dtype=np.float64) if confs else np.zeros((1, 4))
-    print("\n=== 检测置信度余量（诊断漏检风险；与定位精度无关） ===")
+    print("\n=== 关键点置信度余量（诊断漏检风险；与定位精度无关） ===")
     print(f"  {'角':<4}{'最低':>9}{'中位':>9}{'最高':>9}  风险")
     for i, nm in enumerate(CORNER_NAMES):
         col = cfa[:, i]
@@ -370,9 +364,9 @@ def main() -> int:
         )
         hint = (
             f"误差以系统偏移为主(avg|bias|={g_bias:.1f}px>std={g_std:.1f}px)："
-            f"先排查角框贴边导致标签带噪/训练被裁剪（见 det_dataset 贴边提示），勿只靠加 imgsz"
+            f"先排查任务建模/数据同质（如整盘大框+长程关键点易拉向中心），勿只靠加 imgsz"
             if g_bias > g_std * 1.5
-            else f"误差以随机散布为主(std={g_std:.1f}px)：可提高训练 imgsz 并重训（增强 --aug robust）"
+            else f"误差以随机散布为主(std={g_std:.1f}px)：可提高训练 imgsz 并重训"
         )
         verdict = f"❌ 不合格：{why}。{hint}。"
         print(f"  {verdict}")
@@ -381,7 +375,7 @@ def main() -> int:
         print(f"\n跳过 {skipped_no_gt} 张（分辨率未收录于 DEFAULT_CORNERS）")
     if skipped_no_det:
         print(
-            f"⚠ {skipped_no_det} 张角点缺失。本任务每类恒有 1 个目标且只取最高分框，"
+            f"⚠ {skipped_no_det} 张角点缺失。pose 应恒有 1 个棋盘框 + 4 关键点；"
             f"先把 --conf 降到 0.0005 复测；若仍缺才是真漏检。"
         )
 

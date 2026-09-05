@@ -9,12 +9,15 @@ from yolo_chess.common import (
     CORRECT_H,
     CORRECT_W,
     _parse_adb_devices,
+    corner_visibility_for_state,
     corrected_center,
     crop_cell,
     dedup_class,
     label_map_for_lift,
     label_map_for_state,
+    pose_bbox_from_corners,
 )
+from yolo_chess.common.pose import _decode_pose_row
 
 
 class TestCorrectedCenter:
@@ -138,3 +141,41 @@ class TestParseAdbDevices:
     def test_unknown_state_ignored(self) -> None:
         text = "List of devices attached\nSOME_SERIAL  unauthorized\n"
         assert _parse_adb_devices(text) == []
+
+
+class TestPoseBboxFromCorners:
+    def test_expand_and_clamp(self) -> None:
+        corners = np.array([[100.0, 100.0], [300.0, 100.0], [100.0, 400.0], [300.0, 400.0]])
+        x1, y1, x2, y2 = pose_bbox_from_corners(corners, w=500, h=500, margin=100)
+        assert (x1, y1, x2, y2) == (0.0, 0.0, 400.0, 500.0)
+
+    def test_no_clamp(self) -> None:
+        corners = np.array([[200.0, 200.0], [300.0, 200.0], [200.0, 300.0], [300.0, 300.0]])
+        x1, y1, x2, y2 = pose_bbox_from_corners(corners, w=800, h=800, margin=50)
+        assert (x1, y1, x2, y2) == (150.0, 150.0, 350.0, 350.0)
+
+
+class TestCornerVisibilityForState:
+    def test_opening_occluded(self) -> None:
+        assert corner_visibility_for_state("opening") == [1, 1, 1, 1]
+
+    def test_mate_visible(self) -> None:
+        assert corner_visibility_for_state("mate") == [2, 2, 2, 2]
+
+    def test_lift_visible(self) -> None:
+        assert corner_visibility_for_state("lift") == [2, 2, 2, 2]
+
+    def test_endgame_empty(self) -> None:
+        assert corner_visibility_for_state("endgame") == [2, 2, 2, 2]
+
+
+class TestDecodePoseRow:
+    def test_argmax_cls(self) -> None:
+        cand0 = [10, 10, 20, 20, 0.1] + [0, 0, 0] * 4
+        cand1 = [11, 11, 21, 21, 0.9] + [1, 1, 1] * 4
+        out = np.array([cand0, cand1], dtype=np.float32).T  # (17, 2)
+        row = _decode_pose_row(out, nk=4, nc=1)
+        assert row is not None
+        assert np.allclose(row[:4], [11, 11, 21, 21])
+        assert np.allclose(row[5:8], [1, 1, 1])
+        assert np.allclose(row[14:17], [1, 1, 1])

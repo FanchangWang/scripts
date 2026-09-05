@@ -20,6 +20,9 @@ from yolo_chess.steps import (
     det_dataset,
     det_train,
     det_validate,
+    pose_dataset,
+    pose_train,
+    pose_validate,
     shared_collect,
     shared_templates,
     templates_validate,
@@ -37,6 +40,9 @@ STEPS: list[tuple[str, str, Callable[..., int | None]]] = [
     ("det构建四角数据集 (det_dataset)", "det_dataset", det_dataset.main),
     ("det训练四角检测模型 (det_train)", "det_train", det_train.main),
     ("det四角精度验证 (det_validate)", "det_validate", det_validate.main),
+    ("pose构建四角数据集 (pose_dataset)", "pose_dataset", pose_dataset.main),
+    ("pose训练四角定位模型 (pose_train)", "pose_train", pose_train.main),
+    ("pose四角精度验证 (pose_validate)", "pose_validate", pose_validate.main),
 ]
 
 
