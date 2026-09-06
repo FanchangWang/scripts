@@ -47,11 +47,11 @@ object PieceClsModel {
      */
     fun classifyCell(context: Context, cell: Mat): String? = classifyCellEx(context, cell).key
 
-    /** 分类结果：key 语义同 classifyCell；附 softmax 概率（动画帧门控/调参用）。 */
+    /** 分类结果：key 语义同 classifyCell；附模型输出的 top1 与 lift 概率（动画帧门控/调参用）。 */
     data class ClsResult(val key: String?, val top1Prob: Float, val liftProb: Float)
 
     /**
-     * 带概率的分类（帧差触发格用）：softmax 后返回 top1 与 lift 概率。
+     * 带概率的分类（帧差触发格用）：返回 top1 与 lift 概率。
      * [isLiftAmbiguous] 为 true 时调用方可把该格按提子处理（动画帧抑制）。
      */
     fun classifyCellEx(context: Context, cell: Mat): ClsResult {
@@ -80,12 +80,15 @@ object PieceClsModel {
         return try {
             val output = session.run(mapOf(session.inputNames.iterator().next() to input))
             try {
-                val logits = (output.get(0) as ai.onnxruntime.OnnxTensor).floatBuffer
+                // 注意：ultralytics cls ONNX 导出图末尾自带 Softmax 算子（已核实 graph 末尾
+                // ...Gemm→Softmax），输出就是概率——绝不可再 softmax 一次（2026-09-07 修复：
+                // 旧代码二次 softmax 把概率压向均匀分布，top1 被钉死在 16 类天花板 e/(e+15)≈0.1534，
+                // 看起来像「置信度 0.15」；argmax 单调不受影响所以分类一直正确，仅概率失真）。
+                val probs = (output.get(0) as ai.onnxruntime.OnnxTensor).floatBuffer
                 var best = 0
                 for (i in 1 until CLASS_KEYS.size) {
-                    if (logits.get(i) > logits.get(best)) best = i
+                    if (probs.get(i) > probs.get(best)) best = i
                 }
-                val probs = softmax(logits, CLASS_KEYS.size)
                 val key = when (val k = CLASS_KEYS[best]) {
                     "empty" -> null
                     "lift" -> Const.LIFT
@@ -103,28 +106,16 @@ object PieceClsModel {
         }
     }
 
-    /** lift 类在 CLASS_KEYS 中的索引（softmax 概率取用）。 */
+    /** lift 类在 CLASS_KEYS 中的索引（概率直接取用）。 */
     private val LIFT_INDEX = CLASS_KEYS.indexOf("lift")
 
     /**
      * 纯函数：动画帧判定。top1 是真实棋子但 lift 概率显著（≥ [Const.CLS_LIFT_GATE]），
      * 说明该格处于提起/选中/滑动动画中，棋子外观不可信 → 按提子处理。
      * empty 与 lift 本身不需要门控。
+     * 注：2026-09-07 修复双重 softmax 前该门控从未触发过（liftProb 天花板 0.1534 < 0.30 死代码），
+     * 修复后门控恢复设计语义，阈值是否合适应按真实尺度实测再定。
      */
     fun isLiftAmbiguous(key: String?, liftProb: Float): Boolean =
         key != null && key != Const.LIFT && liftProb >= Const.CLS_LIFT_GATE
-
-    /** softmax（数值稳定版）：logits 长度 n，返回概率数组。 */
-    internal fun softmax(logits: java.nio.FloatBuffer, n: Int): FloatArray {
-        var max = Float.NEGATIVE_INFINITY
-        for (i in 0 until n) if (logits.get(i) > max) max = logits.get(i)
-        val exp = FloatArray(n)
-        var sum = 0f
-        for (i in 0 until n) {
-            exp[i] = kotlin.math.exp(logits.get(i) - max)
-            sum += exp[i]
-        }
-        for (i in 0 until n) exp[i] /= sum
-        return exp
-    }
 }

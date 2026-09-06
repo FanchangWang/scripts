@@ -85,14 +85,15 @@ class BotForegroundService : Service() {
         if (ScreenCaptureSource.get().start(this, resultCode, resultData)) {
             LogBus.log(LogKind.OK, LogTag.SERVICE, "截屏管线已启动")
             val appCtx = applicationContext
-            // 预热（2026-08-29 #2 提速）：OpenCV + 棋子模板立即在后台加载，
+            // 预热（2026-08-29 #2 提速）：OpenCV + cls 会话立即在后台加载，
             // 对弈模式再并行启动 pikafish 子进程（uci 握手 + NNUE 加载 ~1.4s），
-            // 使首次识别与第一步思考不再排队等冷启动
+            // 使首次识别与第一步思考不再排队等冷启动。
+            // 角子模板（assets/templates/set_NN/）仅四角校准功能使用，不在对弈预热中加载。
+            // OCR 引擎预创建（2026-09-06）：冷加载 1~3s，若留在首次噪声帧/结算扫描中会造成一次性停顿。
             serviceScope.launch(Dispatchers.Default) {
                 com.chess.bot.vision.VisionInit.init(appCtx)
-                // 预热：cls 会话（棋子识别）+ 角子模板套（四角校准回退用）；det 会话仅校准路径按需加载
                 com.chess.bot.vision.PieceClsModel.ensure(appCtx)
-                com.chess.bot.vision.VisionInit.loadCornerTemplateSets(appCtx)
+                com.chess.bot.vision.TextMatcher.warmUp(appCtx)
             }
             if (!isCalibration) {
                 serviceScope.launch(Dispatchers.Default) {

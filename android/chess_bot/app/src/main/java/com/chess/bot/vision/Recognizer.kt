@@ -8,6 +8,7 @@ import com.chess.bot.game.PIECE_CN
 import com.chess.bot.game.ROWS
 import com.chess.bot.game.correctedCenter
 import com.chess.bot.log.LogBus
+import com.chess.bot.vision.Recognizer.analyzeCell
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -55,11 +56,24 @@ object Recognizer {
      *   返回 Const.LIFT（走子动画/选中高亮中的棋子外观不可信，宁判提起不判错子；
      *   全量识别 analyzeBoard 不启用，保持 argmax 直判语义）。
      */
-    fun analyzeCell(corrected: Mat, r: Int, c: Int, gateLift: Boolean = false): String? {
+    fun analyzeCell(corrected: Mat, r: Int, c: Int, gateLift: Boolean = false): String? =
+        analyzeCellEx(corrected, r, c, gateLift).first
+
+    /**
+     * [analyzeCell] 的带概率版本：同时返回 cls 原始分类结果（top1 类别/top1 概率/lift 概率），
+     * 供调用方在「变化格」日志中打印识别置信度（2026-09-07：排查敌方 transit 帧误提交时
+     * 需要确认 cls 对飞行棋子的置信度水平）。
+     */
+    fun analyzeCellEx(
+        corrected: Mat,
+        r: Int,
+        c: Int,
+        gateLift: Boolean = false
+    ): Pair<String?, PieceClsModel.ClsResult> {
         val cell = cropCell64(corrected, r, c)
         return try {
             val res = PieceClsModel.classifyCellEx(VisionInit.requireContext(), cell)
-            if (gateLift && PieceClsModel.isLiftAmbiguous(res.key, res.liftProb)) {
+            val key = if (gateLift && PieceClsModel.isLiftAmbiguous(res.key, res.liftProb)) {
                 LogBus.log(
                     com.chess.bot.log.LogKind.DEBUG, com.chess.bot.log.LogTag.VISION,
                     "动画帧抑制 r$r c$c：top1=${res.key}(%.2f) lift=%.2f -> 判提起".format(
@@ -70,6 +84,7 @@ object Recognizer {
             } else {
                 res.key
             }
+            key to res
         } finally {
             cell.release()
         }

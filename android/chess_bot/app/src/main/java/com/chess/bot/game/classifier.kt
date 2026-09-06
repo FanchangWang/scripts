@@ -22,6 +22,28 @@ fun stripTransitLift(changes: List<Change>): List<Change> =
     changes.filterNot { it.old == null && it.new == Const.LIFT }
 
 /**
+ * v3 (a) 快速成功判定（2026-09-06 Q1 重构，用户裁定）：n==2 且变化格恰为本步 src/dst 两格。
+ * 内部直接复用 [inferMove]：其「离开子 == 到达子」约束（a.new == l.third）天然要求 dst 新值
+ * 恰为 [piece]，再核对 src/dst 位置即命中——其余一切形状（dst 为敌子/lift/空/误读棋子、
+ * 格子不匹配）返回 false。
+ *
+ * 「dst=敌子（落子即被反吃）」不可达（2026-09-07 用户指出，已删）：敌子出现在 dst 必然伴随
+ * 其源格 diff → 实际 n≥3；n==2 同型互吃（dst 图像不变、敌源格在帧内）由 enemyRecaptureN2 处理。
+ * 该形状只在 diff 管线被污染（敌源格基线丢失）时出现，而此时提交 board[dst]=我子会固化错误状态
+ * （幽灵棋子 + 敌方吃子对 waitForEnemyMove 永久不可见）——inferMove 的棋子一致性检查使其
+ * 自动落 false，零副作用。
+ *
+ * 返回 true 即「我方走棋成功」——我方成败只由本步两格决定，无需两帧校验。
+ */
+fun isSelfPairSettled(
+    changes: List<Change>,
+    expected: Move,
+): Boolean {
+    val moved = inferMove(changes) ?: return false
+    return moveMatches(moved, expected)
+}
+
+/**
  * 我方走棋后单帧分类，按变动格数 n 分派。
  * 只校验「走棋是否成功」或返回对应 SelfFrameResult（LIFTED/NOISY/SILENT）及 selfMove/enemyMove。
  * 不再有 myMoveSettled 兜底：SELF_DONE 的判定即「起点变空 + 落点成为我方棋子」，已直接覆盖；
@@ -116,6 +138,10 @@ fun classifyEnemyFrame(changes: List<Change>, mySide: Side, preBoard: Board? = n
 
 // ---------- 内部 ----------
 
+/** 变化格子 → (old, new) 查找表（enemyRecaptureN2 / classifyN3 / classifyN4 共用）。 */
+private fun cellLookup(changes: List<Change>): Map<Pair<Int, Int>, Pair<String?, String?>> =
+    changes.associate { (it.r to it.c) to (it.old to it.new) }
+
 /** n==1 恰好是我方起点提子未落（强约束避免误判）。
  *  2026-09-05 结合 cls lift 类：new==null（格子变空推断）或 new=="lift"（直接确认提起）均判提子。 */
 private fun isLiftedOnly(change: Change, expected: Move, newBoard: Board): Boolean {
@@ -132,7 +158,7 @@ private fun enemyRecaptureN2(
     expected: Move,
     mySide: Side,
 ): Move? {
-    val lookup = changes.associate { (it.r to it.c) to (it.old to it.new) }
+    val lookup = cellLookup(changes)
     val srcPair = lookup[expected.src] ?: return null
     val (srcOld, srcNew) = srcPair
     if (srcOld != expected.piece || srcNew != null) return null
@@ -157,7 +183,7 @@ private fun classifyN3(
     mySide: Side,
     preBoard: Board?,
 ): SelfFrame? {
-    val lookup = changes.associate { (it.r to it.c) to (it.old to it.new) }
+    val lookup = cellLookup(changes)
     val srcPair = lookup[expected.src] ?: return null
     val dstPair = lookup[expected.dst] ?: return null
     val (r1Old, r1New) = srcPair
@@ -210,12 +236,10 @@ private fun classifyN4(
     mySide: Side,
     preBoard: Board?,
 ): SelfFrame? {
-    val lookup = changes.associate { (it.r to it.c) to (it.old to it.new) }
-    val srcPair = lookup[expected.src] ?: return null
-    val dstPair = lookup[expected.dst] ?: return null
-    val (_, r1New) = srcPair
-    val (r2Old, r2New) = dstPair
-    if (!(srcPair.first == expected.piece && r1New == null && r2New == expected.piece)) return null
+    val lookup = cellLookup(changes)
+    val (r1Old, r1New) = lookup[expected.src] ?: return null
+    val (r2Old, r2New) = lookup[expected.dst] ?: return null
+    if (!(r1Old == expected.piece && r1New == null && r2New == expected.piece)) return null
     val rest = changes.filter { (it.r to it.c) != expected.src && (it.r to it.c) != expected.dst }
     if (rest.size != 2) return null
     val enemyMove = inferMove(rest) ?: return null

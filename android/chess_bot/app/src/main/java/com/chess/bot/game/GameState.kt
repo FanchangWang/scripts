@@ -49,10 +49,11 @@ data class SelfFrame(
 )
 
 /** verifyForSelfMove 多帧校验后的最终结论（返回给 doMove 的编排契约，与帧分类解耦）。
- *  DONE_OK=走棋成功 / DONE_END=走棋成功且终局 / LIFTED=仅见提子（未落定）/
- *  SILENT=无变动（棋盘未动）/ NOISY=无法判断（未落定，交 doMove 重试）/
- *  RETRY_AFTER_ENEMY=点击被吞且敌方已先走（敌着已提交，交 doMove 重试本步，不计零变化守卫）。 */
-enum class VerifyOutcome { DONE_OK, DONE_END, LIFTED, SILENT, NOISY, RETRY_AFTER_ENEMY }
+ *  DONE_OK=走棋成功（敌着可能已就地一并提交，轮次由 state.turn 反映）/
+ *  DONE_END=走棋成功且对局结束 / RETRY_BOTH=两次点击均未生效（或稳定未知兜底），重试两格 /
+ *  RETRY_DST=棋子提起未落，仅补点目标格 / RETRY_AFTER_ENEMY=点击被吞且敌方已先走
+ *  （敌着已提交，交 doMove 重试本步，不计零变化守卫）。 */
+enum class VerifyOutcome { DONE_OK, DONE_END, RETRY_BOTH, RETRY_DST, RETRY_AFTER_ENEMY }
 
 /**
  * 敌方走棋检测单帧结论（与 SelfFrame 对称：result 判断，enemyMove 取移动数据；移动成功时 enemyMove 有值）。

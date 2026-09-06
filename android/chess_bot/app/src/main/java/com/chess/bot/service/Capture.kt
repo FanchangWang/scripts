@@ -81,8 +81,9 @@ class Capture(
         BotAccessibilityServiceHolder.back() ?: false
 
     /**
-     * 和棋弹窗检查（事件触发，2026-08-29 T1：不再每帧全图 matchTemplate）。
-     * 「同意+拒绝」两按钮同时存在才认定弹窗；按 decideDrawReject 决策点击，循环直到弹窗消失。
+     * 和棋弹窗检查（事件触发，2026-08-29 T1：不再每帧全图匹配）。
+     * 2026-09-06 改 OCR：「对方请求和棋」+「同意」+「拒绝」三词同现才认定弹窗（TextMatcher.matchDrawDialog）；
+     * 按 decideDrawReject 决策点击（OCR 框中心），循环直到弹窗消失。
      * 内置 ≥1s 节流：异常帧可能连环触发，避免退化为每帧检查。返回是否处理过弹窗。
      */
     suspend fun dismissDrawDialog(): Boolean {
@@ -90,15 +91,17 @@ class Capture(
         if (now - lastDrawCheckAt < Const.DRAW_CHECK_THROTTLE_MS * 1_000_000) return false
         lastDrawCheckAt = now
         var img = screenshot() ?: return false
-        var hits = TextMatcher.findDrawDialog(context, img)
-        var accept = hits.firstOrNull { it.word == "和棋_同意" }
-        var deny = hits.firstOrNull { it.word == "和棋_拒绝" }
-        if (accept == null || deny == null) return false // 两按钮不全，不是和棋页面
+        var buttons = TextMatcher.findDrawDialog(context, img)
+        if (buttons.isEmpty()) return false // 三词不全，不是和棋页面
         val reject = decideDrawReject()
         var count = 0
         while (shouldContinue()) {
             count++
-            val target = if (reject) deny!! else accept!!
+            val target = if (reject) {
+                buttons.first { it.word == Const.DRAW_REJECT_WORD }
+            } else {
+                buttons.first { it.word == Const.DRAW_ACCEPT_WORD }
+            }
             LogBus.log(
                 LogKind.INFO,
                 LogTag.INPUT,
@@ -107,10 +110,8 @@ class Capture(
             if (!tapXy(target.x, target.y)) break // 点击失败即中止
             delay(Const.DRAW_DIALOG_SETTLE_MS)
             img = screenshot() ?: break
-            hits = TextMatcher.findDrawDialog(context, img)
-            accept = hits.firstOrNull { it.word == "和棋_同意" }
-            deny = hits.firstOrNull { it.word == "和棋_拒绝" }
-            if (accept == null || deny == null) break // 弹窗已消失
+            buttons = TextMatcher.findDrawDialog(context, img)
+            if (buttons.isEmpty()) break // 弹窗已消失
         }
         return true
     }

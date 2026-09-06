@@ -34,3 +34,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ChessBot"
 include(":app")
+include(":ppocr-sdk")

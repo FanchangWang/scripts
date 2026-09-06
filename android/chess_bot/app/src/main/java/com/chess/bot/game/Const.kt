@@ -42,11 +42,20 @@ object Const {
     const val DET_CONF = 0.001
     const val CLS_LIFT_GATE = 0.30
 
+    // cls 变化格确认阈值（2026-09-07 真机实测）：修复双重 softmax 后静态棋子 top1 饱和 1.0，
+    // 飞行中动画帧（棋子被提起/途经）实测 0.96 且错判、0.98+ 未发现错。低于此值的读数视为
+    // 「未确认」：不进 changes（不参与帧分类/敌着两帧确认/提交）、board 沿用已提交值、基线
+    // 不刷新——diff 循环下帧自动复检（~45ms/帧），等价免费的时序共识；持续低置信格由噪声
+    // 守卫兜底暂停，日志可见。
+    const val CLS_TRUST_MIN = 0.98f
+
     /** Board 格值的「提子」语义（cls lift 类）：帧分类瞬时态，提交点归一化为 null。 */
     const val LIFT = "lift"
-    // lift 混淆门控（仅帧差触发格）：top1 为棋子但 lift softmax 概率 ≥ 此值 → 判动画帧，按提子返回。
+    // lift 混淆门控（仅帧差触发格）：top1 为棋子但 lift 概率 ≥ 此值 → 判动画帧，按提子返回。
     // 真机日志显示走子动画/选中高亮会把提起中的棋子误判成其他棋子（如 黑象->黑車）；
     // 模型概率校准好（静止棋子 top1≈1.0、lift≈0），0.30 余量充足。
+    // 注：2026-09-07 修复双重 softmax 前此门控是死代码（liftProb 被压到天花板 0.1534 < 0.30
+    // 永不触发），修复后按模型真实概率工作，0.30 待真机实测确认。
 
     // ---------- 延时（毫秒） ----------
     // 落子间隔：按下到松开的最短保持时间；DataStore 持久化用户可在设置页「对弈」分组覆盖
@@ -60,10 +69,20 @@ object Const {
     const val VERIFY_ANIM_PER_CELL_MS = 60L
 
     // 走棋检测间隔：相邻校验帧的短间隔；DataStore 持久化用户可在设置页「对弈」分组覆盖。
-    // 该值仅作为 verify 循环内「首帧之后」的采样间隔；verify 总检测时长由 firstWaitMs + 300ms
-    // 时间窗起步控制（2026-09-06：动画帧按 300ms 顺延，硬顶 +900ms；与 VERIFY_NEXT_FRAME_MS 解耦）。
-    // （原 MOVE_VERIFY_COUNT 固定次数已废弃，改时间窗控制。）
+    // 该值仅作为 verify 循环内「首帧之后」的采样间隔；v3 重构（2026-09-06）已废除全局时间窗，
+    // verify 的退出由 diff 数量分流 + 稳定未知兜底 + HARD_CAP 三重机制保证。
+    // （原 MOVE_VERIFY_COUNT 固定次数、maxWaitMs 时间窗均已废弃。）
     const val VERIFY_NEXT_FRAME_MS = 30
+
+    // v3 走棋检测分流阈值（2026-09-06 Q1 重构，方案见 .workbuddy/self_move_verify_redesign.md）：
+    const val VERIFY_SILENT_K1 =
+        2 // n==0 静止稳定帧数 ≥K1 → 判「两次点击均未生效」，重试两格（Retry(BOTH)）
+    const val VERIFY_UNKNOWN_STABLE_MS =
+        2000L // 稳定未知模式（变化格子与上帧逐格相同且不可行动）持续阈值 → 终局/和棋检查 + 重试兜底
+    const val VERIFY_OCR_DIFF_CELLS =
+        30 // diff cell 数 > 此值 → 大面积遮挡（和棋弹窗/结算遮罩/结束画面），触发 OCR/终局检查（节流）
+    const val VERIFY_HARD_CAP_MS =
+        15_000L // 兜底硬顶：单次 verify 总时长超此值 → RETRY_BOTH（防非稳定的持续动画模式永久悬挂，liveness 保护）
 
     // ---------- 我方走棋重试（无限重试 + 守卫） ----------
     // 不设次数上限；退出条件 = 对弈结束判断（终局/认输/将帅缺失）
@@ -90,7 +109,9 @@ object Const {
     const val ENDGAME_PROBE_PIECE_MAX = 14
 
     // ---------- 和棋弹窗 ----------
-    const val DRAW_TEXT_THRESHOLD = 0.75
+    const val DRAW_REQUEST_WORD = "对方请求和棋" // 弹窗标题词，与两个按钮词三词同现才认定和棋页面
+    const val DRAW_ACCEPT_WORD = "同意"
+    const val DRAW_REJECT_WORD = "拒绝"
     const val DRAW_REJECT_CP = 1000 // 我方优势超过此值（厘兵）则拒绝，否则同意
     const val DRAW_CHECK_THROTTLE_MS = 1000L // 事件触发的和棋检查最小间隔（T1）
     const val DRAW_DIALOG_SETTLE_MS = 300L // 点击和棋按钮后等待弹窗消失
@@ -132,9 +153,37 @@ object Const {
     const val GAMEOVER_SCAN_INTERVAL_MS = 300L // 扫描间隔
     const val BOARD_STABLE_THRESHOLD = 3 // 结算文字消失后连续相同棋盘帧数
     const val GAMEOVER_RETRY_MAX = 3 // 同一按钮/遮罩操作上限
-    const val GAMEOVER_TEXT_THRESHOLD = 0.75
-    const val GAMEOVER_TEMPLATE_W = 1080
     val GAMEOVER_BUTTON_WORDS =
         listOf("下一关", "晋级赛", "重新挑战", "再来一局") // 按钮类（点击），按优先级
     val GAMEOVER_BACK_WORDS = listOf("段位提升", "铜钱", "领取") // 遮罩类（发返回键）
+
+    // ---------- OCR（PP-OCRv6 官方 ppocr-sdk，2026-09-06 替代 draw/text 模板） ----------
+    // rec 置信度过滤线：实证关键词命中 0.95+，遮罩/动画中的字 0.85~0.92；有「包含匹配」强过滤兜底，0.75 足够保守
+    const val OCR_REC_SCORE_MIN = 0.75f
+
+    // 「疑似对局结束画面」时的 OCR 扫描节流（命中立即终局，未命中回落连续棋盘信号确认）
+    const val OCR_SUSPECT_SCAN_THROTTLE_MS = 1000L
+
+    // 词级 ROI 预设（2026-09-06 #3）：全屏百分率矩形 (x1,y1)-(x2,y2)，0~1（宽/高百分比）。
+    // 同一次扫描只对「本次词表命中配置」的 ROI 求并集后裁剪再 OCR——范围外文字不参与识别（提速+降误报）；
+    // 未配置的词回落全图查找（兜底：新词没配 ROI 行为同旧版，不会漏检）。
+    // ⚠️ 当前值为初版目测（含较宽边距防 UI 位移），待按实际截图逐页校准替换。
+    val OCR_WORD_ROIS: Map<String, OcrRoi> = mapOf(
+        // 和棋弹窗（屏幕中部：标题 + 双按钮）
+        "对方请求和棋" to OcrRoi(0.10f, 0.4f, 0.70f, 0.6f),
+        "同意" to OcrRoi(0.1f, 0.5f, 0.5f, 0.6f),
+        "拒绝" to OcrRoi(0.5f, 0.5f, 0.9f, 0.6f),
+        // 结算按钮（底部按钮区）
+        "下一关" to OcrRoi(0.5f, 0.85f, 0.9f, 1f),
+        "晋级赛" to OcrRoi(0.2f, 0.85f, 0.8f, 1f),
+        "重新挑战" to OcrRoi(0.2f, 0.85f, 0.8f, 1f),
+        "再来一局" to OcrRoi(0.2f, 0.85f, 0.8f, 1f),
+        // 结算遮罩（中部提示区）
+        "段位提升" to OcrRoi(0.20f, 0f, 0.80f, 0.10f),
+        "铜钱" to OcrRoi(0.30f, 0.40f, 0.70f, 0.60f),
+        "领取" to OcrRoi(0.30f, 0.50f, 0.70f, 0.65f),
+    )
 }
+
+/** OCR 词级搜索区域：全屏百分率矩形，(x1,y1)=左上、(x2,y2)=右下，取值 0~1（相对图宽/图高）。 */
+data class OcrRoi(val x1: Float, val y1: Float, val x2: Float, val y2: Float)

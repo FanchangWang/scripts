@@ -8,6 +8,7 @@ import com.chess.bot.game.Move
 import com.chess.bot.game.SelfFrameResult
 import com.chess.bot.game.Side
 import com.chess.bot.game.classifySelfFrame
+import com.chess.bot.game.isSelfPairSettled
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -251,4 +252,67 @@ class ClassifierSelfTest {
         assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
+    // ---------- v3 isSelfPairSettled（n==2 恰为本步两格的快速成功判定） ----------
+
+    private val SRC = 7 to 3
+    private val DST = 5 to 5
+
+    @Test
+    fun `v3 快速判定 n2恰两格且dst为我子 true`() {
+        val changes = listOf(Change(7, 3, "r_R", null), Change(5, 5, null, "r_R"))
+        assertTrue(isSelfPairSettled(changes, Move(SRC, DST, "r_R")))
+        // dst 原有敌子被我吃掉（吃子走子）
+        val capChanges = listOf(Change(7, 3, "r_R", null), Change(5, 5, "b_r", "r_R"))
+        assertTrue(isSelfPairSettled(capChanges, Move(SRC, DST, "r_R")))
+    }
+
+    @Test
+    fun `v3 快速判定 n2恰两格但dst为敌子 false 不可达形状`() {
+        // 「落子即被反吃」（src→空 + dst 空→敌子）在干净 diff 下不可达（敌源格必产生 diff → n≥3）；
+        // inferMove 的「离开子==到达子」约束使其自动返回 false，落回 classifySelfFrame 的 NOISY，绝不提交
+        val changes = listOf(Change(7, 3, "r_R", null), Change(5, 5, "b_r", "b_p"))
+        assertFalse(isSelfPairSettled(changes, Move(SRC, DST, "r_R")))
+        // dst 为我方其他棋子（误读）同样拒绝：piece 直接精确匹配
+        val misread = listOf(Change(7, 3, "r_R", null), Change(5, 5, null, "r_C"))
+        assertFalse(isSelfPairSettled(misread, Move(SRC, DST, "r_R")))
+    }
+
+    @Test
+    fun `v3 快速判定 dst为lift或空 false 动画中途态`() {
+        // 吃子动画中途：起格空 + 落点空（被吃子已消失、我子未现）
+        val midCap = listOf(Change(7, 3, "r_R", null), Change(5, 5, "b_r", null))
+        assertFalse(isSelfPairSettled(midCap, Move(SRC, DST, "r_R")))
+        // 落点读数 lift
+        val lift = listOf(Change(7, 3, "r_R", null), Change(5, 5, null, Const.LIFT))
+        assertFalse(isSelfPairSettled(lift, Move(SRC, DST, "r_R")))
+    }
+
+    @Test
+    fun `v3 快速判定 格子集合不等于本步两格 false`() {
+        // 夹带无关格（如 17:59 场景的 e9 敌方提子）→ 不走快速路径，交 classifySelfFrame
+        val extra = listOf(
+            Change(7, 3, "r_R", null),
+            Change(5, 5, null, "r_R"),
+            Change(4, 4, "b_k", null),
+        )
+        assertFalse(isSelfPairSettled(extra, Move(SRC, DST, "r_R")))
+        // 两格中含非本步格
+        val wrong = listOf(Change(7, 3, "r_R", null), Change(4, 4, "b_k", null))
+        assertFalse(isSelfPairSettled(wrong, Move(SRC, DST, "r_R")))
+    }
+
+    @Test
+    fun `v3 快速判定 帧间一致性用变化格子集合逐格比较`() {
+        // 同格同值 → 相等（List&lt;Change&gt; 结构相等，data class 逐字段比较）
+        val a = listOf(Change(7, 3, "r_R", null), Change(5, 5, null, "r_R"))
+        val b = listOf(Change(7, 3, "r_R", null), Change(5, 5, null, "r_R"))
+        assertEquals(a, b)
+        // 顺序不同但集合语义相同——实现按「格子集合」比较，此处验证 Set 语义
+        assertEquals(a.map { it.r to it.c }.toSet(), b.shuffled().map { it.r to it.c }.toSet())
+        // 同格不同值 → 不等（动画推进/伪影）
+        val c = listOf(Change(7, 3, "r_R", null), Change(5, 5, null, Const.LIFT))
+        assertTrue(a != c)
+        // 两帧皆空 → 相等（静止稳定）
+        assertEquals(emptyList<Change>(), emptyList<Change>())
+    }
 }

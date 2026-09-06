@@ -25,12 +25,15 @@ fun recognizeBoardChanged(
     corrected: Mat,
     baseline: Array<Array<Mat?>>,
     committed: Board,
+    mySide: Side = Side.RED,
 ): BoardScan {
     val board = makeEmptyBoard()
     val changes = mutableListOf<Change>()
     val driftCells = mutableListOf<Pair<Int, Int>>()
+    val clsDetails = mutableListOf<String>()
     var diffFires = 0
     var transitLifts = 0
+    var unconfirmed = 0
     for (r in 0 until ROWS) {
         for (c in 0 until COLS) {
             val patch = Recognizer.cropCellGray(corrected, r, c)
@@ -38,7 +41,7 @@ fun recognizeBoardChanged(
             if (base == null || Recognizer.cellChanged(patch, base)) {
                 diffFires++
                 // gateLift=true：变化格启用 lift 混淆门控（走子动画/选中高亮的棋子判提起，不判错子）
-                val new = Recognizer.analyzeCell(corrected, r, c, gateLift = true)
+                val (new, res) = Recognizer.analyzeCellEx(corrected, r, c, gateLift = true)
                 val old = committed[r][c]
                 if (old == null && new == Const.LIFT) {
                     // 空格不可能被提起（2026-09-06 语义约定）：这是飞行棋子途经相邻格的动画
@@ -50,7 +53,25 @@ fun recognizeBoardChanged(
                 } else {
                     board[r][c] = new
                     if (old != new) {
-                        changes.add(Change(r, c, old, new))
+                        if (res.top1Prob < Const.CLS_TRUST_MIN) {
+                            // 置信度确认门（2026-09-07 真机实测 0.98）：低置信读数多为飞行中
+                            // 动画帧（实测 0.96 且错判），不进 changes（不参与敌着两帧确认/
+                            // 提交）、board 写回 committed、基线不刷新——下帧 diff 自动复检。
+                            board[r][c] = old
+                            unconfirmed++
+                            clsDetails.add(
+                                "${gridToSquare(r, c, mySide)}=${new ?: "空"}" +
+                                        "(${("%.2f".format(res.top1Prob))})未确认"
+                            )
+                        } else {
+                            changes.add(Change(r, c, old, new))
+                            // 变化格 cls 置信度明细（2026-09-07 诊断用）：排查 transit 帧
+                            // 「棋子在飞但 cls 照样高置信读出落点子」（res 为抑制前原始 top1）
+                            clsDetails.add(
+                                "${gridToSquare(r, c, mySide)}=${new ?: "空"}" +
+                                        "(${("%.2f".format(res.top1Prob))},lift${"%.2f".format(res.liftProb)})"
+                            )
+                        }
                     } else if (base != null) {
                         // diff 触发但识别值与已提交一致（无真实走子）：画面漂移（白点/高亮/光照）。
                         // 提交点据此把 cellImgs 更新为当前干净外观，避免 baseline 永久陈旧→误触发累积。
@@ -63,7 +84,11 @@ fun recognizeBoardChanged(
             patch.release()
         }
     }
-    return BoardScan(board, changes, diffFires, driftCells, transitLifts)
+    return BoardScan(
+        board, changes, diffFires, driftCells, transitLifts,
+        clsDetails.takeIf { it.isNotEmpty() }?.joinToString(", "),
+        unconfirmed,
+    )
 }
 
 /** 单帧识别结果（方案 A 变种自修复用）。 */
@@ -73,4 +98,8 @@ data class BoardScan(
     val diffFires: Int,
     val driftCells: List<Pair<Int, Int>>,
     val transitLifts: Int = 0,
+    /** 变化格 cls 置信度明细（2026-09-07 诊断用）：「格=读数(top1,liftX)」逗号拼接，无变化格为 null。 */
+    val clsDetail: String? = null,
+    /** 低置信未确认格数（< CLS_TRUST_MIN，不进 changes 待下帧复检，2026-09-07）。 */
+    val unconfirmedCells: Int = 0,
 )

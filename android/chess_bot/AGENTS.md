@@ -14,7 +14,7 @@
 | 功能 | 说明 |
 |---|---|
 | 开始棋局 | 截图全量同步棋盘 → 判我方红黑 → 判阶段(开局/残局) → 推断轮次（未知时确认弹窗）→ 自动对弈 |
-| 我方走棋 | pikafish 算着法 → 点击起子/落子 → 5 帧逐帧校验分类（n==0/1/2/3/4/>4），提起未落补点、整步重试 |
+| 我方走棋 | pikafish 算着法 → 点击起子/落子 → verifyForSelfMove v3 diff 数量分流（n==2 恰两格直接成功 / n≤4 classifySelfFrame 归类 / 5..30 灰区 / >30 OCR 检查 / 稳定兜底），提起未落补点、整步重试 |
 | 敌方走棋检测 | 持续帧差分类（n==2 走法 / 提子 / 噪声 / 无变动），噪声达上限暂停 |
 | 认输检测 | 双方将帅同时缺失连续 3 帧 → 结束 |
 | 绝杀探测 | 仅 n==2 干净走棋后调 engine.is_mate（亦读引擎 `matePly==1` 直接判定） |
@@ -87,10 +87,21 @@ updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirm
 - confirmStart / 轮次判定：不再弹中央模态对话框，改为 `decideStartTurn` 三路径（32 子默认位红先 / inferTurn 推断 / 残局·排局无法推断时默认**我方**先走，非红方），不自动选择
 - **绝杀提前终局**：引擎 `matePly==1` 置 `selfMatePending`，verify 落子后 `SELF_DONE` 或 `RESIGN_SUSPECT` 结束画面即 `finishGame("我方绝杀…")`，省二次引擎调用并阻断 doMove 重复点击死盘
 - **敌着准入与两帧一致确认（2026-09-06 T-D）**：所有敌着提交点（waitForEnemyMove MOVED / 噪声复判 / verify N2 反吃+N3+N4 的 SELF_THEN_ENEMY / 吞点击恢复 tryRecoverSwallowedTap）统一走「伪合法校验（rules.kt isPseudoLegal）→ `reconfirmEnemyMoved` 两帧一致确认 → `commitEnemyMove` 公共提交（ponder 处理 + cellImgs 更新 + applyEnemyMove）」。复检**不加显式延时**（2026-09-06 02:30 用户实测去除原 ENEMY_MOVE_SETTLE_MS=30ms，常量已删）：单次 grabBoard 耗时 ~70-100ms，复抓本身已越过半格飞行窗口——动画中途帧（如車 C0→C9 途经 C5，几何合法、伪合法拦截不了）的 cls 读数必已变化，两帧同着法即排除中途帧；未复现则丢弃该帧回循环（MOVED 路径不计噪声），SELF_THEN_ENEMY 复判为 SELF_DONE 时仅提交我方走子（敌着视为瞬时伪影，交回 waitForEnemyMove 继续检测）
-- **T-C 稳判提交后跳过 verify（2026-09-06 02:27 事故）**：attemptMove 重试稳判「源空+落点己方子」并提交走子后，verifyForSelfMove **入口直接判 DONE_OK**（`state.board[r1][c1]==null && state.board[r2][c2]==piece` 即稳判已提交），不再看画面——我方走子必然成功，此后画面差异（敌方回复/动画残留/弹窗）一律交回 waitForEnemyMove。旧实现仍重进 verify：敌方回复恰在本步后落子时，帧差异恒为敌着 → NOISY 空转 → zeroChange 计满守卫误暂停（02:27 红帥 f0→f1 回复未消费 → 连续 5 整步暂停）
+- **T-C 稳判提交后跳过 verify（2026-09-06 02:27 事故；v3 后语义调整）**：verifyForSelfMove **入口保留防御检查**（`state.board[r1][c1]==null && state.board[r2][c2]==piece` → 直接 DONE_OK）。v3 后 attemptMove 已是纯点击、不再有「重试稳判提交」入口，该检查为防御性保留；「已落定」场景由 verify 的 n==2 快速成功路径覆盖
+- **v3 verifyForSelfMove 重构（2026-09-06 23:33，Q1 方案 .workbuddy/self_move_verify_redesign.md）**：diff 数量分流、无全局时间窗（maxWaitMs/maxWaitHardMs 废除）。每帧 grabBoard 一次，`n = changes.size`：
+  - **(a) n==2 且恰为本步两格 → 直接成功免两帧校验**（`isSelfPairSettled(changes, expected)` 纯函数，内部复用 inferMove+moveMatches；dst→敌子的「落子即被反吃」形状已删——干净 diff 下不可达）——用户裁定「我方成败只由本步两格决定」；
+  - (b) n ≤ 4 → `classifySelfFrame` 归类：SELF_DONE → 提交我步（夹带敌方仅提起格不进基线）；SELF_THEN_ENEMY → **稳定（变化格子集合与上帧逐格相同）+ T-D 复判 → `applySelfThenEnemy` 就地提交双着**（基线只刷四格），复判为 SELF_DONE 仅提交我步，未复现丢弃本帧；LIFTED → 持续 >T2(=firstWaitMs) → RETRY_DST 补点；SILENT(n==0) → 稳定 K1(=2) 帧 → RETRY_BOTH；NOISY → T-B 吞点击恢复 → RETRY_AFTER_ENEMY；
+  - (c) n ∈ 5..`VERIFY_OCR_DIFF_CELLS`(30) → 动画/噪声灰区，静默继续；
+  - (d) n > 30 → 大面积遮挡（和棋弹窗/结算遮罩/结束画面）→ `verifyEndgameCheck`（updateResign + confirmEndByOcr + dismissDrawDialog，OCR 类节流 `OCR_SUSPECT_SCAN_THROTTLE_MS`）；drawDialog 关闭 → RETRY_BOTH；
+  - (e) 稳定未知模式持续超 `VERIFY_UNKNOWN_STABLE_MS`(2000) → 终局检查 + RETRY_BOTH（计入守卫）；liveness 硬顶 `VERIFY_HARD_CAP_MS`(15s) → RETRY_BOTH。
+  - **帧间一致性 = 变化格子集合逐格比较**（`changes == prevChanges`，Change 为 data class；两帧皆空也算稳定），不用自定义状态机记忆
+  - **基线白名单（核心）**：所有提交点（`commitSelfSettled`/`commitSelfThenEnemy`/T-B/敌方提交）只刷新被提交着法覆盖的格子 + driftCells（`refreshBaselineCells` 合成 Change 保证落定格必刷）；其余变化格（敌方仅提起/伪影）一律留 diff 管线——防 17:59 类「无关格进基线 → 敌着两格对被拆散 → 误暂停」污染。原 SELF_DONE「方案 A filter」（按格类型排除，放行敌方落子格）与 SELF_THEN_ENEMY 全量刷基线均已废除
+  - **敌着拼对规则**：敌源格只认「敌子→空格」，不认「敌子→lift」（提子格当敌源易误判）；敌落点认「空→敌子」或本步 dst（被反吃）。`inferMove` 源格条件 `new==null` 天然满足；classifyN3/N4 各分支同
+  - doMove：attemptMove 退化为纯点击（原 isRetry 稳判预检删除，职责移入 verify——无时间窗后落定态必被观测，盲点重试不再有「重新提起已落子」问题）；RETRY_DST 首轮清零守卫、连续两轮计入（防补点死循环）；RETRY_BOTH 计入守卫；RETRY_AFTER_ENEMY 清零
+- `doMove(): Boolean`：DONE_END 且 gameOver==true 返回 true，使绝杀后仍能进入 autoNext 自动下一局
 - **空格 lift 飞行途经瞬态剔除（2026-09-06 02:27/03:02 复盘）**：cls 对「空格→lift」的读数是飞行棋子途经相邻格的动画伪影（空格不可能被提起，如炮 i2→g2 悬停 h2 上空被裁剪窗拍到）。语义约定：**空格只能变棋子或空格（动画遮挡），不能变 lift**。剔除在**扫描层**执行（recognizeBoardChanged：`old==null && new==LIFT` → 不进 changes、board 写回 committed、基线保持空格，transitLifts 计数并在 grabBoard 耗时行附注「途经瞬态剔除 k 格」）——帧分类、噪声计数、提交与 cellImgs 基线全链路不再接触伪影；classifier.kt `stripTransitLift` 保留作纯函数层防御。真实提子（棋子→lift）不受影响
 - **伪合法校验方向约定（2026-09-06 01:53 事故）**：本库网格恒定「我方在屏幕下半区（rows 5..9）」、敌方在上半区，与执红执黑无关（fenOfBoard/expectedStartSquares/detectSide 均按此约定翻转/交换）。rules.kt 的象半场、士/将九宫、兵方向与过河判定一律按「该子颜色==mySide」推屏幕方位，`isPseudoLegal(board, move, mySide)` 必传 mySide、无默认值——禁止按红黑写死绝对方向（执黑局曾因写死「红=rows 5..9」把敌方红相全部落定帧误杀成 NOISY → 误暂停）
-- **verify 窗口动画顺延（2026-09-06）**：检测窗口 firstWaitMs+300ms 起步，凡抓帧仍有变动格（动画进行中，含吃子动画「起格空+落点空」两格同空中途帧）按 300ms 顺延，硬顶 firstWaitMs+900ms——防止吃子走法的落定帧落在固定窗外、verify 超时走异常校验+重试
+- **~~verify 窗口动画顺延（2026-09-06）~~【v3 已废除】**：原 maxWaitMs+300ms 顺延/900ms 硬顶时间窗已随 v3 重构移除——落定帧不再可能落在窗外（verify 无限循环直到明确结论），吃子动画「起格空+落点空」中途态由灰区静默 + 稳定未知兜底覆盖
 - `doMove(): Boolean`：DONE_END 且 gameOver==true 返回 true，使绝杀后仍能进入 autoNext 自动下一局
 
 ### 6. 纯函数模块直译（签名一一对应，便于翻译测试）
@@ -99,7 +110,7 @@ updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirm
 | state.py | state.kt：Side/Phase/Change/Move/FrameResult/FrameClass/VerifyOutcome/EnemyResult/ResignResult/GameState |
 | opening.py | opening.kt：detectSide/detectPhase/inferTurn |
 | moves.kt | moves.kt：infer/apply/matches/formatMove/formatChanges |
-| classifier.py | classifier.kt：classifySelfFrame/classifyEnemyFrame/isResignSuspect（captured=r2_old 修正一并带入）|
+| classifier.py | classifier.kt：classifySelfFrame/classifyEnemyFrame/isResignSuspect/isSelfPairSettled（v3 快速成功判定）/cellLookup（格子查找表）；captured=r2_old 修正一并带入 |
 | recognition.py | game/Recognition.kt：recognizeBoard（全量识别）+ vision/Recognizer.kt：correctBoard/analyzeCell/analyzeBoard |
 | draw.py | draw.kt：decide(score, rejectCp) |
 | auto_next.py | AutoNext.kt + SettleWaiter.kt（31 子持续等待 / 32 子新开局 / 将帅同现门控 / 其余连续 3 帧稳定；AutoNext 重构复用 SettleWaiter 删除内联重复）|
@@ -110,7 +121,10 @@ updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirm
 - **棋子识别 = YOLO cls**（assets/models/chess_pieces.onnx，6MB）：16 类（14 子 + empty + lift），输入 64×64 NCHW RGB，矫正空间格心裁块 argmax 直判（方案 A，无置信阈值）；lift 为帧分类瞬时态（Board 允许 "lift" 值，classifier 提子判定结合直接确认，提交点归一化为 null）
 - **棋盘四角校准**：每次【全套遍历】assets/templates/set_NN 的 11 套皮肤角子模板（各含 b_r/r_R，对齐 templates_validate 选套思想按 4 峰均分选最优）→ 全败回退 YOLO det（assets/models/board_corners.onnx，11MB，1280 letterbox，conf=0.001 每类 argmax 取框心）→ 手动微调；**保存前强制 cls 32 子校验（含手动微调）**
 - **运行时定位链不变**：Homography = 手动校准 JSON → Const.BOARD_CORNERS（第一道判断：含该分辨率则跳过校准）；运行时无自动定位
-- 结算文字/和棋按钮模板（templates/text、templates/draw）保留；原 14 枚棋子 60×60 模板已删除
+- **结算文字/和棋按钮识别 = PP-OCRv6 官方 ppocr-sdk**（2026-09-06 替代 templates/text、templates/draw 图片模板，二者已删除）：独立 module `ppocr-sdk/`（源自 PaddleOCR deploy/ppocr-android，Apache-2.0，纯 Kotlin 无 NDK，依赖已对齐 org.opencv:4.11.0 / onnxruntime:1.29.0）；模型 assets/ocr/{det.onnx, rec.onnx, rec.yml}（rec 字典在 yml 内由 SDK 直读）。TextMatcher 懒创建引擎（Mutex 双检，recScoreThresh=OCR_REC_SCORE_MIN=0.75），`ocr()` 返回整屏文本行（框中心坐标+置信度）；词匹配为**包含**语义（纯函数 matchScanWords/matchDrawDialog 可 JVM 单测）。选词优先级语义不变：遮罩词表（GAMEOVER_BACK_WORDS）优先于按钮词表（GAMEOVER_BUTTON_WORDS）、表内按序
+- **和棋页面判定（2026-09-06 改 OCR 后新规则）**：「对方请求和棋」+「同意」+「拒绝」**三词同现**才算和棋页面（缺一可能是其他含同意/拒绝按钮的页面），点击 OCR 框中心
+- **疑似结束画面 OCR 加速（T-OCR）**：updateResign SUSPECT 时 `confirmEndByOcr()` 整屏扫一次结算词（≥1s 节流），命中任一词 → **立即 finishGame**；未命中（结算动画尚无文字）回落原连续 RESIGN_CONFIRM_COUNT 帧棋盘信号确认，二者互补。接线三处：verify 尾部 / waitForEnemyMove NOISY SUSPECT / 噪声计满认输复检
+- 结算文字/和棋按钮图片模板（templates/text、templates/draw）已删除；原 14 枚棋子 60×60 模板已删除（YOLO cls 替代）
 - ONNX 推理封装：vision/OnnxRuntime.kt（Session 管理）+ CornerDetModel.kt（det）+ PieceClsModel.kt（cls）；依赖 onnxruntime-android（CPU EP）
 
 ### 8. 悬浮窗实现要点
@@ -202,6 +216,7 @@ android/chess_bot/
 ├── settings.gradle.kts
 ├── build.gradle.kts
 ├── gradle/libs.versions.toml        # 版本目录（以 AS 向导生成为基准微调）
+├── ppocr-sdk/                       # PP-OCRv6 官方 OCR SDK（独立 library module，PaddleOCR deploy/ppocr-android 源码，依赖对齐本项目版本）
 ├── app/
 │   ├── build.gradle.kts
 │   └── src/main/
@@ -243,7 +258,7 @@ android/chess_bot/
 │           │   ├── PieceClsModel.kt        # YOLO cls 棋子 16 类（64×64，empty→null/lift→"lift"）
 │           │   ├── BoardCornerDetector.kt  # 校准四角：det 先行(几何校验) → ROI 模板精修 → 象限全量模板兜底 → cls 32 子校验
 │           │   ├── Recognizer.kt           # 棋盘识别（correctBoard/cropCell64/analyzeCell(cls)/帧差）
-│           │   └── TextMatcher.kt          # 结算文字/和棋按钮灰度模板匹配（1080 归一化）
+│           │   └── TextMatcher.kt          # 结算/和棋文字 OCR（ppocr-sdk 封装：包含匹配+选词优先级+和棋三词判定）
 │           ├── game/
 │           │   ├── state.kt opening.kt moves.kt classifier.kt draw.kt GameState.kt Board.kt
 │           │   ├── Recognition.kt          # recognizeBoard 全量识别（帧差由 BotSession 负责）

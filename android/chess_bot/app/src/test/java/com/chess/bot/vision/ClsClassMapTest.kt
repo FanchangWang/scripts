@@ -66,18 +66,6 @@ class ClsClassMapTest {
     }
 
     @Test
-    fun softmax_归一化且argmax一致() {
-        val logits = java.nio.FloatBuffer.wrap(floatArrayOf(1f, 2f, 3f))
-        val p = PieceClsModel.softmax(logits, 3)
-        assertEquals(3, p.size)
-        assertEquals(1f, p.sum(), 1e-5f)
-        // argmax 应与最大概率位置一致
-        var best = 0
-        for (i in 1 until 3) if (p[i] > p[best]) best = i
-        assertEquals(2, best)
-    }
-
-    @Test
     fun isLiftAmbiguous_仅棋子且lift概率达阈值时触发() {
         // 真实棋子 + lift 概率显著 → 动画帧
         assert(PieceClsModel.isLiftAmbiguous("b_c", 0.30f))
