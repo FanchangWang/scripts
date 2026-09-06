@@ -1,6 +1,6 @@
 package com.chess.bot.ui
 
-import androidx.compose.foundation.Canvas
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,7 +12,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -43,7 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -245,6 +246,7 @@ private fun thinkSummary(cfg: com.chess.bot.data.BotConfigData): String {
 /** 步骤 2/2 截图后：回 App 立即显示「识别中」，后台识别完成后自动切 RESULT。 */
 @Composable
 fun RecognizingScreen() {
+    val progress by CalibrationSession.progress
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -259,7 +261,13 @@ fun RecognizingScreen() {
             modifier = Modifier.padding(top = 16.dp),
         )
         Text(
-            "首次识别需初始化 OpenCV 并加载棋子模板，可能耗时数秒",
+            progress.ifEmpty { "准备识别环境…" },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+        Text(
+            "首次识别需初始化 OpenCV 并加载模板套与 ONNX 会话，可能耗时数秒",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 6.dp),
@@ -313,68 +321,20 @@ fun CalibrationResultScreen() {
                 }
             }
             Button(
-                enabled = dispCorners != null,
+                // 32 子校验未通过（或未定位四角）时禁用保存（2026-09-05 需求）
+                enabled = dispCorners != null && passed,
                 onClick = { CalibrationSession.save(context) {} },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("确认并保存")
-            }
-
-            if (bitmap != null) {
-                val img = bitmap.asImageBitmap()
-                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    val widthPx = with(LocalDensity.current) { maxWidth.toPx() }
-                    val heightPx =
-                        if (bitmap.width > 0) widthPx * bitmap.height / bitmap.width else widthPx
-                    val sx = if (widthPx > 0) widthPx / bitmap.width else 1f
-                    val sy = if (heightPx > 0) heightPx / bitmap.height else 1f
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        Image(
-                            bitmap = img,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            val pts = dispCorners ?: return@Canvas
-                            val p = pts.map {
-                                Offset(
-                                    (it.first * sx).toFloat(),
-                                    (it.second * sy).toFloat()
-                                )
-                            }
-                            drawLine(ACCENT, p[0], p[1], 3f)
-                            drawLine(ACCENT, p[1], p[3], 3f)
-                            drawLine(ACCENT, p[3], p[2], 3f)
-                            drawLine(ACCENT, p[2], p[0], 3f)
-                            p.forEach { drawCircle(ACCENT, 13f, it) }
-                        }
-                        dispCorners?.forEachIndexed { i, (x, y) ->
-                            Text(
-                                CORNER_LABELS[i],
-                                modifier = Modifier
-                                    .offset {
-                                        IntOffset(
-                                            (x * sx).roundToInt(),
-                                            (y * sy).roundToInt()
-                                        )
-                                    }
-                                    .background(Color.White.copy(alpha = 0.75f)),
-                                color = ACCENT,
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    }
-                }
-            }
-
-            err?.let {
                 Text(
-                    it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
+                    when {
+                        dispCorners == null -> "未定位四角，请手动微调"
+                        passed -> "确认并保存"
+                        else -> "32 子校验未通过，禁止保存"
+                    }
                 )
             }
-
+            // 32 子校验结果提示：置于保存按钮正下方，便于查看
             if (dispCorners != null) {
                 val badgeColor = if (passed) Color(0xFF1E8E3E) else Color(0xFFC0202E)
                 val badgeText =
@@ -388,22 +348,40 @@ fun CalibrationResultScreen() {
                 ) {
                     Text(badgeText, color = badgeColor, style = MaterialTheme.typography.bodySmall)
                 }
-                if (CalibrationSession.matchScores.isNotEmpty()) {
+            }
+
+            if (bitmap != null && dispCorners != null) {
+                CornerCropGrid(bitmap, dispCorners)
+            }
+
+            err?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (dispCorners != null) {
+                if (CalibrationSession.detectSource.isNotEmpty() && CalibrationSession.corners != null) {
+                    val sourceCn = if (CalibrationSession.detectSource == "det") {
+                        "YOLO det 模型"
+                    } else {
+                        "模板匹配 · ${CalibrationSession.detectSource.removePrefix("template:")}"
+                    }
+                    Text(
+                        "识别来源：$sourceCn",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                }
+                if (CalibrationSession.matchScores.isNotEmpty() && CalibrationSession.corners != null) {
                     Text(
                         "匹配度：" + CalibrationSession.matchScores.joinToString(", ") {
                             "%.2f".format(
                                 it
                             )
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                }
-                // 四角坐标（需求：排查问题）
-                Text("四角坐标（屏幕像素）", style = MaterialTheme.typography.bodySmall)
-                dispCorners.forEachIndexed { i, (x, y) ->
-                    Text(
-                        "${CORNER_LABELS[i]}：(${x.roundToInt()}, ${y.roundToInt()})",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                     )
@@ -435,10 +413,16 @@ fun ManualTuneScreen() {
     val step = if (sx > 0f) 2f / sx else 2f
 
     LaunchedEffect(bitmap) {
-        auto?.let {
-            handles.clear()
-            handles.addAll(it.map { c -> Offset(c.first.toFloat(), c.second.toFloat()) })
-        }
+        if (bitmap == null || handles.isNotEmpty()) return@LaunchedEffect
+        // 有自动结果用自动结果；无结果（det/模板全失败）时按屏幕比例给默认位置，用户拖动修正
+        val src = auto ?: listOf(
+            0.12 * bitmap.width to 0.16 * bitmap.height,
+            0.88 * bitmap.width to 0.16 * bitmap.height,
+            0.12 * bitmap.width to 0.84 * bitmap.height,
+            0.88 * bitmap.width to 0.84 * bitmap.height,
+        )
+        handles.clear()
+        handles.addAll(src.map { c -> Offset(c.first.toFloat(), c.second.toFloat()) })
     }
 
     SubPageScaffold(
@@ -613,6 +597,73 @@ fun ManualTuneScreen() {
                             "${CORNER_LABELS[i]}：(${p.x.roundToInt()}, ${p.y.roundToInt()})",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (i == selected.value) ACCENT else MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 四角裁剪图 2x2 网格：每角以坐标为中心裁 200x200（边缘自动钳制），替代整图标注展示。
+ * 原因：整张截图过长，会把下方坐标文字顶出屏幕，不便查看（2026-09-05 需求）。
+ * 每张裁剪图上画出角点标记（白外圈 + 主题色内圈），位置为角点在裁块内的实际偏移。
+ */
+@Composable
+private fun CornerCropGrid(bitmap: Bitmap, corners: List<Pair<Double, Double>>) {
+    val half = 100
+    val accent = ACCENT.toArgb()
+    val crops = remember(bitmap, corners, accent) {
+        corners.map { (x, y) ->
+            val cx = x.roundToInt()
+            val cy = y.roundToInt()
+            val l = (cx - half).coerceAtLeast(0)
+            val t = (cy - half).coerceAtLeast(0)
+            val r = (cx + half).coerceAtMost(bitmap.width)
+            val b = (cy + half).coerceAtMost(bitmap.height)
+            val base = Bitmap.createBitmap(
+                bitmap, l, t, (r - l).coerceAtLeast(1), (b - t).coerceAtLeast(1)
+            )
+            // 可变副本上画角点标记（边缘钳制时角点不一定在裁块中心，按实际偏移画）
+            val crop = base.copy(Bitmap.Config.ARGB_8888, true) ?: base
+            val canvas = android.graphics.Canvas(crop)
+            val ox = (cx - l).toFloat()
+            val oy = (cy - t).toFloat()
+            val outer = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 6f
+                color = android.graphics.Color.WHITE
+            }
+            val inner = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 3f
+                color = accent
+            }
+            canvas.drawCircle(ox, oy, 16f, outer)
+            canvas.drawCircle(ox, oy, 12f, inner)
+            crop
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (row in 0 until 2) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                for (col in 0 until 2) {
+                    val i = row * 2 + col
+                    Column(modifier = Modifier.weight(1f)) {
+                        Image(
+                            bitmap = crops[i].asImageBitmap(),
+                            contentDescription = CORNER_LABELS[i],
+                            modifier = Modifier.fillMaxWidth(),
+                            contentScale = ContentScale.FillWidth,
+                        )
+                        Text(
+                            "${CORNER_LABELS[i]}（${corners[i].first.roundToInt()}, ${corners[i].second.roundToInt()}）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = ACCENT,
                         )
                     }
                 }

@@ -26,7 +26,7 @@
 1. 主界面三段式：① 权限与授权（4 项）② 棋盘四角校准 ③ 对弈；每段 Card 条目为「序号圆徽标 + 标题，右侧值/状态徽章」行样式
 2. 对弈段启动按钮：点击后走 MediaProjection 授权 → 创建**悬浮操作条**；运行中按钮变「停止并退出悬浮窗」
 3. 操作条两个控件：**开始/中断棋局** 按钮、**自动下一局** 开关（默认开）
-4. 校准流程 2 步：① 进入人机模式（App 退后台、悬浮截图条）② 截屏识别（回 App 显示识别中→结果→可选手动微调）→ 保存回主界面
+4. 校准流程 2 步：① 进入人机模式（App 退后台、悬浮截图条）② 截屏识别（回 App 显示识别中→结果〔四角 300×300 裁剪图 2×2 展示〕→可选手动微调）→ 保存回主界面；保存前强制 cls 32 子校验，未通过禁止保存
 5. **配置项一律单行左右结构**（左文字、右控件）；离散选项统一用 ExposedDropdownMenu 下拉，不用分段胶囊
 
 ---
@@ -37,7 +37,7 @@
 |---|---|---|
 | 截屏 | `adb screencap` | MediaProjection + VirtualDisplay(ImageReader)，常驻缓存最新帧按需取用 |
 | 点击注入 | ADB shell tap | AccessibilityService.dispatchGesture（免 root 标准方案） |
-| 视觉识别 | cv2 模板匹配(TM_CCOEFF_NORMED) + warpPerspective | OpenCV for Android 同算法移植，模板 PNG 直接复用 python 的资产 |
+| 视觉识别 | cv2 模板匹配(TM_CCOEFF_NORMED) + warpPerspective | OpenCV for Android 同算法移植（矫正/帧差）；**棋子识别 2026-09-05 起改 YOLO cls ONNX（16 类）**，模板仅存各皮肤套 b_r/r_R 供四角校准 |
 | 象棋引擎 | pikafish 可执行文件子进程 stdio UCI | NDK 交叉编译 pikafish arm64 打进 APK（jniLibs），ProcessBuilder 子进程 stdio UCI |
 | 控制台 | FastAPI + WebSocket 网页 | Compose 主界面 + WindowManager 悬浮窗；WebSocket 推送改为 StateFlow/SharedFlow |
 | 状态机 | GameSession(6 mixin) 单 worker 线程 + interrupt Event | BotSession 单线程协程直译；AtomicBoolean 中断对齐 threading.Event 语义 |
@@ -86,6 +86,11 @@ updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirm
 - mySide/turn/phase 非可选 + initialized 标志；flow 入口保证 turn 已定；computeMove 以 initialized 兜底防占位值流入 FEN
 - confirmStart / 轮次判定：不再弹中央模态对话框，改为 `decideStartTurn` 三路径（32 子默认位红先 / inferTurn 推断 / 残局·排局无法推断时默认**我方**先走，非红方），不自动选择
 - **绝杀提前终局**：引擎 `matePly==1` 置 `selfMatePending`，verify 落子后 `SELF_DONE` 或 `RESIGN_SUSPECT` 结束画面即 `finishGame("我方绝杀…")`，省二次引擎调用并阻断 doMove 重复点击死盘
+- **敌着准入与两帧一致确认（2026-09-06 T-D）**：所有敌着提交点（waitForEnemyMove MOVED / 噪声复判 / verify N2 反吃+N3+N4 的 SELF_THEN_ENEMY / 吞点击恢复 tryRecoverSwallowedTap）统一走「伪合法校验（rules.kt isPseudoLegal）→ `reconfirmEnemyMoved` 两帧一致确认 → `commitEnemyMove` 公共提交（ponder 处理 + cellImgs 更新 + applyEnemyMove）」。复检**不加显式延时**（2026-09-06 02:30 用户实测去除原 ENEMY_MOVE_SETTLE_MS=30ms，常量已删）：单次 grabBoard 耗时 ~70-100ms，复抓本身已越过半格飞行窗口——动画中途帧（如車 C0→C9 途经 C5，几何合法、伪合法拦截不了）的 cls 读数必已变化，两帧同着法即排除中途帧；未复现则丢弃该帧回循环（MOVED 路径不计噪声），SELF_THEN_ENEMY 复判为 SELF_DONE 时仅提交我方走子（敌着视为瞬时伪影，交回 waitForEnemyMove 继续检测）
+- **T-C 稳判提交后跳过 verify（2026-09-06 02:27 事故）**：attemptMove 重试稳判「源空+落点己方子」并提交走子后，verifyForSelfMove **入口直接判 DONE_OK**（`state.board[r1][c1]==null && state.board[r2][c2]==piece` 即稳判已提交），不再看画面——我方走子必然成功，此后画面差异（敌方回复/动画残留/弹窗）一律交回 waitForEnemyMove。旧实现仍重进 verify：敌方回复恰在本步后落子时，帧差异恒为敌着 → NOISY 空转 → zeroChange 计满守卫误暂停（02:27 红帥 f0→f1 回复未消费 → 连续 5 整步暂停）
+- **空格 lift 飞行途经瞬态剔除（2026-09-06 02:27/03:02 复盘）**：cls 对「空格→lift」的读数是飞行棋子途经相邻格的动画伪影（空格不可能被提起，如炮 i2→g2 悬停 h2 上空被裁剪窗拍到）。语义约定：**空格只能变棋子或空格（动画遮挡），不能变 lift**。剔除在**扫描层**执行（recognizeBoardChanged：`old==null && new==LIFT` → 不进 changes、board 写回 committed、基线保持空格，transitLifts 计数并在 grabBoard 耗时行附注「途经瞬态剔除 k 格」）——帧分类、噪声计数、提交与 cellImgs 基线全链路不再接触伪影；classifier.kt `stripTransitLift` 保留作纯函数层防御。真实提子（棋子→lift）不受影响
+- **伪合法校验方向约定（2026-09-06 01:53 事故）**：本库网格恒定「我方在屏幕下半区（rows 5..9）」、敌方在上半区，与执红执黑无关（fenOfBoard/expectedStartSquares/detectSide 均按此约定翻转/交换）。rules.kt 的象半场、士/将九宫、兵方向与过河判定一律按「该子颜色==mySide」推屏幕方位，`isPseudoLegal(board, move, mySide)` 必传 mySide、无默认值——禁止按红黑写死绝对方向（执黑局曾因写死「红=rows 5..9」把敌方红相全部落定帧误杀成 NOISY → 误暂停）
+- **verify 窗口动画顺延（2026-09-06）**：检测窗口 firstWaitMs+300ms 起步，凡抓帧仍有变动格（动画进行中，含吃子动画「起格空+落点空」两格同空中途帧）按 300ms 顺延，硬顶 firstWaitMs+900ms——防止吃子走法的落定帧落在固定窗外、verify 超时走异常校验+重试
 - `doMove(): Boolean`：DONE_END 且 gameOver==true 返回 true，使绝杀后仍能进入 autoNext 自动下一局
 
 ### 6. 纯函数模块直译（签名一一对应，便于翻译测试）
@@ -97,13 +102,16 @@ updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirm
 | classifier.py | classifier.kt：classifySelfFrame/classifyEnemyFrame/isResignSuspect（captured=r2_old 修正一并带入）|
 | recognition.py | game/Recognition.kt：recognizeBoard（全量识别）+ vision/Recognizer.kt：correctBoard/analyzeCell/analyzeBoard |
 | draw.py | draw.kt：decide(score, rejectCp) |
-| auto_next.py | AutoNext.kt + SettleWaiter.kt（31 子持续等待 / 32 子新开局 / 其余连续 3 帧稳定；AutoNext 重构复用 SettleWaiter 删除内联重复）|
+| auto_next.py | AutoNext.kt + SettleWaiter.kt（31 子持续等待 / 32 子新开局 / 将帅同现门控 / 其余连续 3 帧稳定；AutoNext 重构复用 SettleWaiter 删除内联重复）|
 
 坐标系/FEN 规则文档照搬 board.py 头注释：网格固定屏幕左上角、记谱 ICCS、FEN 黑上红下。
 
-### 7. 视觉资产复用
-- templates/*.png（14 枚棋子 60×60）、结算文字模板、和棋按钮模板 → 原样拷入 assets
-- GAMEOVER_TEMPLATE_W=1080 归一化缩放逻辑移植；raw_screenshots/ 样张作回归素材
+### 7. 视觉资产与 ONNX 模型（2026-09-05 改造）
+- **棋子识别 = YOLO cls**（assets/models/chess_pieces.onnx，6MB）：16 类（14 子 + empty + lift），输入 64×64 NCHW RGB，矫正空间格心裁块 argmax 直判（方案 A，无置信阈值）；lift 为帧分类瞬时态（Board 允许 "lift" 值，classifier 提子判定结合直接确认，提交点归一化为 null）
+- **棋盘四角校准**：每次【全套遍历】assets/templates/set_NN 的 11 套皮肤角子模板（各含 b_r/r_R，对齐 templates_validate 选套思想按 4 峰均分选最优）→ 全败回退 YOLO det（assets/models/board_corners.onnx，11MB，1280 letterbox，conf=0.001 每类 argmax 取框心）→ 手动微调；**保存前强制 cls 32 子校验（含手动微调）**
+- **运行时定位链不变**：Homography = 手动校准 JSON → Const.BOARD_CORNERS（第一道判断：含该分辨率则跳过校准）；运行时无自动定位
+- 结算文字/和棋按钮模板（templates/text、templates/draw）保留；原 14 枚棋子 60×60 模板已删除
+- ONNX 推理封装：vision/OnnxRuntime.kt（Session 管理）+ CornerDetModel.kt（det）+ PieceClsModel.kt（cls）；依赖 onnxruntime-android（CPU EP）
 
 ### 8. 悬浮窗实现要点
 - WindowManager.LayoutParams TYPE_APPLICATION_OVERLAY；内容为 ComposeView，挂到 WindowManager 时手工安装 LifecycleOwner/SavedStateRegistryOwner（OverlayHost 基类统一处理）
@@ -228,11 +236,13 @@ android/chess_bot/
 │           │   └── BotAccessibilityServiceHolder.kt
 │           ├── engine/PikafishEngine.kt    # 子进程 UCI 客户端
 │           ├── vision/
-│           │   ├── VisionInit.kt           # OpenCV init + 模板加载 + Store attach
+│           │   ├── VisionInit.kt           # OpenCV init + 角子模板套加载 + Store attach
 │           │   ├── Homography.kt           # 矫正/逆映射/网格↔记谱（四角先查 Store 再回退硬编码）
-│           │   ├── BoardCornerDetector.kt  # 棋盘四角自动识别（角车模板多尺度匹配）
-│           │   ├── TemplateMatcher.kt      # TM_CCOEFF_NORMED
-│           │   ├── Recognizer.kt           # 棋盘识别（correctBoard/analyzeCell/analyzeBoard）
+│           │   ├── OnnxRuntime.kt          # ONNX Session 管理（onnxruntime-android CPU EP）
+│           │   ├── CornerDetModel.kt       # YOLO det 四角（1280 letterbox + 每类 argmax decode）
+│           │   ├── PieceClsModel.kt        # YOLO cls 棋子 16 类（64×64，empty→null/lift→"lift"）
+│           │   ├── BoardCornerDetector.kt  # 校准四角：det 先行(几何校验) → ROI 模板精修 → 象限全量模板兜底 → cls 32 子校验
+│           │   ├── Recognizer.kt           # 棋盘识别（correctBoard/cropCell64/analyzeCell(cls)/帧差）
 │           │   └── TextMatcher.kt          # 结算文字/和棋按钮灰度模板匹配（1080 归一化）
 │           ├── game/
 │           │   ├── state.kt opening.kt moves.kt classifier.kt draw.kt GameState.kt Board.kt
@@ -240,7 +250,7 @@ android/chess_bot/
 │           │   ├── Const.kt                # 全量常量（与 python config 一致）
 │           │   ├── BotSession.kt           # 状态机总控
 │           │   ├── AutoNext.kt             # 结算交互 + 摆棋稳定
-│           │   └── SettleWaiter.kt         # 摆棋等待共享（31/32/稳定三分支）
+│           │   └── SettleWaiter.kt         # 摆棋等待共享（31/32/将帅门控/稳定四分支）
 │           ├── book/
 │           │   ├── ObkBook.kt              # OBK 查询（双通道 + 资产长度换库检测）
 │           │   └── TChessZobrist.kt       # TChess 64 位 Zobrist 常量（与 scripts/obk_check.py 同源）

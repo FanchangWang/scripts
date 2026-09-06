@@ -1,5 +1,6 @@
 package com.chess.bot.vision
 
+import android.content.Context
 import android.graphics.Bitmap
 import com.chess.bot.game.COLS
 import com.chess.bot.game.Const
@@ -9,48 +10,59 @@ import com.chess.bot.game.fullStartBoard
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogKind
 import com.chess.bot.log.LogTag
+import com.chess.bot.vision.BoardCornerDetector.ROI_HALF
+import com.chess.bot.vision.BoardCornerDetector.isPlausibleQuad
 import org.opencv.core.Core
-import org.opencv.core.CvType
 import org.opencv.core.Mat
-import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
-import org.opencv.core.Scalar
+import org.opencv.core.Rect
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.roundToInt
 
 /**
- * 棋盘四角自动识别：移植 python scripts/detect_board_corners.py。
- * 复用 VisionInit.loadPieceTemplates 的 b_r(黑車)/r_R(红俥) 角子模板（灰度）。
+ * 棋盘四角自动识别（校准流程专用；运行时定位链不变，见 Homography/BoardCornersStore）。
  *
- * 几何整理函数（排序/分边/全局NMS/尺度估计）为纯函数，便于单测；
- * 其余依赖 OpenCV 的匹配/矫正逻辑仅运行时在设备侧执行。
+ * 2026-09-05 二次改造（det 先行）：
+ * 1. **YOLO det 先行**：CornerDetModel 一次推理得四角；须通过 [isPlausibleQuad] 几何合理性
+ *    校验（det 的 conf 与位置精度无关，argmax 几乎总有输出，垃圾结果靠几何规则拦截）。
+ * 2. **ROI 模板精修**：det 命中后，在每个角 ±[ROI_HALF]（200x200）小窗口内做全套模板匹配，
+ *    每角对应模板 TL/TR=黑車(b_r)、BL/BR=红俥(r_R)，仍按 4 角均分选最优套（保留选套语义）。
+ *    精修成功 -> 用模板中心（亚像素级对齐皮肤）；精修失败 -> 直接采用 det 结果（32 子校验兜底）。
+ * 3. **det 无结果/几何不合理 -> 象限全量模板**：按象限约束逐角匹配
+ *    （TL: x<20%w,y<50%h；TR: x>80%w,y<50%h；BL/BR 对称），任一角不达阈值即弃套，
+ *    全部套弃掉返回 null（调用方进步骤 2 引导手动微调）。
+ * 4. 32 子校验：validateAsOpening 用 YOLO cls 全盘识别比对开局 32 子（保存前强制，含手动微调）。
+ *
+ * 几何纯函数（orderCorners/isPlausibleQuad/nonMaxSuppression/estimateScale）可 JVM 单测；
+ * 依赖 OpenCV/ONNX 的匹配逻辑仅运行时在设备侧执行。
  */
 object BoardCornerDetector {
 
-    // 角子模板：黑車在上方两角，红俥在下方两角（玩家执红，黑上红下）
-    private val CORNER_TEMPLATE_IDS = listOf("b_r", "r_R")
     private const val DEFAULT_MATCH_THRESHOLD = 0.55
-    private const val FALLBACK_MATCH_THRESHOLD = 0.45
     private const val SCALE_RANGE_FACTOR = 0.30
     private const val MIN_SCALE = 0.40
     private const val MAX_SCALE = 2.50
 
+    /** det 命中后模板精修的 ROI 半径（200x200 窗口；det 误差 <2px，留足皮肤分布偏移余量）。 */
+    private const val ROI_HALF = 100
+
     /** 单峰：(score, cx, cy, scale) */
     data class Peak(val score: Double, val cx: Double, val cy: Double, val scale: Double)
 
-    /** 识别结果：四角按 [左上, 右上, 左下, 右下] 排序，与 Const.BOARD_CORNERS 顺序一致。 */
+    /** 识别结果：四角按 [左上, 右上, 左下, 右下] 排序，与 Const.BOARD_CORNERS 顺序一致。
+     *  source = "template:<setName>"（模板精修/象限命中套）或 "det"（det 结果直接采用）。 */
     data class Result(
         val corners: List<Pair<Double, Double>>,
         val scores: List<Double>,
-        val matched: Int,
+        val source: String,
     )
 
     /** 依据截图宽度估计角子模板尺度（对齐 python _estimate_scale：img_width / 1000）。 */
     fun estimateScale(imgWidth: Int): Double = imgWidth / 1000.0
 
-    /** 全局非极大值抑制：跨尺度去重，minDistance 像素内只保留最高分峰。 */
+    /** 全局非极大值抑制：跨尺度去重，minDistance 像素内只保留最高分峰（保留供测试/复用）。 */
     fun nonMaxSuppression(peaks: List<Peak>, minDistance: Int): List<Peak> {
         val kept = mutableListOf<Peak>()
         for (p in peaks.sortedByDescending { it.score }) {
@@ -71,6 +83,35 @@ object BoardCornerDetector {
         return listOf(top[0], top[1], bottom[0], bottom[1])
     }
 
+    /**
+     * det 四角几何合理性校验（纯函数）：conf 与位置精度无关，须用几何规则拦截垃圾输出。
+     * 要求四点可排成 [TL,TR,BL,BR] 且：上下水平边均 > 0.5*宽，左右垂直边均 > 0.3*高，
+     * 坐标均在屏幕内。棋盘实际横跨约 96% 宽、纵跨约 68% 高，阈值留足余量。
+     */
+    fun isPlausibleQuad(
+        corners: List<Pair<Double, Double>>,
+        srcW: Int,
+        srcH: Int,
+    ): Boolean {
+        if (corners.size != 4) return false
+        if (corners.any { (x, y) -> !x.isFinite() || !y.isFinite() }) return false
+        if (corners.any { (x, y) -> x < -1.0 || y < -1.0 || x > srcW + 1.0 || y > srcH + 1.0 }) {
+            return false
+        }
+        val ordered = try {
+            orderCorners(corners)
+        } catch (e: IllegalArgumentException) {
+            return false
+        }
+        val (tl, tr, bl, br) = ordered
+        val topW = tr.first - tl.first
+        val botW = br.first - bl.first
+        val leftH = bl.second - tl.second
+        val rightH = br.second - tr.second
+        return topW > srcW * 0.5 && botW > srcW * 0.5 &&
+                leftH > srcH * 0.3 && rightH > srcH * 0.3
+    }
+
     /** Bitmap -> 灰度 Mat（确保 OpenCV 已 init）。 */
     fun toGray(bitmap: Bitmap): Mat {
         val bgr = VisionInit.bitmapToBgr(bitmap)
@@ -88,130 +129,251 @@ object BoardCornerDetector {
         return g
     }
 
-    /** 多尺度模板匹配（对齐 python：局部极大 + 跨尺度全局 NMS）。 */
-    private fun findPeaks(
+    /** det 角点周围 ±half 的匹配窗口（钳制到图像边界）。 */
+    private fun roiAround(p: Pair<Double, Double>, half: Int, w: Int, h: Int): Rect {
+        val x0 = (p.first.roundToInt() - half).coerceAtLeast(0)
+        val y0 = (p.second.roundToInt() - half).coerceAtLeast(0)
+        val x1 = (p.first.roundToInt() + half).coerceAtMost(w)
+        val y1 = (p.second.roundToInt() + half).coerceAtMost(h)
+        return Rect(x0, y0, (x1 - x0).coerceAtLeast(1), (y1 - y0).coerceAtLeast(1))
+    }
+
+    /**
+     * ROI 内多尺度模板匹配，取全局最高分峰（窗口小，无需局部极大/NMS）。
+     * 低于阈值返回 null。峰心坐标已加回 ROI 偏移（原图坐标系）。
+     */
+    private fun bestPeakInRoi(
         gray: Mat,
         tmpl: Mat,
+        roi: Rect,
         scaleMin: Double,
         scaleMax: Double,
         nScales: Int,
         threshold: Double,
-        minDistance: Int,
-    ): List<Peak> {
-        val h = gray.rows()
-        val w = gray.cols()
-        // 模板统一转灰度：截图是 CV_8UC1，模板是 BGR(CV_8UC3)，matchTemplate 要求类型一致
+    ): Peak? {
+        val roiGray = gray.submat(roi)
         val tmplGray = toGrayMat(tmpl)
-        val th0 = tmplGray.rows()
         val tw0 = tmplGray.cols()
-        val all = mutableListOf<Peak>()
-        val kernel =
-            Mat.ones(minDistance.coerceAtLeast(1), minDistance.coerceAtLeast(1), CvType.CV_8U)
-        for (i in 0 until nScales) {
-            val scale =
-                if (nScales <= 1) scaleMin else scaleMin + (scaleMax - scaleMin) * i / (nScales - 1)
-            val nw = maxOf(1, (tw0 * scale).roundToInt())
-            val nh = maxOf(1, (th0 * scale).roundToInt())
-            if (nw >= w || nh >= h) continue
-            val resized = Mat()
-            Imgproc.resize(
-                tmplGray,
-                resized,
-                Size(nw.toDouble(), nh.toDouble()),
-                0.0,
-                0.0,
-                if (scale < 1.0) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR,
-            )
-            val result = Mat()
-            Imgproc.matchTemplate(gray, resized, result, Imgproc.TM_CCOEFF_NORMED)
-            val mask = Mat()
-            Core.inRange(result, Scalar(threshold), Scalar(Double.MAX_VALUE), mask)
-            val dilated = Mat()
-            Imgproc.dilate(result, dilated, kernel)
-            val eq = Mat()
-            Core.compare(result, dilated, eq, Core.CMP_EQ)
-            val finalMask = Mat()
-            Core.bitwise_and(mask, eq, finalMask)
-            val pts = MatOfPoint()
-            Core.findNonZero(finalMask, pts)
-            for (p in pts.toArray()) {
-                val cx = p.x.roundToInt()
-                val cy = p.y.roundToInt()
-                val v = result.get(cy, cx)?.get(0) ?: 0.0
-                all.add(Peak(v, p.x + nw / 2.0, p.y + nh / 2.0, scale))
+        val th0 = tmplGray.rows()
+        var best: Peak? = null
+        try {
+            for (i in 0 until nScales) {
+                val scale =
+                    if (nScales <= 1) scaleMin else scaleMin + (scaleMax - scaleMin) * i / (nScales - 1)
+                val nw = maxOf(1, (tw0 * scale).roundToInt())
+                val nh = maxOf(1, (th0 * scale).roundToInt())
+                if (nw >= roi.width || nh >= roi.height) continue
+                val resized = Mat()
+                Imgproc.resize(
+                    tmplGray,
+                    resized,
+                    Size(nw.toDouble(), nh.toDouble()),
+                    0.0,
+                    0.0,
+                    if (scale < 1.0) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR,
+                )
+                val result = Mat()
+                Imgproc.matchTemplate(roiGray, resized, result, Imgproc.TM_CCOEFF_NORMED)
+                val mm = Core.minMaxLoc(result)
+                result.release()
+                resized.release()
+                if (best == null || mm.maxVal > best.score) {
+                    best = Peak(
+                        mm.maxVal,
+                        roi.x + mm.maxLoc.x + nw / 2.0,
+                        roi.y + mm.maxLoc.y + nh / 2.0,
+                        scale,
+                    )
+                }
             }
-            result.release()
-            mask.release()
-            dilated.release()
-            eq.release()
-            finalMask.release()
-            pts.release()
-            resized.release()
+        } finally {
+            roiGray.release()
+            if (tmplGray !== tmpl) tmplGray.release()
         }
-        kernel.release()
-        if (tmplGray !== tmpl) tmplGray.release()
-        return nonMaxSuppression(all, minDistance)
+        return if (best != null && best.score >= threshold) best else null
     }
 
-    /** 检测一侧角子：先窄尺度，不足 2 个峰则扩大尺度回退。 */
-    private fun detectSide(gray: Mat, tmpl: Mat, baseScale: Double, label: String): List<Peak> {
+    /** 每角对应的模板：TL/TR=黑車(b_r)，BL/BR=红俥(r_R)（黑上红下）。 */
+    private fun templatesForCorners(set: VisionInit.CornerSet): List<Mat> =
+        listOf(set.bR, set.bR, set.rR, set.rR)
+
+    /** 统一尺度参数（baseScale ±30%，步长 0.03）。 */
+    private fun scaleParams(baseScale: Double): Triple<Double, Double, Int> {
         val scaleMin = maxOf(MIN_SCALE, baseScale * (1 - SCALE_RANGE_FACTOR))
         val scaleMax = minOf(MAX_SCALE, baseScale * (1 + SCALE_RANGE_FACTOR))
         val nScales = maxOf(15, ((scaleMax - scaleMin) / 0.03).roundToInt() + 1)
-        val minDistance = maxOf(10, (baseScale * 40).roundToInt())
-        var peaks =
-            findPeaks(gray, tmpl, scaleMin, scaleMax, nScales, DEFAULT_MATCH_THRESHOLD, minDistance)
-        if (peaks.size < 2) {
-            LogBus.log(
-                LogKind.DEBUG,
-                LogTag.CALIB,
-                "$label 窄范围仅 ${peaks.size} 个峰，扩大尺度重试"
-            )
-            peaks = findPeaks(
-                gray,
-                tmpl,
-                MIN_SCALE,
-                MAX_SCALE,
-                45,
-                FALLBACK_MATCH_THRESHOLD,
-                minDistance
-            )
-        }
-        return peaks
+        return Triple(scaleMin, scaleMax, nScales)
     }
 
+    /** 四角坐标日志片段（与匹配度一起打印，便于排查）。 */
+    private fun cornersLog(corners: List<Pair<Double, Double>>): String =
+        corners.joinToString(", ") { "(%.0f,%.0f)".format(it.first, it.second) }
+
     /**
-     * 主入口：灰度图 + 已加载的棋子模板 -> 四角坐标（屏幕像素，[左上, 右上, 左下, 右下]）。
-     * 任一侧不足 2 个峰抛异常（调用方据此重试 / 引导手动微调）。
+     * det 命中后的模板精修：每个角在 ±ROI_HALF 窗口内用对应模板匹配，
+     * 任一角不达阈值即弃套；全套遍历按 4 角均分选最优。
      */
-    fun detect(gray: Mat, templates: Map<String, Mat>): Result {
-        val bTmpl = templates[CORNER_TEMPLATE_IDS[0]]
-            ?: throw IllegalStateException("缺少角子模板 ${CORNER_TEMPLATE_IDS[0]}")
-        val rTmpl = templates[CORNER_TEMPLATE_IDS[1]]
-            ?: throw IllegalStateException("缺少角子模板 ${CORNER_TEMPLATE_IDS[1]}")
-        val baseScale = estimateScale(gray.cols())
-        val bPeaks = detectSide(gray, bTmpl, baseScale, "黑車")
-        val rPeaks = detectSide(gray, rTmpl, baseScale, "红俥")
-        if (bPeaks.size < 2) {
-            throw IllegalStateException("黑車(${CORNER_TEMPLATE_IDS[0]}) 仅匹配 ${bPeaks.size} 个，无法定位上方两角")
+    private fun refineWithTemplates(
+        gray: Mat,
+        cornerSets: List<VisionInit.CornerSet>,
+        detCorners: List<Pair<Double, Double>>,
+        onProgress: (String) -> Unit,
+    ): Result? {
+        val w = gray.cols()
+        val h = gray.rows()
+        val (scaleMin, scaleMax, nScales) = scaleParams(estimateScale(w))
+        var best: Result? = null
+        var bestMean = -1.0
+        cornerSets.forEachIndexed { idx, set ->
+            onProgress("模板精修 ${set.name}（${idx + 1}/${cornerSets.size}）…")
+            val corners = mutableListOf<Pair<Double, Double>>()
+            val scores = mutableListOf<Double>()
+            var ok = true
+            for (i in 0 until 4) {
+                val peak = bestPeakInRoi(
+                    gray, templatesForCorners(set)[i], roiAround(detCorners[i], ROI_HALF, w, h),
+                    scaleMin, scaleMax, nScales, DEFAULT_MATCH_THRESHOLD,
+                )
+                if (peak == null) {
+                    LogBus.log(
+                        LogKind.DEBUG, LogTag.CALIB,
+                        "${set.name} 精修第 ${i + 1} 角未达阈值，跳过该套"
+                    )
+                    ok = false
+                    break
+                }
+                corners.add(peak.cx to peak.cy)
+                scores.add(peak.score)
+            }
+            if (!ok) return@forEachIndexed
+            val mean = scores.average()
+            LogBus.log(
+                LogKind.DEBUG, LogTag.CALIB,
+                "${set.name} 精修命中，均分 %.3f，四角 ${cornersLog(corners)}".format(mean)
+            )
+            if (mean > bestMean) {
+                bestMean = mean
+                best = Result(corners, scores, "template:${set.name}")
+            }
         }
-        if (rPeaks.size < 2) {
-            throw IllegalStateException("红俥(${CORNER_TEMPLATE_IDS[1]}) 仅匹配 ${rPeaks.size} 个，无法定位下方两角")
-        }
-        val centers = (bPeaks.take(2) + rPeaks.take(2)).map { it.cx to it.cy }
-        val corners = orderCorners(centers)
-        val scores = (bPeaks.take(2) + rPeaks.take(2)).map { it.score }
-        return Result(corners, scores, 4)
+        return best
     }
 
     /**
-     * 用四角构造临时单应，把截图矫正为 900x1000，全盘识别后比对 32 子开局。
+     * 象限全量模板识别（det 无结果/几何不合理时）：按象限约束逐角匹配，
+     * 任一角不达阈值即弃套，全部套弃掉返回 null。
+     * 象限：TL x<20%w,y<50%h；TR x>80%w,y<50%h；BL/BR 对称。
+     */
+    private fun detectQuadrants(
+        gray: Mat,
+        cornerSets: List<VisionInit.CornerSet>,
+        onProgress: (String) -> Unit,
+    ): Result? {
+        val w = gray.cols()
+        val h = gray.rows()
+        val (scaleMin, scaleMax, nScales) = scaleParams(estimateScale(w))
+        val qw = (w * 0.2).roundToInt()
+        val qh = (h * 0.5).roundToInt()
+        val quads = listOf(
+            Rect(0, 0, qw, qh),                 // TL
+            Rect(w - qw, 0, qw, qh),            // TR
+            Rect(0, h - qh, qw, qh),            // BL
+            Rect(w - qw, h - qh, qw, qh),       // BR
+        )
+        var best: Result? = null
+        var bestMean = -1.0
+        cornerSets.forEachIndexed { idx, set ->
+            onProgress("全量模板 ${set.name}（${idx + 1}/${cornerSets.size}）…")
+            val corners = mutableListOf<Pair<Double, Double>>()
+            val scores = mutableListOf<Double>()
+            var ok = true
+            for (i in 0 until 4) {
+                val peak = bestPeakInRoi(
+                    gray, templatesForCorners(set)[i], quads[i],
+                    scaleMin, scaleMax, nScales, DEFAULT_MATCH_THRESHOLD,
+                )
+                if (peak == null) {
+                    LogBus.log(
+                        LogKind.DEBUG, LogTag.CALIB,
+                        "${set.name} 象限第 ${i + 1} 角未达阈值，放弃该套"
+                    )
+                    ok = false
+                    break
+                }
+                corners.add(peak.cx to peak.cy)
+                scores.add(peak.score)
+            }
+            if (!ok) return@forEachIndexed
+            val mean = scores.average()
+            LogBus.log(
+                LogKind.DEBUG, LogTag.CALIB,
+                "${set.name} 象限命中四角，均分 %.3f，四角 ${cornersLog(corners)}".format(mean)
+            )
+            if (mean > bestMean) {
+                bestMean = mean
+                best = Result(corners, scores, "template:${set.name}")
+            }
+        }
+        return best
+    }
+
+    /**
+     * 主入口（2026-09-05 det 先行版）：
+     * 1. YOLO det 一次推理 -> [isPlausibleQuad] 几何校验；
+     * 2. 通过 -> 全套 ROI 模板精修，成功用模板结果，失败直接用 det（32 子校验兜底）；
+     * 3. det 无结果/几何不合理 -> 象限全量模板；仍失败返回 null（进步骤 2 引导手动微调）。
+     * @param gray 原始截图的灰度图（模板匹配用）
+     * @param frame 原始截图（det 路径 letterbox 前处理用）
+     * @param onProgress 进度回调（UI 展示用，工作线程调用）
+     */
+    fun detectWithFallback(
+        context: Context,
+        gray: Mat,
+        frame: Bitmap,
+        cornerSets: List<VisionInit.CornerSet>,
+        onProgress: (String) -> Unit = {},
+    ): Result? {
+        // 1. YOLO det 先行
+        onProgress("YOLO det 四角识别中（含首次会话加载）…")
+        val bgr = VisionInit.bitmapToBgr(frame)
+        val detCorners = try {
+            CornerDetModel.detectCorners(context, bgr)
+        } finally {
+            bgr.release()
+        }
+        if (detCorners != null && isPlausibleQuad(detCorners, frame.width, frame.height)) {
+            LogBus.log(
+                LogKind.OK, LogTag.CALIB,
+                "YOLO det 定位四角 ${cornersLog(detCorners)}，进入模板精修"
+            )
+            // 2. ROI 模板精修；失败直接采用 det（32 子校验兜底）
+            return refineWithTemplates(gray, cornerSets, detCorners, onProgress)
+                ?: Result(detCorners, emptyList(), "det").also {
+                    LogBus.log(
+                        LogKind.WARN, LogTag.CALIB,
+                        "全部模板精修未通过，直接采用 det 结果（32 子校验兜底）"
+                    )
+                }
+        }
+        // 3. det 无结果或几何不合理 -> 象限全量模板兜底
+        LogBus.log(
+            LogKind.INFO, LogTag.CALIB,
+            if (detCorners == null) "YOLO det 无结果，转全量模板识别"
+            else "YOLO det 结果几何不合理 ${cornersLog(detCorners)}，转全量模板识别"
+        )
+        return detectQuadrants(gray, cornerSets, onProgress)
+    }
+
+    /**
+     * 用四角构造临时单应，把截图矫正为 900x1000，YOLO cls 全盘识别后比对 32 子开局。
+     * 保存前强制校验（模板/det/手动微调任一来源都过此关）。
      * 用于在保存前挡住坏坐标（不污染 Homography 缓存）。
+     * @param onProgress 进度回调（可选，工作线程调用）
      */
     fun validateAsOpening(
         bitmap: Bitmap,
         corners: List<Pair<Double, Double>>,
-        templates: Map<String, Mat>,
+        onProgress: (String) -> Unit = {},
     ): Boolean {
         if (corners.size != 4) return false
         val src = VisionInit.bitmapToBgr(bitmap)
@@ -240,7 +402,8 @@ object BoardCornerDetector {
             dstPts.release()
             h.release()
             src.release()
-            val detected = Recognizer.analyzeBoard(corrected, templates)
+            onProgress("开局校验：cls 全盘 32 子识别…")
+            val detected = Recognizer.analyzeBoard(corrected)
             corrected.release()
             detected.contentDeepEquals(fullStartBoard(Side.RED))
         } catch (e: Exception) {

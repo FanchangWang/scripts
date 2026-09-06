@@ -7,6 +7,7 @@ import com.chess.bot.game.Const
 import com.chess.bot.game.PIECE_CN
 import com.chess.bot.game.ROWS
 import com.chess.bot.game.correctedCenter
+import com.chess.bot.log.LogBus
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -16,7 +17,9 @@ import org.opencv.imgproc.Imgproc
 import kotlin.math.roundToInt
 
 /**
- * 棋盘识别：透视矫正 + 矫正空间模板匹配（移植 python vision.py 的 analyze_* 系列）。
+ * 棋盘识别：透视矫正 + 矫正空间 YOLO cls 逐格分类（2026-09-05 起替代模板匹配）。
+ * - analyzeCell/analyzeBoard：格心裁 64x64 -> PieceClsModel 16 类（empty->null / lift->Const.LIFT）。
+ * - 帧差逻辑（cropCellGray/cellChanged）不变。
  */
 object Recognizer {
 
@@ -35,37 +38,41 @@ object Recognizer {
         return dst
     }
 
-    /** 分析矫正棋盘某格的棋子 ID，空格返回 null。 */
-    fun analyzeCell(
-        corrected: Mat,
-        r: Int,
-        c: Int,
-        templates: Map<String, Mat>,
-    ): String? {
+    /** 矫正空间格心裁 64x64 BGR 小图（cls 输入；调用方负责 release）。 */
+    fun cropCell64(corrected: Mat, r: Int, c: Int): Mat {
         val (cx, cy) = correctedCenter(r, c)
         val px = cx.roundToInt()
         val py = cy.roundToInt()
-        val half = Const.MATCH_SEARCH_HALF + Const.CORRECT_TEMPLATE_SIZE / 2
-        val x1 = maxOf(0, px - half)
-        val y1 = maxOf(0, py - half)
-        val x2 = minOf(corrected.cols(), px + half)
-        val y2 = minOf(corrected.rows(), py + half)
-        if (x2 - x1 < 1 || y2 - y1 < 1) return null
-        val window = corrected.submat(y1, y2, x1, x2)
-        var bestId: String? = null
-        var bestScore = -1.0
-        for ((id, tpl) in templates) {
-            if (window.cols() < tpl.cols() || window.rows() < tpl.rows()) continue
-            val result = Mat()
-            Imgproc.matchTemplate(window, tpl, result, Imgproc.TM_CCOEFF_NORMED)
-            val score = Core.minMaxLoc(result).maxVal
-            result.release()
-            if (score > bestScore) {
-                bestScore = score
-                bestId = id
+        val half = Const.CLS_CELL / 2
+        val x1 = (px - half).coerceIn(0, corrected.cols() - Const.CLS_CELL)
+        val y1 = (py - half).coerceIn(0, corrected.rows() - Const.CLS_CELL)
+        return corrected.submat(y1, y1 + Const.CLS_CELL, x1, x1 + Const.CLS_CELL)
+    }
+
+    /**
+     * 分析矫正棋盘某格：cls 分类，空格返回 null，提子返回 Const.LIFT。
+     * @param gateLift 帧差触发格传 true：top1 为棋子但 lift 概率达门控阈值时判为动画帧，
+     *   返回 Const.LIFT（走子动画/选中高亮中的棋子外观不可信，宁判提起不判错子；
+     *   全量识别 analyzeBoard 不启用，保持 argmax 直判语义）。
+     */
+    fun analyzeCell(corrected: Mat, r: Int, c: Int, gateLift: Boolean = false): String? {
+        val cell = cropCell64(corrected, r, c)
+        return try {
+            val res = PieceClsModel.classifyCellEx(VisionInit.requireContext(), cell)
+            if (gateLift && PieceClsModel.isLiftAmbiguous(res.key, res.liftProb)) {
+                LogBus.log(
+                    com.chess.bot.log.LogKind.DEBUG, com.chess.bot.log.LogTag.VISION,
+                    "动画帧抑制 r$r c$c：top1=${res.key}(%.2f) lift=%.2f -> 判提起".format(
+                        res.top1Prob, res.liftProb
+                    )
+                )
+                Const.LIFT
+            } else {
+                res.key
             }
+        } finally {
+            cell.release()
         }
-        return if (bestId == null || bestScore < Const.EMPTY_MATCH_THRESHOLD) null else bestId
     }
 
     // ---------- 格子中心小图（方案 A 变种：10x10 单通道灰度，用于帧间 diff） ----------
@@ -109,16 +116,20 @@ object Recognizer {
         return n >= CELL_MIN_CHANGED
     }
 
-    /** 遍历 90 格，返回 10x9 布局。 */
-    fun analyzeBoard(corrected: Mat, templates: Map<String, Mat>): Board =
-        Array(ROWS) { r -> Array<String?>(COLS) { c -> analyzeCell(corrected, r, c, templates) } }
+    /** 遍历 90 格，返回 10x9 布局（YOLO cls 全量识别）。 */
+    fun analyzeBoard(corrected: Mat): Board =
+        Array(ROWS) { r -> Array<String?>(COLS) { c -> analyzeCell(corrected, r, c) } }
 
-    /** 布局 -> 可读文本行（日志打印用）。 */
+    /** 布局 -> 可读文本行（日志打印用；lift 显示为「提」）。 */
     fun formatLayout(board: Board): List<String> {
         val lines = mutableListOf<String>()
         for (r in ROWS - 1 downTo 0) {
             val cells = (0 until COLS).joinToString(" ") { c ->
-                board[r][c]?.let { PIECE_CN[it] } ?: "·"
+                when (val v = board[r][c]) {
+                    null -> "·"
+                    Const.LIFT -> "提"
+                    else -> PIECE_CN[v] ?: v
+                }
             }
             lines.add("r$r $cells")
         }

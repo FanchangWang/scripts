@@ -2,6 +2,7 @@ package com.chess.bot
 
 import com.chess.bot.game.Board
 import com.chess.bot.game.Change
+import com.chess.bot.game.Const
 import com.chess.bot.game.EnemyFrame
 import com.chess.bot.game.EnemyFrameResult
 import com.chess.bot.game.Move
@@ -31,6 +32,38 @@ class ClassifierEnemyTest {
     fun `n1 敌方提子 Lifted`() {
         val frame = classifyEnemyFrame(listOf(Change(7, 7, "b_c", null)), Side.RED)
         assertEquals(EnemyFrame(EnemyFrameResult.LIFTED), frame)
+    }
+
+    @Test
+    fun `n1 敌方棋子变 lift 直接确认提子`() {
+        // cls 识别出「提起棋子」(lift)：与「格子变空」推断同等判定
+        val frame = classifyEnemyFrame(listOf(Change(7, 7, "b_c", Const.LIFT)), Side.RED)
+        assertEquals(EnemyFrame(EnemyFrameResult.LIFTED), frame)
+    }
+
+    @Test
+    fun `n1 敌方棋子变 lift 但仍是我方棋子不算提子`() {
+        // 我方棋子从起点提起(变 lift) 不属于敌方提子场景
+        val frame = classifyEnemyFrame(listOf(Change(5, 5, "r_P", Const.LIFT)), Side.RED)
+        assertEquals(EnemyFrame(EnemyFrameResult.NOISY), frame)
+    }
+
+    @Test
+    fun `空格变 lift 是飞行途经瞬态 剔除后判提子`() {
+        // 2026-09-06 02:27 日志：红炮 i2→g2 飞行途经 h2，h2 空→lift 为动画伪影
+        //（空格不可能被提起）；剔除后只剩 i2 起点变空 → LIFTED，不计入噪声
+        val changes = listOf(
+            Change(2, 0, "r_C", null),
+            Change(2, 1, null, Const.LIFT),
+        )
+        val frame = classifyEnemyFrame(changes, Side.BLACK)
+        assertEquals(EnemyFrame(EnemyFrameResult.LIFTED), frame)
+    }
+
+    @Test
+    fun `仅空格变 lift 剔除后为 Silent`() {
+        val frame = classifyEnemyFrame(listOf(Change(2, 1, null, Const.LIFT)), Side.BLACK)
+        assertEquals(EnemyFrame(EnemyFrameResult.SILENT), frame)
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.chess.bot.log.LogKind
 import com.chess.bot.log.LogTag
 import com.chess.bot.overlay.BotRuntime
 import com.chess.bot.service.Capture
+import com.chess.bot.vision.PieceClsModel
 import com.chess.bot.vision.Recognizer
 import com.chess.bot.vision.VisionInit
 import kotlinx.coroutines.delay
@@ -38,6 +39,11 @@ import kotlin.math.roundToInt
  * - recognizeBoardChanged 仅对 diff 变化的格子跑模板匹配，未变格沿用 board；recog ~466ms→~20ms
  * - 提交点（initialize/verify/敌方 Moved）与 board 同步局部更新 cellImgs（仅改 changes 格子），
  *   避免「敌方提子未落子」等中间帧污染基线（全量更新会波及无关格，已弃用）
+ *
+ * 2026-09-06 敌着两帧一致确认（T-D）：所有敌着提交点（waitForEnemyMove MOVED / 噪声复判 /
+ * verify N3/N4（SELF_THEN_ENEMY）/ 吞点击恢复）统一走 reconfirmEnemyMoved（立即复抓复判，不加显式
+ * 延时——单次 grabBoard ~70-100ms 已越过半格飞行窗口，防几何合法中途帧如車 C0→C9 途经 C5 误提交）+ commitEnemyMove
+ * （ponder 处理 + cellImgs 更新 + applyEnemyMove 公共路径）。
  */
 class BotSession(private val context: Context) {
 
@@ -86,8 +92,11 @@ class BotSession(private val context: Context) {
         }
     }
 
-    private fun templates() = VisionInit.loadPieceTemplates(context)
-
+    /** 视觉预热：OpenCV/校准 JSON 注入 + cls 会话懒加载（棋子识别已由 YOLO cls 替代模板）。 */
+    private fun visionWarmup() {
+        VisionInit.init(context)
+        PieceClsModel.ensure(context)
+    }
     // ---------- 公共接口 ----------
 
     /** 线程安全中断：打断自动对弈循环与摆棋等待。 */
@@ -115,6 +124,7 @@ class BotSession(private val context: Context) {
             return
         }
         try {
+            visionWarmup()
             state.reset()
             pendingPonderMove = null
             pendingPonderResult = null
@@ -176,8 +186,8 @@ class BotSession(private val context: Context) {
             }
             var handOff = false
             try {
-                val board = Recognizer.analyzeBoard(corrected, templates())
-                val count = board.sumOf { row -> row.count { it != null } }
+                val board = Recognizer.analyzeBoard(corrected)
+                val count = pieceCount(board)
                 // 外抛等待态信息到悬浮窗（已等待秒数 + 子数/稳定摘要）
                 BotRuntime.waitElapsedS.value =
                     ((System.nanoTime() - startAt) / 1_000_000_000L).toInt()
@@ -207,7 +217,7 @@ class BotSession(private val context: Context) {
 
     /** 首局轮次判定（审计 §二.E 三路径；轮次确认弹窗已删除）。 */
     private fun decideStartTurn() {
-        val count = state.board.sumOf { row -> row.count { it != null } }
+        val count = pieceCount(state.board)
         if (count == 32 && plausibleNewGame(state.board, state.mySide)) {
             state.turn = Side.RED
             LogBus.log(LogKind.GAME, LogTag.PLAY, "完整新开局（32 子默认位），红方先走")
@@ -295,7 +305,7 @@ class BotSession(private val context: Context) {
 
     private fun initialize(corrected: Mat): Boolean {
         setStatus(BotStatus.INITIALIZING)
-        val board = Recognizer.analyzeBoard(corrected, templates())
+        val board = Recognizer.analyzeBoard(corrected)
         val mySide = detectSide(board)
         if (mySide == null) {
             LogBus.log(
@@ -304,7 +314,7 @@ class BotSession(private val context: Context) {
                 "无法判断我方红黑方（未识别到将/帥），已暂停；请检查棋盘画面后重新同步"
             )
             // 布局落盘（替代原轮次弹窗的兜底），便于定位误识别
-            val count = board.sumOf { row -> row.count { it != null } }
+            val count = pieceCount(board)
             LogBus.log(LogKind.ERROR, LogTag.VISION, "失败帧诊断：识别到 $count 个棋子")
             Recognizer.formatLayout(board)
                 .forEach { LogBus.log(LogKind.ERROR, LogTag.VISION, "识别布局 $it") }
@@ -377,6 +387,15 @@ class BotSession(private val context: Context) {
                     LogBus.log(LogKind.INFO, LogTag.SELF, "棋子提起未落，补点落子")
                     isLifted = true
                     zeroChange = 0
+                    continue
+                }
+
+                VerifyOutcome.RETRY_AFTER_ENEMY -> {
+                    // 点击被吞、敌方已先走（敌着已在 verify 恢复分支提交，轮到我方）：
+                    // 立即重试本步走子，不计零变化守卫（2026-09-06 T-B）。
+                    isLifted = false
+                    zeroChange = 0
+                    attempt = 0
                     continue
                 }
 
@@ -589,37 +608,72 @@ class BotSession(private val context: Context) {
         //   - 否则 → 正常「先点源、再点目标」
         if (isRetry) {
             val grabbed = grabBoard(cap) ?: return false
-            val srcEmpty = grabbed.scan.board[r1][c1] == null
-            val dstMine =
-                grabbed.scan.board[r2][c2]?.let { pieceColor(it) == state.mySide } ?: false
-            val chg = grabbed.scan.changes.joinToString(", ") {
-                "${gridToSquare(it.r, it.c, state.mySide)} ${it.old ?: "空"}->${it.new ?: "空"}"
-            }
-            LogBus.log(
-                LogKind.DEBUG,
-                LogTag.SELF,
-                "重试识别：源($r1,$c1)${gridToSquare(r1, c1, state.mySide)}=" +
-                        "${grabbed.scan.board[r1][c1] ?: "空"} 落点($r2,$c2)${
-                            gridToSquare(
-                                r2,
-                                c2,
-                                state.mySide
-                            )
-                        }=" +
-                        "${grabbed.scan.board[r2][c2] ?: "空"} 变化${grabbed.scan.changes.size}格: $chg"
-            )
-            grabbed.corrected.release()
-            if (srcEmpty && dstMine) {
+            try {
+                val srcEmpty = grabbed.scan.board[r1][c1] == null
+                val dstMine =
+                    grabbed.scan.board[r2][c2]?.let { pieceColor(it) == state.mySide } ?: false
+                val chg = grabbed.scan.changes.joinToString(", ") {
+                    "${gridToSquare(it.r, it.c, state.mySide)} ${it.old ?: "空"}->${it.new ?: "空"}"
+                }
                 LogBus.log(
                     LogKind.DEBUG,
                     LogTag.SELF,
-                    "重试：源格已空且落点已是己方棋子（走子已落定），无需重试"
+                    "重试识别：源($r1,$c1)${gridToSquare(r1, c1, state.mySide)}=" +
+                            "${grabbed.scan.board[r1][c1] ?: "空"} 落点($r2,$c2)${
+                                gridToSquare(
+                                    r2,
+                                    c2,
+                                    state.mySide
+                                )
+                            }=" +
+                            "${grabbed.scan.board[r2][c2] ?: "空"} 变化${grabbed.scan.changes.size}格: $chg"
                 )
-                return true
-            }
-            if (srcEmpty) {
-                LogBus.log(LogKind.DEBUG, LogTag.SELF, "重试：源格已空（子已提起），仅点目标格落子")
-                return cap.tap(r2, c2)
+                if (srcEmpty && dstMine) {
+                    // T-C（2026-09-06）：走子其实已落定——把 expected 走子提交进状态再返回。
+                    // 旧实现只 return true 不提交，verify 再次看到无变化 → SILENT 计入 zeroChange → 空转环。
+                    // captured 取已提交棋盘落点原值（落定帧 dst 已是我方子，committed 仍是走子前内容）。
+                    val settledPiece = state.board[r1][c1]
+                    if (settledPiece != null) {
+                        val captured =
+                            state.board[r2][c2]?.takeIf { pieceColor(it) != state.mySide }
+                        state.applySelfMove(Move(r1 to c1, r2 to c2, settledPiece, captured))
+                        state.updateCellImgs(
+                            grabbed.corrected,
+                            grabbed.scan.changes,
+                            grabbed.scan.driftCells
+                        )
+                        state.resignStreak = 0
+                        emit()
+                        LogBus.log(
+                            LogKind.DEBUG,
+                            LogTag.SELF,
+                            "重试：源格已空且落点已是己方棋子（走子已落定），直接提交 " +
+                                    "${gridToSquare(r1, c1, state.mySide)}->${
+                                        gridToSquare(
+                                            r2,
+                                            c2,
+                                            state.mySide
+                                        )
+                                    }"
+                        )
+                    } else {
+                        LogBus.log(
+                            LogKind.DEBUG,
+                            LogTag.SELF,
+                            "重试：源格已空且落点已是己方棋子（走子已落定），无需重试"
+                        )
+                    }
+                    return true
+                }
+                if (srcEmpty) {
+                    LogBus.log(LogKind.DEBUG, LogTag.SELF, "重试：源格已空（子已提起），仅点目标格落子")
+                    return cap.tap(r2, c2)
+                }
+            } finally {
+                // P0 修复（2026-09-06 01:20 崩溃复盘）：corrected 供重试提交分支 updateCellImgs 使用，
+                // 必须等所有分支走完再释放——原实现在读取判定后立即 release，提交分支再用已是
+                // released Mat，cropCellGray 的 submat 行范围断言失败 → CvException 对弈终止。
+                grabbed.corrected.release()
             }
         }
         if (!cap.tap(r1, c1)) return false
@@ -627,7 +681,7 @@ class BotSession(private val context: Context) {
         return cap.tap(r2, c2)
     }
 
-    // ---------- 多帧校验 verifyForSelfMove（首帧等走子动画落定，之后按用户设置间隔，累计超 firstWaitMs+300ms 即跳出） ----------
+    // ---------- 多帧校验 verifyForSelfMove（首帧等走子动画落定，之后按用户设置间隔；窗口 firstWaitMs+300ms 起步，动画帧顺延至 +900ms 硬顶） ----------
 
     private suspend fun verifyForSelfMove(
         r1: Int,
@@ -639,13 +693,28 @@ class BotSession(private val context: Context) {
         setStatus(BotStatus.VERIFYING)
         val expected = Move(r1 to c1, r2 to c2, piece)
         val cap = capture
+        // T-C 配套（2026-09-06 02:27 复盘）：attemptMove 重试稳判「走子已落定」已提交本步 →
+        // 校验无需再看画面：我方走子必然成功，此后画面差异只能来自我方走子之后的事件
+        // （敌方回复 / 动画残留 / 弹窗），一律交回 waitForEnemyMove 处理。
+        // 旧实现仍重进 verify：若敌方回复恰在本步之后落子，帧差异恒为「敌着」→ NOISY 空转，
+        // zeroChange 计满触发守卫误暂停（02:27 红帥 f0→f1 回复未消费 → 连续 5 整步暂停事故）。
+        if (state.board[r1][c1] == null && state.board[r2][c2] == piece) {
+            LogBus.log(LogKind.DEBUG, LogTag.SELF, "我方走子已由重试稳判提交，跳过校验直接确认")
+            checkmateProbe()
+            return VerifyOutcome.DONE_OK
+        }
         // 首帧等待 = 走子动画公式（提起+飞一格+落下最低 400ms，每多飞一格 +60ms）；
-        // 后续帧按用户设置间隔兜底。总检测窗口 = firstWaitMs + 300ms（与 verifyNextFrameMs 解耦，
+        // 后续帧按用户设置间隔兜底。总检测窗口 = firstWaitMs + 300ms 起步（与 verifyNextFrameMs 解耦，
         // 不论该间隔多小都能保证至少 300ms 复检）。VERIFY_ANIM_REDUNDANCY_MS 已废弃（由 +300ms 兜底覆盖）。
         val dist = maxOf(kotlin.math.abs(r2 - r1), kotlin.math.abs(c2 - c1))
         val firstWaitMs =
             BotConfig.data.verifyAnimBaseMs.toLong() + dist * Const.VERIFY_ANIM_PER_CELL_MS
-        val maxWaitMs = firstWaitMs + 300L
+        // 总检测窗口 = firstWaitMs + 300ms 起步；有变动格的帧（动画进行中）顺延 300ms，
+        // 硬顶 firstWaitMs + 900ms。吃子动画比单纯走子多一段「被吃子消失」，中途帧呈
+        // 「起格空 + 落点空」两格同空 → NOISY（2026-09-06 01:20 g7g0 吃砲事故：落定帧落在
+        // 固定窗外 → verify 超时走异常校验+重试）。SILENT 帧不顺延（画面已静止）。
+        var maxWaitMs = firstWaitMs + 300L
+        val maxWaitHardMs = firstWaitMs + 900L
         val tStart = System.nanoTime()
         var lastFc: SelfFrame? = null
 
@@ -657,18 +726,23 @@ class BotSession(private val context: Context) {
             if (!running || interrupted || state.gameOver) return VerifyOutcome.DONE_END
 
             val grabbed = grabBoard(cap) ?: continue
+            if (grabbed.scan.changes.isNotEmpty() && maxWaitMs < maxWaitHardMs) {
+                // 动画仍在进行（含吃子动画的两格同空中途帧）：窗口顺延，保证落定帧有窗可判
+                val nowMs = (System.nanoTime() - tStart) / 1_000_000
+                maxWaitMs = minOf(maxWaitHardMs, nowMs + 300L)
+            }
             try {
                 val changes = grabbed.scan.changes
-                val fc = classifySelfFrame(changes, grabbed.scan.board, expected, state.mySide)
-                lastFc = fc
-                val changeDetail = changes.joinToString(", ") {
-                    "${gridToSquare(it.r, it.c, state.mySide)} ${it.old ?: "空"}->${it.new ?: "空"}"
-                }
-                LogBus.log(
-                    LogKind.DEBUG,
-                    LogTag.SELF,
-                    "校验帧 result=${fc.result} 变化 ${changes.size} 格: $changeDetail"
+                // preBoard=已提交棋盘：对推断出的敌方走子做伪合法校验（动画中间帧非法着法拒判）
+                val fc = classifySelfFrame(
+                    changes,
+                    grabbed.scan.board,
+                    expected,
+                    state.mySide,
+                    state.board
                 )
+                lastFc = fc
+                LogBus.log(LogKind.DEBUG, LogTag.SELF, "校验帧 result=${fc.result}")
 
                 when (fc.result) {
                     SelfFrameResult.SELF_DONE -> {
@@ -679,8 +753,10 @@ class BotSession(private val context: Context) {
                         // 之后敌方车落到 e5 时只剩 e5 一格变化→判 NOISY（见 2026-08-30 17:49:50 日志误暂停）。
                         // 保留敌方子 baseline，待 waitForEnemyMove 看到「g5 离场 + e5 落子」两格才识别为 MOVED。
                         // 注：state.board 只由 applySelfMove 改（本步仅 f4->e6），g5 仍=黑車，无需额外处理。
+                        // 2026-09-05 补充：敌方棋子「提起」(new=="lift") 同样是并发动画临时格，一并排除
                         val commitChanges = changes.filterNot { ch ->
-                            ch.old != null && ch.new == null && pieceColor(ch.old) != state.mySide
+                            ch.old != null && (ch.new == null || ch.new == Const.LIFT) &&
+                                    pieceColor(ch.old) != state.mySide
                         }
                         state.updateCellImgs(
                             grabbed.corrected,
@@ -700,17 +776,92 @@ class BotSession(private val context: Context) {
                     }
 
                     SelfFrameResult.SELF_THEN_ENEMY -> {
-                        fc.selfMove?.let { s ->
-                            fc.enemyMove?.let { e ->
-                                state.applySelfThenEnemy(s, e)
-                                // 我方走棋动画与敌方走棋重叠（SELF_THEN_ENEMY）：敌方这一步也打印走棋日志（对齐 waitForEnemyMove 的 applyEnemyMove）
-                                LogBus.log(LogKind.ENEMY, LogTag.ENEMY, formatMove(e, state.mySide))
+                        // T-D 两帧一致确认（2026-09-06）：N2 反吃/N3/N4 推断的敌着同样可能是动画中途帧
+                        //（如車 C0→C9 途经 C5，几何合法、伪合法校验拦截不了），复抓复判，敌着两帧
+                        // 一致才提交。复检不加延时——单次 grabBoard 本身 ~70-100ms，已足够越过
+                        // 半格飞行窗口（2026-09-06 02:30 用户实测后去除显式延时）。
+                        val selfM = fc.selfMove
+                        val enemyM = fc.enemyMove
+                        if (selfM == null || enemyM == null) {
+                            LogBus.log(
+                                LogKind.WARN,
+                                LogTag.SELF,
+                                "SELF_THEN_ENEMY 缺走子数据，按未确认处理"
+                            )
+                        } else {
+                            if (!running || interrupted || state.gameOver) return VerifyOutcome.DONE_END
+                            val reGrab = grabBoard(cap)
+                            var committed = false
+                            if (reGrab != null) {
+                                try {
+                                    val reFc = classifySelfFrame(
+                                        reGrab.scan.changes,
+                                        reGrab.scan.board,
+                                        expected,
+                                        state.mySide,
+                                        state.board,
+                                    )
+                                    when {
+                                        reFc.result == SelfFrameResult.SELF_THEN_ENEMY && reFc.enemyMove == enemyM -> {
+                                            // 敌着两帧一致：提交我方+敌方，cellImgs 以复判帧（落定帧）为准
+                                            state.applySelfThenEnemy(selfM, enemyM)
+                                            LogBus.log(
+                                                LogKind.ENEMY,
+                                                LogTag.ENEMY,
+                                                formatMove(enemyM, state.mySide)
+                                            )
+                                            state.updateCellImgs(
+                                                reGrab.corrected,
+                                                reGrab.scan.changes,
+                                                reGrab.scan.driftCells,
+                                            )
+                                            committed = true
+                                        }
+
+                                        reFc.result == SelfFrameResult.SELF_DONE -> {
+                                            // 敌着未复现：首帧敌变为瞬时态（提起/高亮伪影），仅提交我方走子，
+                                            // 敌方走子交回 waitForEnemyMove 继续检测（镜像 SELF_DONE 分支含绝杀处理）
+                                            state.applySelfMove(selfM)
+                                            val commitChanges =
+                                                reGrab.scan.changes.filterNot { ch ->
+                                                    ch.old != null && (ch.new == null || ch.new == Const.LIFT) &&
+                                                            pieceColor(ch.old) != state.mySide
+                                                }
+                                            state.updateCellImgs(
+                                                reGrab.corrected,
+                                                commitChanges,
+                                                reGrab.scan.driftCells,
+                                            )
+                                            LogBus.log(
+                                                LogKind.DEBUG,
+                                                LogTag.SELF,
+                                                "敌着未复现（首帧为动画瞬时态），仅提交我方走子"
+                                            )
+                                            if (selfMatePending) {
+                                                selfMatePending = false
+                                                finishGame("我方绝杀，${state.mySide.opponent.cn}方无路可走")
+                                            } else {
+                                                checkmateProbe()
+                                            }
+                                            committed = true
+                                        }
+                                    }
+                                } finally {
+                                    reGrab.corrected.release()
+                                }
                             }
+                            if (committed) {
+                                state.resignStreak = 0
+                                emit()
+                                return VerifyOutcome.DONE_OK
+                            }
+                            LogBus.log(
+                                LogKind.DEBUG,
+                                LogTag.SELF,
+                                "两帧确认未通过（敌着未复现，疑似动画中途帧），丢弃本帧继续校验",
+                            )
+                            // 未确认：不提交，落到循环继续重新识别
                         }
-                        state.updateCellImgs(grabbed.corrected, changes, grabbed.scan.driftCells)
-                        state.resignStreak = 0
-                        emit()
-                        return VerifyOutcome.DONE_OK
                     }
 
                     // LIFTED / SILENT / NOISY 均非落定结论，继续等到超时；末帧再判定返回。
@@ -719,10 +870,17 @@ class BotSession(private val context: Context) {
                     }
 
                     SelfFrameResult.SILENT -> {
+                        // 「走子已稳判提交则直接确认」已前置到 verify 入口（见函数开头）；
+                        // 此处 SILENT = 真静默（点击被吞时 committed 起点仍有子）→ 继续等到超时。
                         state.resignStreak = 0
                     }
 
                     SelfFrameResult.NOISY -> {
+                        // T-B（2026-09-06）恢复分支：变化恰为一步合法敌方走子且我方 expected 未执行
+                        // → 判「点击被吞、对方先走了」，提交敌着并交 doMove 重试本步，防轮次错位后 NOISY 死循环。
+                        if (tryRecoverSwallowedTap(changes, expected)) {
+                            return VerifyOutcome.RETRY_AFTER_ENEMY
+                        }
                         // 循环内不校验结束画面：末帧为 NOISY 时由循环外（下方）连续校验结束画面，
                         // 对齐「异常才校验」原则，不占用逐帧循环。
                     }
@@ -734,8 +892,11 @@ class BotSession(private val context: Context) {
 
         // 末帧为 NOISY（无法判断）时循环外处理：和棋弹窗与终局都会产生大量棋子变动（NOISY），
         // 且会遮挡棋盘 → 仅在此分支校验一次和棋弹窗 + 连续校验结束画面（对齐「异常才校验」）。
+        // SELF_THEN_ENEMY 未确认（T-D 两帧确认失败后超时）语义同为「无法判断」，一并纳入；
         // SILENT（零变化=静止非遮挡）/LIFTED（我方棋子刚提起、明显在动画中）不需要校验。
-        if (lastFc?.result == SelfFrameResult.NOISY) {
+        if (lastFc?.result == SelfFrameResult.NOISY ||
+            lastFc?.result == SelfFrameResult.SELF_THEN_ENEMY
+        ) {
             // 1) 连续校验结束画面：逐帧 grab 调 updateResign，连续 RESIGN_CONFIRM_COUNT 次确认才终局
             //    （终局也有遮挡动画、棋子变动多，必落在 NOISY 区间，故放此处）。
             repeat(Const.RESIGN_CONFIRM_COUNT) {
@@ -786,6 +947,44 @@ class BotSession(private val context: Context) {
         }
     }
 
+    /**
+     * T-B 恢复分支（2026-09-06）：verify 期间 NOISY 帧若恰好构成一步「合法敌方走子」且我方 expected
+     * 尚未执行 → 判「我方点击被吞、对方先走了」。提交敌着（含 cellImgs/ponder 清理）后由
+     * doMove 以 RETRY_AFTER_ENEMY 重试本步走子，阻断「轮次错位 → 点击全被吞 → NOISY 空转」连锁。
+     * T-D 补充：NOISY 帧推断的敌着同样可能是动画中途帧（几何合法、伪合法校验拦截不了），
+     * 走 reconfirmEnemyMoved 两帧一致确认，未复现则返回 false 交 verify 继续观察。
+     */
+    private suspend fun tryRecoverSwallowedTap(changes: List<Change>, expected: Move): Boolean {
+        if (changes.size != 2) return false
+        val moved = inferMove(changes) ?: return false
+        if (pieceColor(moved.piece) == state.mySide) return false
+        // 伪合法校验（动画中间帧的非法推断在此被拒）
+        if (!isPseudoLegal(state.board, moved, state.mySide)) return false
+        // 我方 expected 确实未执行：committed 起点仍应有我方棋子
+        if (state.board[expected.src.first][expected.src.second] == null) return false
+        // 两帧一致确认后再提交（对称：与 waitForEnemyMove 的 MOVED 路径同一确认/提交链路）
+        val confirmGrab = reconfirmEnemyMoved(moved) ?: return false
+        try {
+            setStatus(BotStatus.ENEMY_CONFIRM)
+            commitEnemyMove(moved, confirmGrab)
+        } finally {
+            confirmGrab.corrected.release()
+        }
+        LogBus.log(
+            LogKind.WARN,
+            LogTag.SELF,
+            "我方点击被吞（对方先走了）：已记录敌着 ${
+                gridToSquare(
+                    moved.src.first,
+                    moved.src.second,
+                    state.mySide
+                )
+            }->" +
+                    "${gridToSquare(moved.dst.first, moved.dst.second, state.mySide)}，重试我方走子"
+        )
+        return true
+    }
+
     // ---------- 敌方走棋检测 ----------
 
     // 棋盘识别提速（方案 A 变种，2026-08-30）：recognizeBoardChanged 每轮逐格 10x10 中心小图 diff，
@@ -804,47 +1003,32 @@ class BotSession(private val context: Context) {
                 val newBoard = grabbed.scan.board
                 val changes = grabbed.scan.changes
                 if (!running || interrupted || state.gameOver) break
-                val frame = classifyEnemyFrame(changes, state.mySide)
+                val frame = classifyEnemyFrame(changes, state.mySide, state.board)
                 when (frame.result) {
                     EnemyFrameResult.MOVED -> {
                         frame.enemyMove?.let { move ->
-                            setStatus(BotStatus.ENEMY_CONFIRM)
-                            // 敌方走子是否命中预测：命中→ponderHit 取预搜结果，未命中→stop 丢弃
-                            val enemyIccs =
-                                gridToSquare(
-                                    move.src.first,
-                                    move.src.second,
-                                    state.mySide
-                                ) +
-                                        gridToSquare(
-                                            move.dst.first,
-                                            move.dst.second,
-                                            state.mySide
-                                        )
-                            if (pendingPonderMove != null && enemyIccs == pendingPonderMove) {
-                                pendingPonderResult = engine.ponderHit()
-                                LogBus.log(
-                                    LogKind.DEBUG,
-                                    LogTag.ENGINE,
-                                    "敌方走子命中预测（$enemyIccs），ponderHit 取回预搜结果"
-                                )
-                            } else if (pendingPonderMove != null) {
-                                engine.stopPonder()
-                                LogBus.log(
-                                    LogKind.DEBUG,
-                                    LogTag.ENGINE,
-                                    "敌方走子未命中预测（$enemyIccs≠${pendingPonderMove}），丢弃 ponder"
-                                )
+                            // T-D 两帧一致确认（2026-09-06）：首帧 MOVED 可能是动画中途帧
+                            //（如車 C0→C9 途经 C5，几何合法、伪合法校验拦截不了），复抓复判
+                            //（不加显式延时，单次 grabBoard 已够），敌着两帧一致才提交。
+                            val confirmGrab = reconfirmEnemyMoved(move)
+                            if (confirmGrab == null) {
+                                if (running && !interrupted && !state.gameOver) {
+                                    LogBus.log(
+                                        LogKind.DEBUG,
+                                        LogTag.ENEMY,
+                                        "两帧确认未通过（敌着未复现，疑似动画中途帧），丢弃本帧继续等待",
+                                    )
+                                }
+                                // 丢弃本帧：不计噪声，回循环重新识别（落定后会再次 MOVED 并通过确认）
+                            } else {
+                                try {
+                                    setStatus(BotStatus.ENEMY_CONFIRM)
+                                    commitEnemyMove(move, confirmGrab)
+                                    return
+                                } finally {
+                                    confirmGrab.corrected.release()
+                                }
                             }
-                            pendingPonderMove = null
-                            // 与 board 同步局部更新（Moved 帧已落定）；driftCells 一并自愈白点/高亮漂移
-                            state.updateCellImgs(
-                                grabbed.corrected,
-                                changes,
-                                grabbed.scan.driftCells
-                            )
-                            applyEnemyMove(move)
-                            return
                         }
                     }
 
@@ -898,44 +1082,30 @@ class BotSession(private val context: Context) {
                             val reMove = grabBoard(cap)
                             if (reMove != null) {
                                 try {
-                                    val rf = classifyEnemyFrame(reMove.scan.changes, state.mySide)
+                                    val rf = classifyEnemyFrame(
+                                        reMove.scan.changes,
+                                        state.mySide,
+                                        state.board
+                                    )
                                     if (rf.result == EnemyFrameResult.MOVED && rf.enemyMove != null) {
                                         val move = rf.enemyMove
-                                        setStatus(BotStatus.ENEMY_CONFIRM)
-                                        val enemyIccs =
-                                            gridToSquare(
-                                                move.src.first,
-                                                move.src.second,
-                                                state.mySide
-                                            ) +
-                                                    gridToSquare(
-                                                        move.dst.first,
-                                                        move.dst.second,
-                                                        state.mySide
-                                                    )
-                                        if (pendingPonderMove != null && enemyIccs == pendingPonderMove) {
-                                            pendingPonderResult = engine.ponderHit()
+                                        // T-D：复判帧同样过两帧一致确认（与首个 MOVED 路径对称共用提交链路）
+                                        val confirmGrab = reconfirmEnemyMoved(move)
+                                        if (confirmGrab == null) {
                                             LogBus.log(
                                                 LogKind.DEBUG,
-                                                LogTag.ENGINE,
-                                                "敌方走子命中预测（$enemyIccs），ponderHit 取回预搜结果",
+                                                LogTag.ENEMY,
+                                                "噪声复判帧两帧确认未通过，按噪声流程继续",
                                             )
-                                        } else if (pendingPonderMove != null) {
-                                            engine.stopPonder()
-                                            LogBus.log(
-                                                LogKind.DEBUG,
-                                                LogTag.ENGINE,
-                                                "敌方走子未命中预测（$enemyIccs≠${pendingPonderMove}），丢弃 ponder",
-                                            )
+                                        } else {
+                                            try {
+                                                setStatus(BotStatus.ENEMY_CONFIRM)
+                                                commitEnemyMove(move, confirmGrab)
+                                                return
+                                            } finally {
+                                                confirmGrab.corrected.release()
+                                            }
                                         }
-                                        pendingPonderMove = null
-                                        state.updateCellImgs(
-                                            reMove.corrected,
-                                            reMove.scan.changes,
-                                            reMove.scan.driftCells,
-                                        )
-                                        applyEnemyMove(move)
-                                        return
                                     }
                                 } finally {
                                     reMove.corrected.release()
@@ -1013,7 +1183,7 @@ class BotSession(private val context: Context) {
 
     private suspend fun checkmateProbe(): Boolean {
         // Option A：仅终局附近（子少）才二次调用引擎验证，常规中局主搜已覆盖将死，跳过以减少引擎开销
-        val count = state.board.sumOf { row -> row.count { it != null } }
+        val count = pieceCount(state.board)
         if (count > Const.ENDGAME_PROBE_PIECE_MAX) {
             LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "非终局（${count} 子），跳过绝杀二次探测")
             return false
@@ -1122,14 +1292,69 @@ class BotSession(private val context: Context) {
         val corrected = cap.grab() ?: return null
         val grabMs = (System.nanoTime() - tGrab) / 1_000_000
         val tRecog = System.nanoTime()
-        val scan = recognizeBoardChanged(corrected, templates(), state.prevCellImgs, state.board)
+        val scan = recognizeBoardChanged(corrected, state.prevCellImgs, state.board)
         val recogMs = (System.nanoTime() - tRecog) / 1_000_000
+        // 变化格详情并入本行（2026-09-06）：校验帧等下游日志只留结论，逐格明细统一在 grabBoard 查看
+        val changeDetail = scan.changes.joinToString(", ") {
+            "${gridToSquare(it.r, it.c, state.mySide)} ${it.old ?: "空"}->${it.new ?: "空"}"
+        }
+        val changePart =
+            if (scan.changes.isEmpty()) "变化 0 格" else "变化 ${scan.changes.size} 格: $changeDetail"
+        val transitPart =
+            if (scan.transitLifts > 0) " / 途经瞬态剔除 ${scan.transitLifts} 格" else ""
         LogBus.log(
             LogKind.DEBUG,
             LogTag.VISION,
-            "grabBoard 耗时拆解 grab=${grabMs}ms recog=${recogMs}ms（diff 命中 ${scan.diffFires} 格 / 变化 ${scan.changes.size} 格）"
+            "grabBoard 耗时拆解 grab=${grabMs}ms recog=${recogMs}ms（diff 命中 ${scan.diffFires} 格 / $changePart$transitPart）"
         )
         return Grabbed(corrected, scan)
+    }
+
+    /**
+     * T-D 敌着两帧一致确认（2026-09-06）：立即复抓复判（不加显式延时——单次 grabBoard 本身
+     * ~70-100ms，已足够越过半格飞行窗口），敌着在复判帧再次推断出才视为落定——动画中途帧
+     * （如車 C0→C9 途经 C5，几何合法、伪合法校验拦截不了）的 cls 读数必已变化，两帧同着法即排除。
+     *
+     * @return 复抓帧（确认时供提交用，调用方负责 release）；未确认/中断/对局结束返回 null
+     */
+    private suspend fun reconfirmEnemyMoved(move: Move): Grabbed? {
+        if (!running || interrupted || state.gameOver) return null
+        if (!running || interrupted || state.gameOver) return null
+        val reGrab = grabBoard(capture) ?: return null
+        val rf = classifyEnemyFrame(reGrab.scan.changes, state.mySide, state.board)
+        return if (rf.result == EnemyFrameResult.MOVED && rf.enemyMove == move) reGrab else {
+            reGrab.corrected.release()
+            null
+        }
+    }
+
+    /**
+     * 敌着提交公共路径（三处提交点对称复用：waitForEnemyMove MOVED / 噪声复判 / 吞点击恢复）：
+     * ponder 命中取预搜、未命中丢弃 → cellImgs 与 board 局部同步更新 → applyEnemyMove。
+     */
+    private fun commitEnemyMove(move: Move, grab: Grabbed) {
+        val enemyIccs = gridToSquare(move.src.first, move.src.second, state.mySide) +
+                gridToSquare(move.dst.first, move.dst.second, state.mySide)
+        if (pendingPonderMove != null) {
+            if (enemyIccs == pendingPonderMove) {
+                pendingPonderResult = engine.ponderHit()
+                LogBus.log(
+                    LogKind.DEBUG,
+                    LogTag.ENGINE,
+                    "敌方走子命中预测（$enemyIccs），ponderHit 取回预搜结果"
+                )
+            } else {
+                engine.stopPonder()
+                LogBus.log(
+                    LogKind.DEBUG,
+                    LogTag.ENGINE,
+                    "敌方走子未命中预测（$enemyIccs≠${pendingPonderMove}），丢弃 ponder"
+                )
+            }
+            pendingPonderMove = null
+        }
+        state.updateCellImgs(grab.corrected, grab.scan.changes, grab.scan.driftCells)
+        applyEnemyMove(move)
     }
 
     private fun finishGame(reason: String) {

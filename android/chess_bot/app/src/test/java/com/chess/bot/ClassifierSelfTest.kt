@@ -2,6 +2,7 @@ package com.chess.bot
 
 import com.chess.bot.game.Board
 import com.chess.bot.game.Change
+import com.chess.bot.game.Const
 import com.chess.bot.game.GameState
 import com.chess.bot.game.Move
 import com.chess.bot.game.SelfFrameResult
@@ -39,6 +40,22 @@ class ClassifierSelfTest {
         assertEquals("r_R", state.boardAt(0, 3))
         assertEquals(Side.BLACK, state.turn)
         assertEquals(1, 1) // clock 非吃 +1（GameState 内部断言见 apply 用例）
+    }
+
+    @Test
+    fun `空格变 lift 途经瞬态被剔除 我方落定帧仍判 SELF_DONE`() {
+        // 2026-09-06 02:27 日志复盘：我方車 h6→h0 落定帧旁，敌方棋子飞行途经格呈「空→lift」
+        // 伪影（空格不可能被提起）；剔除后按剩余 2 格正常推断，不再 NOISY 空转
+        val b = TB.empty().also { it[6][1] = "b_r" }
+        val after = TB.copy(b).also { it[6][1] = null; it[0][1] = "b_r" }
+        val changes = listOf(
+            Change(6, 1, "b_r", null),
+            Change(0, 1, null, "b_r"),
+            Change(5, 4, null, Const.LIFT),
+        )
+        val fc = classifySelfFrame(changes, after, Move(6 to 1, 0 to 1, "b_r"), Side.BLACK)
+        assertEquals(SelfFrameResult.SELF_DONE, fc.result)
+        assertEquals(Move(6 to 1, 0 to 1, "b_r", null), fc.selfMove)
     }
 
     @Test
@@ -211,6 +228,27 @@ class ClassifierSelfTest {
         assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertNull(fc.selfMove?.captured)
         assertTrue(Board::class.java.isInstance(after))
+    }
+
+    @Test
+    fun `n1 起点变 lift 直接判提子`() {
+        // cls 识别出「提起棋子」(lift)：无需依赖「格子变空」推断，直接确认
+        val b = TB.empty().also { it[7][3] = "r_R"; it[5][5] = "b_r" }
+        val lifted = TB.copy(b).also { it[7][3] = Const.LIFT }
+        val changes = listOf(Change(7, 3, "r_R", Const.LIFT))
+        val fc =
+            classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.LIFTED, fc.result)
+    }
+
+    @Test
+    fun `n1 变为其他棋子不算提子`() {
+        val b = TB.empty().also { it[7][3] = "r_R"; it[5][5] = "b_r" }
+        val after = TB.copy(b).also { it[7][3] = "b_p" }
+        val changes = listOf(Change(7, 3, "r_R", "b_p"))
+        val fc =
+            classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
 }

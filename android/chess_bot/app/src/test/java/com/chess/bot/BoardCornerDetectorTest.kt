@@ -59,4 +59,64 @@ class BoardCornerDetectorTest {
         assertEquals(1, kept.size)
         assertEquals(0.95, kept[0].score, 1e-9)
     }
+
+    // ---------- isPlausibleQuad：det 结果几何合理性（1080x2400） ----------
+
+    private val W = 1080
+    private val H = 2400
+
+    @Test
+    fun isPlausibleQuad_acceptsTypicalBoard() {
+        // 典型开局四角（黑上红下）：横跨约 96% 宽、纵跨约 68% 高
+        val quad = listOf(
+            35.0 to 380.0, 1045.0 to 380.0,
+            35.0 to 2020.0, 1045.0 to 2020.0,
+        )
+        assertTrue(BoardCornerDetector.isPlausibleQuad(quad, W, H))
+    }
+
+    @Test
+    fun isPlausibleQuad_acceptsSlightlySkewedQuad() {
+        // 轻微透视/偏移仍应通过
+        val quad = listOf(
+            50.0 to 400.0, 1030.0 to 370.0,
+            40.0 to 2000.0, 1050.0 to 2030.0,
+        )
+        assertTrue(BoardCornerDetector.isPlausibleQuad(quad, W, H))
+    }
+
+    @Test
+    fun isPlausibleQuad_rejectsClusteredGarbage() {
+        // det 垃圾输出：四点聚在一起
+        val quad = listOf(
+            500.0 to 500.0, 510.0 to 505.0,
+            495.0 to 515.0, 520.0 to 520.0,
+        )
+        assertTrue(!BoardCornerDetector.isPlausibleQuad(quad, W, H))
+    }
+
+    @Test
+    fun isPlausibleQuad_rejectsTooNarrow() {
+        // 横向跨度不足屏宽 50%（如只框住半边棋盘）
+        val quad = listOf(
+            400.0 to 380.0, 900.0 to 380.0,
+            400.0 to 2020.0, 900.0 to 2020.0,
+        )
+        assertTrue(!BoardCornerDetector.isPlausibleQuad(quad, W, H))
+    }
+
+    @Test
+    fun isPlausibleQuad_rejectsOutOfBounds() {
+        // 角点远超屏幕范围
+        val quad = listOf(
+            35.0 to -500.0, 1045.0 to 380.0,
+            35.0 to 2020.0, 1045.0 to 3000.0,
+        )
+        assertTrue(!BoardCornerDetector.isPlausibleQuad(quad, W, H))
+    }
+
+    @Test
+    fun isPlausibleQuad_rejectsWrongCount() {
+        assertTrue(!BoardCornerDetector.isPlausibleQuad(listOf(0.0 to 0.0), W, H))
+    }
 }

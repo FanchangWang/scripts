@@ -5,9 +5,9 @@ import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogKind
 import com.chess.bot.log.LogTag
 import com.chess.bot.service.Capture
+import com.chess.bot.vision.PieceClsModel
 import com.chess.bot.vision.Recognizer
 import com.chess.bot.vision.TextMatcher
-import com.chess.bot.vision.VisionInit
 import kotlinx.coroutines.delay
 import org.opencv.core.Mat
 
@@ -32,7 +32,7 @@ class AutoNext(
         var retryCount = 0
         val waiter = SettleWaiter(LogTag.NEXT)
         val startAt = System.nanoTime()
-        val templates = VisionInit.loadPieceTemplates(context)
+        PieceClsModel.ensure(context)
 
         while (true) {
             if (!shouldContinue()) return null
@@ -107,8 +107,8 @@ class AutoNext(
             // 所有权移交：命中返回路径时 Mat 归调用方释放；其余路径本层 finally 立即释放
             var handOffToCaller = false
             try {
-                val board = Recognizer.analyzeBoard(corrected, templates)
-                val count = board.sumOf { row -> row.count { it != null } }
+                val board = Recognizer.analyzeBoard(corrected)
+                val count = pieceCount(board)
                 if (count == 0) {
                     LogBus.log(LogKind.DEBUG, LogTag.NEXT, "未识别到结算文字，棋盘为空")
                 } else {

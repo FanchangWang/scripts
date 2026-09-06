@@ -50,8 +50,9 @@ data class SelfFrame(
 
 /** verifyForSelfMove 多帧校验后的最终结论（返回给 doMove 的编排契约，与帧分类解耦）。
  *  DONE_OK=走棋成功 / DONE_END=走棋成功且终局 / LIFTED=仅见提子（未落定）/
- *  SILENT=无变动（棋盘未动）/ NOISY=无法判断（未落定，交 doMove 重试）。 */
-enum class VerifyOutcome { DONE_OK, DONE_END, LIFTED, SILENT, NOISY }
+ *  SILENT=无变动（棋盘未动）/ NOISY=无法判断（未落定，交 doMove 重试）/
+ *  RETRY_AFTER_ENEMY=点击被吞且敌方已先走（敌着已提交，交 doMove 重试本步，不计零变化守卫）。 */
+enum class VerifyOutcome { DONE_OK, DONE_END, LIFTED, SILENT, NOISY, RETRY_AFTER_ENEMY }
 
 /**
  * 敌方走棋检测单帧结论（与 SelfFrame 对称：result 判断，enemyMove 取移动数据；移动成功时 enemyMove 有值）。
@@ -144,9 +145,11 @@ class GameState {
 
     fun boardAt(r: Int, c: Int): String? = board[r][c]
 
-    /** 仅供识别/测试写入整盘布局。 */
+    /** 仅供识别/测试写入整盘布局（lift 提子瞬时态归一化为 null，FEN/走子路径零感知）。 */
     fun replaceBoard(newBoard: Board) {
-        board = newBoard
+        board = Array(ROWS) { r ->
+            Array(COLS) { c -> if (newBoard[r][c] == Const.LIFT) null else newBoard[r][c] }
+        }
     }
 
     // ---------- 控制层写入接口（BotSession 使用） ----------

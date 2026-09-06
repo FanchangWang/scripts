@@ -90,7 +90,9 @@ class BotForegroundService : Service() {
             // 使首次识别与第一步思考不再排队等冷启动
             serviceScope.launch(Dispatchers.Default) {
                 com.chess.bot.vision.VisionInit.init(appCtx)
-                com.chess.bot.vision.VisionInit.loadPieceTemplates(appCtx)
+                // 预热：cls 会话（棋子识别）+ 角子模板套（四角校准回退用）；det 会话仅校准路径按需加载
+                com.chess.bot.vision.PieceClsModel.ensure(appCtx)
+                com.chess.bot.vision.VisionInit.loadCornerTemplateSets(appCtx)
             }
             if (!isCalibration) {
                 serviceScope.launch(Dispatchers.Default) {

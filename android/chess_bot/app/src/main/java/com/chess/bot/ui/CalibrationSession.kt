@@ -43,11 +43,18 @@ object CalibrationSession {
         private set
     var matchScores: List<Double> = emptyList()
         private set
+
+    /** 四角识别来源："template:<setName>"（模板匹配）或 "det"（YOLO det 回退）。 */
+    var detectSource: String = ""
+        private set
     val validationPassed = mutableStateOf(false)
     val errorMsg = mutableStateOf<String?>(null)
 
     /** 截图识别进行中（防抖：识别期间忽略再次点击「截图」）。 */
     val recognizing = mutableStateOf(false)
+
+    /** 识别进度文案（识别中界面实时展示，如「模板匹配 set_03（4/11）…」）。 */
+    val progress = mutableStateOf("")
     var width = 0
         private set
     var height = 0
@@ -67,6 +74,10 @@ object CalibrationSession {
         errorMsg.value = null
         manualCorners = null
         screen.value = CalibrationScreen.STEP1
+        // 预热 YOLO det ONNX 会话（首次加载可能数秒，避免截图后才开始加载）
+        scope.launch(Dispatchers.Default) {
+            runCatching { com.chess.bot.vision.CornerDetModel.ensure(context) }
+        }
     }
 
     /** 步骤 1「去截图」：截屏管线已运行则隐藏 App 显悬浮条；否则先请求屏幕捕获授权。 */
@@ -117,19 +128,50 @@ object CalibrationSession {
                 return@launch
             }
             screen.value = CalibrationScreen.RECOGNIZING
-            // 3. 后台识别（OpenCV 初始化 + 模板加载 + 角点检测可能耗时数秒）
+            LogBus.log(
+                LogKind.DEBUG, LogTag.CALIB,
+                "截图完成 ${frame.width}x${frame.height}，开始识别"
+            )
+            // 3. 后台识别（OpenCV 初始化 + det → 全套角子模板精修 → cls 32 子校验，
+            //    首次含 ONNX 会话加载可能耗时数秒）
             try {
-                val templates = VisionInit.loadPieceTemplates(context)
                 val (result, ok) = withContext(Dispatchers.Default) {
+                    progress.value = "初始化 OpenCV / 加载模板套…"
+                    val cornerSets = VisionInit.loadCornerTemplateSets(context)
                     val gray = BoardCornerDetector.toGray(frame)
-                    val r = BoardCornerDetector.detect(gray, templates)
-                    gray.release()
-                    val passed = BoardCornerDetector.validateAsOpening(frame, r.corners, templates)
-                    r to passed
+                    val detected = try {
+                        BoardCornerDetector.detectWithFallback(
+                            context, gray, frame, cornerSets
+                        ) { progress.value = it }
+                    } finally {
+                        gray.release()
+                    }
+                    if (detected == null) {
+                        null to false
+                    } else {
+                        detected to BoardCornerDetector.validateAsOpening(
+                            frame, detected.corners
+                        ) { progress.value = it }
+                    }
+                }
+                if (result == null) {
+                    // 全部手段失败：仍进步骤 2（保留截图），展示失败横幅，引导手动微调
+                    capturedBitmap = frame
+                    corners = null
+                    matchScores = emptyList()
+                    detectSource = ""
+                    validationPassed.value = false
+                    manualCorners = null
+                    errorMsg.value =
+                        "模板与 YOLO det 均未能定位棋盘四角，请点击「手动微调」拖动 4 个角标"
+                    LogBus.log(LogKind.ERROR, LogTag.CALIB, errorMsg.value ?: "")
+                    screen.value = CalibrationScreen.RESULT
+                    return@launch
                 }
                 capturedBitmap = frame
                 corners = result.corners
                 matchScores = result.scores
+                detectSource = result.source
                 validationPassed.value = ok
                 errorMsg.value = null
                 manualCorners = null
@@ -137,7 +179,7 @@ object CalibrationSession {
                 LogBus.log(
                     LogKind.OK,
                     LogTag.CALIB,
-                    "识别完成，开局校验${if (ok) "通过" else "未通过"}"
+                    "识别完成（${result.source}），开局校验${if (ok) "通过" else "未通过"}"
                 )
             } catch (e: Exception) {
                 frame.recycle()
@@ -149,12 +191,13 @@ object CalibrationSession {
                 screen.value = CalibrationScreen.HOME
             } finally {
                 recognizing.value = false
+                progress.value = ""
             }
         }
     }
 
     fun openManual() {
-        if (corners == null) return
+        // 无自动识别结果也允许进入：手动微调以屏幕比例默认位置初始化角标
         screen.value = CalibrationScreen.MANUAL
     }
 
@@ -164,19 +207,45 @@ object CalibrationSession {
 
     fun setManualCorners(c: List<Pair<Double, Double>>) {
         manualCorners = c
+        errorMsg.value = null
+        // 手动微调改变了坐标：立即重跑 32 子校验刷新结果页徽标（保存时还会再次强制校验）
+        val frame = capturedBitmap ?: return
+        scope.launch {
+            validationPassed.value = withContext(Dispatchers.Default) {
+                BoardCornerDetector.validateAsOpening(frame, c)
+            }
+        }
     }
 
-    /** 保存：优先手动微调结果，否则自动识别结果；写 JSON 并失效 Homography 缓存。 */
+    /**
+     * 保存：优先手动微调结果，否则自动识别结果。
+     * 2026-09-05 强制约束：任一来源保存前都必须通过 cls 32 子校验，未通过禁止保存。
+     */
     fun save(context: Context, onSaved: () -> Unit) {
         val c = manualCorners ?: corners
         if (c == null) {
             LogBus.log(LogKind.WARN, LogTag.CALIB, "无可用四角，无法保存")
             return
         }
-        Homography.invalidate(width, height)
-        BoardCornersStore.put(width, height, c, context)
-        screen.value = CalibrationScreen.HOME
-        onSaved()
+        val frame = capturedBitmap
+        if (frame == null) {
+            LogBus.log(LogKind.WARN, LogTag.CALIB, "无校准截图，无法执行 32 子校验")
+            return
+        }
+        scope.launch {
+            val ok = withContext(Dispatchers.Default) {
+                BoardCornerDetector.validateAsOpening(frame, c)
+            }
+            if (!ok) {
+                errorMsg.value = "32 子校验未通过，已禁止保存：请重新截图或手动微调四角"
+                LogBus.log(LogKind.WARN, LogTag.CALIB, "保存被拦截：32 子校验未通过")
+                return@launch
+            }
+            Homography.invalidate(width, height)
+            BoardCornersStore.put(width, height, c, context)
+            screen.value = CalibrationScreen.HOME
+            onSaved()
+        }
     }
 
     private fun bringHome(context: Context) {
@@ -193,6 +262,7 @@ object CalibrationSession {
         corners = null
         manualCorners = null
         matchScores = emptyList()
+        detectSource = ""
         validationPassed.value = false
         errorMsg.value = null
         screen.value = CalibrationScreen.HOME

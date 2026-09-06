@@ -32,7 +32,21 @@ object Const {
     const val CORRECT_CELL = 100
     const val CORRECT_W = 900
     const val CORRECT_H = 1000
-    const val CORRECT_TEMPLATE_SIZE = 60
+
+    // ---------- YOLO ONNX 视觉（cls 棋子识别 / det 四角回退） ----------
+    // cls：矫正空间格心裁 64x64 喂分类模型（训练输入即 64，勿改）
+    const val CLS_CELL = 64
+
+    // det 四角：letterbox 1280（推理 imgsz 必须严格等于训练 imgsz），极低 conf 阈值下每类 argmax
+    const val DET_IMGSZ = 1280
+    const val DET_CONF = 0.001
+    const val CLS_LIFT_GATE = 0.30
+
+    /** Board 格值的「提子」语义（cls lift 类）：帧分类瞬时态，提交点归一化为 null。 */
+    const val LIFT = "lift"
+    // lift 混淆门控（仅帧差触发格）：top1 为棋子但 lift softmax 概率 ≥ 此值 → 判动画帧，按提子返回。
+    // 真机日志显示走子动画/选中高亮会把提起中的棋子误判成其他棋子（如 黑象->黑車）；
+    // 模型概率校准好（静止棋子 top1≈1.0、lift≈0），0.30 余量充足。
 
     // ---------- 延时（毫秒） ----------
     // 落子间隔：按下到松开的最短保持时间；DataStore 持久化用户可在设置页「对弈」分组覆盖
@@ -47,7 +61,7 @@ object Const {
 
     // 走棋检测间隔：相邻校验帧的短间隔；DataStore 持久化用户可在设置页「对弈」分组覆盖。
     // 该值仅作为 verify 循环内「首帧之后」的采样间隔；verify 总检测时长由 firstWaitMs + 300ms
-    // 时间窗控制（与 VERIFY_NEXT_FRAME_MS 解耦，无论多小都能保证至少 300ms 复检）。
+    // 时间窗起步控制（2026-09-06：动画帧按 300ms 顺延，硬顶 +900ms；与 VERIFY_NEXT_FRAME_MS 解耦）。
     // （原 MOVE_VERIFY_COUNT 固定次数已废弃，改时间窗控制。）
     const val VERIFY_NEXT_FRAME_MS = 30
 
@@ -85,6 +99,11 @@ object Const {
     const val ENEMY_RECHECK_WAIT_MS = 300L // 噪声帧延时复检
     const val ENEMY_NOISY_MAX = 3 // 连续噪声帧上限，超过则暂停自动对弈
 
+    // 敌着两帧一致确认（T-D，2026-09-06）：首帧 MOVED 可能是动画中途帧（如車 C0→C9 途经 C5，
+    // 几何合法、伪合法校验拦截不了），复抓复判、两帧同着法才提交。原显式延时 ENEMY_MOVE_SETTLE_MS
+    // （=30ms 半格飞行时间）已于 2026-09-06 02:30 去除：实测单次 grabBoard 耗时 ~70-100ms，
+    // 复抓本身已足够越过半格飞行窗口，无需额外等待。verify 的 N3/N4（SELF_THEN_ENEMY）敌着同规则确认。
+
     // 敌方走棋检测（2026-08-30 调整）：已移除 frameDiff 轻量帧差轮询——实测对单步走棋子差不敏感、
     // 整局 100% 漏判，回退成定时强制识别反而每步多等 ~200ms。现改为 waitForEnemyMove 每轮直接全量
     // recognizeBoard，检出延迟收敛到「一次识别耗时」(~250ms)，以更高 CPU 占用换稳定即时检出。
@@ -102,6 +121,8 @@ object Const {
     // ---------- 图片识别（矫正棋盘空间，像素） ----------
     const val DIFF_WINDOW = 10
     const val DIFF_THRESHOLD = 8
+
+    // 【已废弃】模板匹配棋子识别已由 YOLO cls 替代（2026-09-05）；仅四角校准仍用模板匹配（BoardCornerDetector 自带阈值）
     const val MATCH_SEARCH_HALF = 10
     const val EMPTY_MATCH_THRESHOLD = 0.8
 

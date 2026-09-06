@@ -63,6 +63,18 @@ class SettleWaiterTest {
     }
 
     @Test
+    fun `将帅未同时存在不计稳定永不返回`() {
+        // 2026-09-06 真机日志 bug：大厅/过渡帧识别出 2 个棋子曾进入稳定计数（稳定 1/3）。
+        // 门控要求：将/帥缺任一格一律视为过渡帧，无论多少帧相同都不返回 Ready。
+        val b = TB.fullBoard(Side.RED)
+        b[0][4] = null // 黑將
+        b[9][4] = null // 红帥
+        repeat(5) {
+            assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting)
+        }
+    }
+
+    @Test
     fun `非31非32子数连续三帧稳定后返回`() {
         val b = boardMissing(3) // 29 子
         // 第 1 帧记录 prevBoard，第 2/3 帧累计稳定计数 1/2，第 4 帧稳定计数 3 触发

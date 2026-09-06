@@ -18,6 +18,10 @@ fun makeEmptyBoard(): Board = Array(ROWS) { Array<String?>(COLS) { null } }
 
 fun copyBoard(board: Board): Board = Array(ROWS) { r -> board[r].copyOf() }
 
+/** 棋子总数（lift 提子瞬时态不计入，对齐空格）。 */
+fun pieceCount(board: Board): Int =
+    board.sumOf { row -> row.count { it != null && it != Const.LIFT } }
+
 // 棋子 ID -> FEN 字符（黑小写/红大写）
 val PIECE_FEN: Map<String, Char> = mapOf(
     "b_r" to 'r', "b_n" to 'n', "b_b" to 'b', "b_a" to 'a',
@@ -97,9 +101,12 @@ fun squareToGrid(square: String, mySide: Side = Side.RED): Pair<Int, Int> {
 fun pieceColor(pieceId: String): Side =
     if (pieceId.startsWith("r_")) Side.RED else Side.BLACK
 
-/** 棋子 ID -> 中文名（如 b_r -> 黑車）。 */
+/** 棋子 ID -> 中文名（如 b_r -> 黑車）；lift 语义格返回「提起」（否则 PIECE_CN 查不到拼出「黑null」）。 */
 fun pieceLabel(pieceId: String): String =
-    (if (pieceColor(pieceId) == Side.RED) "红" else "黑") + PIECE_CN[pieceId]
+    when (pieceId) {
+        Const.LIFT -> "提起"
+        else -> (if (pieceColor(pieceId) == Side.RED) "红" else "黑") + PIECE_CN[pieceId]
+    }
 
 /** 棋盘布局 -> FEN 字符串（ICCS 绝对坐标系，黑方在上；按我方红黑翻转行列）。 */
 fun fenOfBoard(
