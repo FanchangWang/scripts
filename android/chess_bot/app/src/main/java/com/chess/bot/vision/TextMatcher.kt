@@ -83,12 +83,17 @@ object TextMatcher {
 
     /**
      * 自动下一局扫描选词（对齐 python _scan_gameover_text 的优先级语义）：
-     * 遮罩类词表优先于按钮类词表；同类内按列表顺序（先命中先返回），忽略跨词分数比较。
+     * 终止类词表（命中即自动中断对弈）优先于遮罩类词表，遮罩类词表优先于按钮类词表；
+     * 同类内按列表顺序（先命中先返回），忽略跨词分数比较。
      */
     suspend fun findGameoverScan(context: Context, img: Bitmap): TextHit? =
         matchScanWords(
-            ocrForWords(context, img, Const.GAMEOVER_BACK_WORDS + Const.GAMEOVER_BUTTON_WORDS),
+            ocrForWords(
+                context, img,
+                Const.GAMEOVER_INTERRUPT_WORDS + Const.GAMEOVER_BACK_WORDS + Const.GAMEOVER_BUTTON_WORDS,
+            ),
             Const.GAMEOVER_BACK_WORDS, Const.GAMEOVER_BUTTON_WORDS,
+            Const.GAMEOVER_INTERRUPT_WORDS,
         )
 
     /** 和棋弹窗按钮（含标题词校验，见 matchDrawDialog）。 */
@@ -139,14 +144,19 @@ object TextMatcher {
         hits.map { it.copy(x = it.x + crop.x, y = it.y + crop.y) }
 
     /**
-     * 【纯函数】自动下一局扫描选词：lines 为 OCR 文本行；先遮罩词表后按钮词表、表内按顺序，
+     * 【纯函数】自动下一局扫描选词：lines 为 OCR 文本行；先终止词表（如「体力x2」，
+     * 命中由调用方触发自动中断），再遮罩词表后按钮词表、表内按顺序，
      * 返回首个命中关键词的 TextHit（word 归一为关键词本身，isBackWord 据此判断），无命中返回 null。
      */
     fun matchScanWords(
         lines: List<TextHit>,
         backWords: List<String>,
         buttonWords: List<String>,
+        interruptWords: List<String> = emptyList(),
     ): TextHit? {
+        for (word in interruptWords) {
+            lines.firstOrNull { it.word.contains(word) }?.let { return it.copy(word = word) }
+        }
         for (word in backWords) {
             lines.firstOrNull { it.word.contains(word) }?.let { return it.copy(word = word) }
         }

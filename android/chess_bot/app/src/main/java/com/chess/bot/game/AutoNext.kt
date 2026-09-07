@@ -24,6 +24,8 @@ class AutoNext(
     private val shouldContinue: () -> Boolean,
     private val autoNextEnabled: () -> Boolean,
     private val onPhase: (BotStatus) -> Unit = {},
+    /** 命中终止类词（如「体力x2」）时的自动中断回调（BotSession 传入 interrupt()，与用户点停止等价）。 */
+    private val interruptSession: () -> Unit = {},
 ) {
 
     /** 返回摆棋完毕的矫正帧；中断/超时/失败返回 null。 */
@@ -56,6 +58,16 @@ class AutoNext(
             val raw = capture.screenshot()
             val hit = raw?.let { TextMatcher.findGameoverScan(context, it) }
             if (hit != null) {
+                // ---------- 终止类词（2026-09-07）：识别到即自动中断对弈（等价用户点停止） ----------
+                if (hit.word in Const.GAMEOVER_INTERRUPT_WORDS) {
+                    LogBus.log(
+                        LogLevel.ERROR,
+                        LogTag.NEXT,
+                        "识别到终止弹窗「${hit.word}」，自动中断对弈"
+                    )
+                    interruptSession()
+                    return null
+                }
                 val (word, x, y) = hit
                 val isButton = !isBackWord(word)
                 if (word != lastWord) {

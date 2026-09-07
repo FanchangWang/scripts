@@ -41,6 +41,23 @@ class TextMatcherTest {
     }
 
     @Test
+    fun `中断词表优先于遮罩与按钮词表`() {
+        // 终止类词（如「体力x2」弹窗）命中即自动中断对弈，优先级最高
+        val lines = listOf(hit("再来一局"), hit("领取奖励"), hit("·体力x2·"))
+        val r = TextMatcher.matchScanWords(
+            lines, Const.GAMEOVER_BACK_WORDS, Const.GAMEOVER_BUTTON_WORDS, Const.GAMEOVER_INTERRUPT_WORDS
+        )
+        assertEquals("体力x2", r?.word)
+    }
+
+    @Test
+    fun `无中断词时行为与旧版一致`() {
+        val lines = listOf(hit("再来一局(3/5)"))
+        val r = TextMatcher.matchScanWords(lines, Const.GAMEOVER_BACK_WORDS, Const.GAMEOVER_BUTTON_WORDS)
+        assertEquals("再来一局", r?.word)
+    }
+
+    @Test
     fun `同类内按列表顺序——下一关优先于再来一局`() {
         val lines = listOf(hit("再来一局"), hit("下一关"))
         val r = TextMatcher.matchScanWords(lines, Const.GAMEOVER_BACK_WORDS, Const.GAMEOVER_BUTTON_WORDS)
@@ -173,7 +190,8 @@ class TextMatcherTest {
     @Test
     fun `OCR_WORD_ROIS覆盖全部扫描词`() {
         // 词表里所有词都应配置 ROI（漏配的词回落全图，失去裁剪收益；此处强制对齐防遗漏）
-        val words = Const.GAMEOVER_BUTTON_WORDS + Const.GAMEOVER_BACK_WORDS +
+        val words = Const.GAMEOVER_INTERRUPT_WORDS + Const.GAMEOVER_BUTTON_WORDS +
+            Const.GAMEOVER_BACK_WORDS +
             listOf(Const.DRAW_REQUEST_WORD, Const.DRAW_ACCEPT_WORD, Const.DRAW_REJECT_WORD)
         words.forEach { w ->
             assertTrue("词「$w」缺少 OCR_WORD_ROIS 配置", Const.OCR_WORD_ROIS.containsKey(w))

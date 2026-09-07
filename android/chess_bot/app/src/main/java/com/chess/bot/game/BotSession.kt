@@ -1286,6 +1286,7 @@ class BotSession(private val context: Context) {
                 shouldContinue = { running && !interrupted },
                 autoNextEnabled = autoNextEnabled,
                 onPhase = { setStatus(it) },
+                interruptSession = { interrupt() },
             )
             val corrected = autoNext.scanAndWait() ?: return false
             try {
