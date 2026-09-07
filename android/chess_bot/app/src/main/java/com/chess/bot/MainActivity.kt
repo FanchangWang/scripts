@@ -13,14 +13,19 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -33,7 +38,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.chess.bot.data.BoardCornersStore
 import com.chess.bot.data.BotConfig
 import com.chess.bot.log.LogBus
@@ -48,6 +55,7 @@ import com.chess.bot.ui.ManualTuneScreen
 import com.chess.bot.ui.Permissions
 import com.chess.bot.ui.PlayCard
 import com.chess.bot.ui.RecognizingScreen
+import com.chess.bot.ui.SettingRow
 import com.chess.bot.ui.SettingsScreen
 import com.chess.bot.ui.Step1Screen
 import com.chess.bot.ui.theme.ChessBotTheme
@@ -122,7 +130,11 @@ class MainActivity : ComponentActivity() {
         CalibrationSession.projectionRequest = { launchCalibrationProjection() }
         setContent {
             ChessBotTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                // 背景 = background(#F3EDF7)，与 HTML .screen 背景一致（默认 surface 会让整页偏白）
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = MaterialTheme.colorScheme.background,
+                ) { innerPadding ->
                     MainScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
@@ -194,10 +206,27 @@ class MainActivity : ComponentActivity() {
         val calibrated = BoardCornersStore.has(w, h, this@MainActivity)
         // 加载运行配置，供「对弈」卡片摘要展示（设置页改后返回即重读内存最新值）
         LaunchedEffect(Unit) { BotConfig.load(this@MainActivity) }
-        Column(modifier = modifier.fillMaxSize()) {
-            TopAppBar(title = { Text("象棋机器人") })
+        // 组C：TopAppBar 走 Scaffold topBar；背景=background、标题 20sp SemiBold（对齐 HTML .tb-title）
+        Scaffold(
+            modifier = modifier,
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "象棋机器人",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                        )
+                    },
+                )
+            },
+        ) { innerPadding ->
             Column(
                 modifier = Modifier
+                    .padding(innerPadding)
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -222,48 +251,80 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun ChecklistCard() {
+        val permsOk = notificationsGranted.value && overlayGranted.value &&
+                accessibilityGranted.value && batteryIgnoreGranted.value
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text(
-                    "权限与授权",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
-                )
-                PermRow(
-                    "通知权限", notificationsGranted.value, "已授权", "去设置",
-                    onAction = { notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
-                )
-                PermRow(
-                    "悬浮窗权限", overlayGranted.value, "已授权", "去设置",
-                    onAction = {
-                        overlayLauncher.launch(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:$packageName")
-                            ),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (permsOk) {
+                    // 已全授权：紧凑单行，不可点（无点击角色），且明示四项均已授权
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            "权限与授权",
+                            style = MaterialTheme.typography.titleMedium,
                         )
-                    },
-                )
-                PermRow(
-                    "后台运行不受限", batteryIgnoreGranted.value, "已开启", "去设置",
-                    onAction = {
-                        ignoreBatteryLauncher.launch(
-                            Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:$packageName")
-                            ),
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            // 对齐 HTML：仅列出四项名称，避免过长换行；文字在前、对勾图标收尾
+                            "通知 · 悬浮窗 · 后台 · 无障碍",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
                         )
-                    },
-                )
-                PermRow(
-                    "无障碍服务", accessibilityGranted.value, "已开启", "去开启",
-                    onAction = { accessibilityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                )
+                        Icon(
+                            Icons.Filled.CheckCircle,
+                            contentDescription = "已全部授权",
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                } else {
+                    Text("权限与授权", style = MaterialTheme.typography.titleMedium)
+                    PermRow(
+                        "通知权限", notificationsGranted.value, "已授权", "去设置",
+                        onAction = { notificationLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
+                    )
+                    PermRow(
+                        "悬浮窗权限", overlayGranted.value, "已授权", "去设置",
+                        onAction = {
+                            overlayLauncher.launch(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:$packageName")
+                                ),
+                            )
+                        },
+                    )
+                    PermRow(
+                        "后台运行不受限", batteryIgnoreGranted.value, "已开启", "去设置",
+                        onAction = {
+                            ignoreBatteryLauncher.launch(
+                                Intent(
+                                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                    Uri.parse("package:$packageName")
+                                ),
+                            )
+                        },
+                    )
+                    PermRow(
+                        "无障碍服务", accessibilityGranted.value, "已开启", "去开启",
+                        onAction = { accessibilityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                    )
+                }
             }
         }
     }
 
-    /** 权限行：左标签，右状态/操作（对齐预览：标签 + 右侧状态文字，无序号徽标、无副标题）。 */
+    /** 权限行：左标签，右状态/操作（复用 SettingRow 基座：48dp 行高、行距由容器统一）。 */
     @Composable
     private fun PermRow(
         title: String,
@@ -272,14 +333,7 @@ class MainActivity : ComponentActivity() {
         actionLabel: String,
         onAction: () -> Unit,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
+        SettingRow(title = title) {
             if (granted) {
                 Text(
                     grantedText,

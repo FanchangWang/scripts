@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- 纯 Compose 应用：Activity 主题仅承载窗口装饰。Compose material3 库不提供
+         Theme.Material3.* XML style（该 style 族属于 View 库 com.google.android.material），
+         故沿用平台 NoActionBar 主题；Compose 侧 M3 由 ChessBotTheme(MaterialTheme) 统一。 -->
     <style name="Theme.ChessBot" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>

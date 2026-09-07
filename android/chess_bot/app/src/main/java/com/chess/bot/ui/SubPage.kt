@@ -12,6 +12,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
 /**
  * 统一子页面脚手架（Google Material 3 规范）：
@@ -27,11 +29,20 @@ fun SubPageScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
+        // 背景 = background(#F3EDF7)，与 HTML .screen 背景一致；TopAppBar 默认 surface 形成层次
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(title, style = MaterialTheme.typography.titleLarge)
+                        // 20sp SemiBold 对齐 HTML .tb-title（默认 titleLarge 22sp 偏大）
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                        )
                         if (subtitle != null) {
                             Text(
                                 subtitle,

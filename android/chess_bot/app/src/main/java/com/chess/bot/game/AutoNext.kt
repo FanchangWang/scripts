@@ -23,6 +23,7 @@ class AutoNext(
     private val capture: Capture,
     private val shouldContinue: () -> Boolean,
     private val autoNextEnabled: () -> Boolean,
+    private val onPhase: (BotStatus) -> Unit = {},
 ) {
 
     /** 返回摆棋完毕的矫正帧；中断/超时/失败返回 null。 */
@@ -76,6 +77,7 @@ class AutoNext(
                         LogTag.NEXT,
                         "识别到遮罩文字「$word」，发送返回键（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
                     )
+                    onPhase(BotStatus.NEXT_MASK)
                     if (!capture.back()) {
                         LogBus.log(LogKind.ERROR, LogTag.NEXT, "自动下一局交互失败（返回键）")
                         return null
@@ -94,6 +96,7 @@ class AutoNext(
                         LogTag.NEXT,
                         "识别到结算按钮「$word」，点击进入下一局（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
                     )
+                    onPhase(BotStatus.NEXT_BUTTON)
                     if (!capture.tapXy(x, y)) {
                         LogBus.log(LogKind.ERROR, LogTag.NEXT, "自动下一局交互失败（点击结算按钮）")
                         return null

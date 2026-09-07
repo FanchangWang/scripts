@@ -942,6 +942,7 @@ class BotSession(private val context: Context) {
             val cap = capture
             if (cap.dismissDrawDialog()) {
                 LogBus.log(LogKind.INFO, LogTag.SELF, "verify 检出并关闭和棋弹窗，交由重试重新核验")
+                setStatus(BotStatus.DRAW_HANDLING)
                 state.resignStreak = 0
                 return VerifyOutcome.RETRY_BOTH
             }
@@ -1037,6 +1038,7 @@ class BotSession(private val context: Context) {
                     EnemyFrameResult.LIFTED -> {
                         if (!state.liftLogged) {
                             state.liftLogged = true
+                            setStatus(BotStatus.ENEMY_LIFTED)
                             LogBus.log(LogKind.INFO, LogTag.ENEMY, "对方提起棋子")
                         }
                         state.noisyCount = 0
@@ -1258,6 +1260,7 @@ class BotSession(private val context: Context) {
     }
 
     private fun decideDraw(): Boolean {
+        setStatus(BotStatus.DRAW_HANDLING)
         val score = state.lastEvalScore
         val reject = decideDraw(score, Const.DRAW_REJECT_CP)
         LogBus.log(
@@ -1282,6 +1285,7 @@ class BotSession(private val context: Context) {
                 capture,
                 shouldContinue = { running && !interrupted },
                 autoNextEnabled = autoNextEnabled,
+                onPhase = { setStatus(it) },
             )
             val corrected = autoNext.scanAndWait() ?: return false
             try {
@@ -1409,8 +1413,8 @@ class BotSession(private val context: Context) {
 
     private fun finishGame(reason: String) {
         state.markGameOver()
+        setStatus(BotStatus.GAME_OVER)
         LogBus.log(LogKind.GAME, LogTag.PLAY, reason)
-        emit()
     }
 
     private fun applyEnemyMove(move: Move) {

@@ -79,6 +79,13 @@ object BotRuntime {
     /** 棋盘小窗显示开关（唯一出口=操控条「棋盘」，窗体自身不可隐藏）。 */
     val boardWindowShown = MutableStateFlow(false)
 
+    /**
+     * 信息框显示开关（2026-09-07 新增，唯一出口=操控条「信息框」按钮）。
+     * **不持久化**：每次从主页「开始对弈」弹出悬浮窗（ensureShown）都复位为 true，
+     * 仅允许本次对弈期间临时隐藏。
+     */
+    val infoShown = MutableStateFlow(true)
+
     /** 等待摆棋态信息（悬浮窗等待态展示）：已进入等待的秒数。 */
     val waitElapsedS = MutableStateFlow(0)
 
@@ -89,7 +96,8 @@ object BotRuntime {
 /**
  * 悬浮窗总管：操控条 + 信息框（两个独立悬浮窗）+ 棋盘小窗。
  * - 操控条 / 信息框各自独立创建、独立拖动、互不干扰（解决 #7 抖动）。
- * - barCollapsed=true 显示信息框，=false 显示操控条；点击信息框展开、点 ⌃ 收起。
+ * - 操控条常驻右缘（BOTTOM|END，仅上下拖）；信息框默认贴右缘、顶边与棋盘小窗一致
+ *   （TOP|END，2026-09-07 起自由拖动、显隐由操控条「信息框」按钮控制，不持久化）。
  * - 生命周期跟随前台服务（日志仅落文件，无悬浮窗）。
  */
 object OverlayManager {
@@ -104,18 +112,17 @@ object OverlayManager {
     private var ctrlX = 8
     private var ctrlY = 180
 
-    /** 信息框独立记忆位置（BOTTOM|END）。 */
-    private var infoX = 8
-    private var infoY = 120
+    /** 信息框记忆位置（TOP|END 语义：x=右缘边距、y=顶缘边距；默认贴右缘、与棋盘小窗同 y）。 */
+    private var infoX = 0
+    private var infoY = -1
     private var boardX = -1
     private var boardY = -1
 
     /** 初始（用户未手动移动）定位基准：棋盘右下角 y；null=未校准/不可用 → 退回固定默认。 */
     private var boardCornerY: Double? = null
 
-    /** 操控条/信息框 y 是否由「未移动默认」推导（首帧按棋盘角自定位，拖动后置否）。 */
+    /** 操控条 y 是否由「未移动默认」推导（首帧按棋盘角自定位，拖动后置否）。信息框不再需要（默认位=棋盘小窗顶边）。 */
     private var ctrlYAuto = false
-    private var infoYAuto = false
 
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val botExecutor =
@@ -133,9 +140,6 @@ object OverlayManager {
         },
     )
 
-    /** 收起态（信息框 / 操控条切换）：true=信息框，false=操控条。 */
-    private val barCollapsed = androidx.compose.runtime.mutableStateOf(true)
-
     /** ⌂ 返回 App 确认文案；null=正常态（3s 超时自动还原）。 */
     private val exitPrompt = androidx.compose.runtime.mutableStateOf<String?>(null)
     private var exitPromptJob: kotlinx.coroutines.Job? = null
@@ -148,7 +152,7 @@ object OverlayManager {
                 .also { session = it }
         }
 
-    /** 显示（或恢复显示）悬浮窗；幂等。进入即收起为信息框（#9：信息框仅经开始/收缩进入）。 */
+    /** 显示（或恢复显示）悬浮窗；幂等。操控条(右) + 信息框(左) 常驻同显，互不切换。 */
     suspend fun ensureShown(context: Context) {
         val ctx = context.applicationContext
         if (appContext == null) {
@@ -158,10 +162,11 @@ object OverlayManager {
             val rawCtrlY = settings!!.overlayControlY.first()
             ctrlY = if (rawCtrlY < 0) 180 else rawCtrlY
             ctrlYAuto = rawCtrlY < 0
-            infoX = settings!!.overlayInfoX.first().let { if (it < 0) 8 else it }
-            val rawInfoY = settings!!.overlayInfoY.first()
-            infoY = if (rawInfoY < 0) 120 else rawInfoY
-            infoYAuto = rawInfoY < 0
+            // 信息框位置（TOP|END：x=右缘边距、y=顶缘边距）；默认贴右缘、顶边与棋盘小窗一致。
+            // 2026-09-07 锚点从 BOTTOM|START 改为 TOP|END，旧键 overlay_info_x/y 语义不兼容已弃用。
+            infoX = settings!!.overlayInfo2X.first().let { if (it < 0) 0 else it }
+            val rawInfoY = settings!!.overlayInfo2Y.first()
+            infoY = if (rawInfoY < 0) statusBarHeightPx() + 5 else rawInfoY
             boardX = settings!!.overlayBoardX.first()
             boardY = settings!!.overlayBoardY.first()
             // 棋盘右下角 y（四角中 x+y 最大者）作初始悬浮窗定位基准；未校准→null→退回固定默认
@@ -176,9 +181,21 @@ object OverlayManager {
                     if (shown) showBoardWindow() else dismissBoardWindow()
                 }
             }
+            // 信息框显隐跟随开关（不持久化，见 BotRuntime.infoShown 注释）
+            uiScope.launch {
+                BotRuntime.infoShown.collect { shown ->
+                    if (shown) ensureInfoHost() else {
+                        infoHost?.dismiss()
+                        infoHost = null
+                    }
+                }
+            }
         }
-        // 进入即收起为信息框（主线程创建窗）
-        uiScope.launch { setCollapsed(true) }
+        // 每次从主页「开始对弈」弹出悬浮窗：信息框默认打开（仅本次对弈内可临时隐藏）
+        BotRuntime.infoShown.value = true
+        // 常驻双窗：操控条(右) + 信息框(右) 同时显示，互不切换（主线程创建窗）
+        uiScope.launch { ensureControlHost() }
+        uiScope.launch { if (BotRuntime.infoShown.value) ensureInfoHost() }
         // 重启后同步棋盘小窗（主线程）
         uiScope.launch { if (BotRuntime.boardWindowShown.value) showBoardWindow() else dismissBoardWindow() }
         // 弹出即自动开局（保留 ⌂ 返回后手动开始路径）
@@ -205,31 +222,25 @@ object OverlayManager {
         dismissAll()
     }
 
-    // ---------- 操控条 / 信息框 切换 ----------
-
-    private fun setCollapsed(v: Boolean) {
-        barCollapsed.value = v
-        // 窗口创建/移除必须在主线程（WindowManager）
-        uiScope.launch { syncBar() }
+    /**
+     * 恢复默认设置（2026-09-07 设置页「恢复默认」）：清空悬浮窗位置记忆与运行态开关。
+     * DataStore 已由 BotSettings.resetAll() 清除（校准数据不在其中）；这里同步内存态，
+     * 使下次弹窗按默认位创建（信息框 infoY=-1 哨兵 → ensureInfoHost 实时解析状态栏+5）。
+     */
+    fun resetToDefaults() {
+        ctrlX = 8
+        ctrlY = 180
+        ctrlYAuto = true
+        infoX = 0
+        infoY = -1
+        boardX = -1
+        boardY = -1
+        BotRuntime.autoNext.value = true
+        BotRuntime.boardWindowShown.value = true
+        BotRuntime.infoShown.value = true
     }
 
-    /** 按 barCollapsed 显示其中一个窗、隐藏另一个（两窗独立，互不干扰）。 */
-    private fun syncBar() {
-        val collapsed = barCollapsed.value
-        if (collapsed) {
-            if (controlHost != null) {
-                controlHost!!.dismiss()
-                controlHost = null
-            }
-            ensureInfoHost()
-        } else {
-            if (infoHost != null) {
-                infoHost!!.dismiss()
-                infoHost = null
-            }
-            ensureControlHost()
-        }
-    }
+    // ---------- 操控条 / 信息框 ----------
 
     private fun ensureControlHost() {
         if (controlHost?.isShowing == true) return
@@ -254,21 +265,17 @@ object OverlayManager {
     private fun ensureInfoHost() {
         if (infoHost?.isShowing == true) return
         val ctx = appContext ?: return
+        // 信息框默认位支持哨兵：infoY<0 = 未定位（恢复默认后），按「状态栏+5」实时解析
+        if (infoY < 0) infoY = statusBarHeightPx() + 5
         OverlayHost(ctx).also { infoHost = it }.show(
             layout = {
-                gravity = Gravity.BOTTOM or Gravity.END
+                // 2026-09-07：TOP|END 锚点，默认贴屏幕右缘（x=0）、顶边与棋盘小窗初始 y 一致
+                gravity = Gravity.TOP or Gravity.END
                 width = WindowManager.LayoutParams.WRAP_CONTENT
                 x = infoX
                 y = infoY
             },
         ) { infoContent() }
-        // 初始未移动且有校准：首帧布局后按「棋盘右下角 y + 100px」自定位，避免遮挡棋子
-        if (infoYAuto && boardCornerY != null) {
-            infoHost?.postLayout { _, h ->
-                infoY = belowBoardTopMargin(boardCornerY!! + 100.0, h)
-                infoHost?.updateLayout { y = infoY }
-            }
-        }
     }
 
     /**
@@ -287,39 +294,22 @@ object OverlayManager {
             val dark = isSystemInDarkTheme()
             val running by BotRuntime.running.collectAsState()
             val autoNext by BotRuntime.autoNext.collectAsState()
-            val statusLine by BotRuntime.statusLine.collectAsState()
-            val evalScore by BotRuntime.evalScore.collectAsState()
-            val status by BotRuntime.status.collectAsState()
-            val moveSource by BotRuntime.moveSource.collectAsState()
-            val moveDepth by BotRuntime.moveDepth.collectAsState()
-            val bookWinRate by BotRuntime.bookWinRate.collectAsState()
-            val lastMoveIccs by BotRuntime.lastMoveIccs.collectAsState()
             val boardShown by BotRuntime.boardWindowShown.collectAsState()
-            val waitElapsedS by BotRuntime.waitElapsedS.collectAsState()
-            val waitDetail by BotRuntime.waitDetail.collectAsState()
+            val infoShown by BotRuntime.infoShown.collectAsState()
             ControlBarContent(
                 dark = dark,
                 running = running,
                 autoNext = autoNext,
-                statusLine = statusLine,
-                status = status,
-                evalScore = evalScore,
-                moveSource = moveSource,
-                moveDepth = moveDepth,
-                bookWinRate = bookWinRate,
-                lastMoveIccs = lastMoveIccs,
                 boardShown = boardShown,
+                infoShown = infoShown,
                 exitPrompt = exitPrompt.value,
-                waitElapsedS = waitElapsedS,
-                waitDetail = waitDetail,
                 onStartStop = ::onStartStop,
                 onAutoNextChange = ::onAutoNextChange,
                 onBoardToggle = ::onBoardToggle,
+                onInfoToggle = ::onInfoToggle,
                 onRequestClose = ::onRequestClose,
                 onConfirmExit = ::onConfirmExit,
                 onCancelExit = ::onCancelExit,
-                onToggleCollapse = { setCollapsed(true) },
-                onLongPressInterrupt = { },
                 onDragY = { dragControl(it) },
                 onDragEnd = { persistControl() },
             )
@@ -336,8 +326,6 @@ object OverlayManager {
             val moveSource by BotRuntime.moveSource.collectAsState()
             val moveDepth by BotRuntime.moveDepth.collectAsState()
             val lastMoveIccs by BotRuntime.lastMoveIccs.collectAsState()
-            val autoNext by BotRuntime.autoNext.collectAsState()
-            val waitElapsedS by BotRuntime.waitElapsedS.collectAsState()
             InfoBoxMini(
                 dark = dark,
                 running = running,
@@ -346,11 +334,7 @@ object OverlayManager {
                 moveSource = moveSource,
                 moveDepth = moveDepth,
                 lastMoveIccs = lastMoveIccs,
-                autoNext = autoNext,
-                waitElapsedS = waitElapsedS,
-                onToggleExpand = { setCollapsed(false) },
-                onLongPressInterrupt = ::onCollapsedLongPress,
-                onDragY = { dragInfo(it) },
+                onDrag = { dx, dy -> dragInfo(dx, dy) },
                 onDragEnd = { persistInfo() },
             )
         }
@@ -376,7 +360,8 @@ object OverlayManager {
         } else {
             24f
         }
-        val bx = if (boardX >= 0) boardX else 10
+        // 2026-09-07：默认贴屏幕左缘 x=0（用户未手动移动过时），y 仍=状态栏+5
+        val bx = if (boardX >= 0) boardX else 0
         val by = if (boardY >= 0) boardY else statusBar + 5
         boardX = bx
         boardY = by
@@ -451,22 +436,9 @@ object OverlayManager {
     }
 
     private fun scopeLaunchStart(ctx: Context) {
-        setCollapsed(true) // 开始后收起为信息框
+        // 双窗常驻，开始后无需切换；直接启动会话
         botScope.launch { ensureSession(ctx).start() }
         LogBus.log(LogKind.INFO, LogTag.PLAY, "开始棋局：等待棋盘就绪并启动对弈")
-    }
-
-    /** 信息框长按（≥600ms，仅运行态）：中断棋局并展开操控条。 */
-    private fun onCollapsedLongPress() {
-        if (!BotRuntime.running.value) return
-        session?.interrupt()
-        LogBus.log(LogKind.WARN, LogTag.PLAY, "已请求中断棋局（信息框长按）")
-        // 长按手势仍挂在信息框窗口的输入流上，立即 dismiss 该窗（removeView）会在
-        // 输入派发中途移除窗口导致异常——切窗延后到下一帧、手势结束后再执行
-        uiScope.launch {
-            kotlinx.coroutines.delay(64)
-            setCollapsed(false)
-        }
     }
 
     private fun onAutoNextChange(value: Boolean) {
@@ -480,6 +452,13 @@ object OverlayManager {
         BotRuntime.boardWindowShown.value = next
         LogBus.log(LogKind.INFO, LogTag.SYSTEM, "棋盘小窗已${if (next) "显示" else "隐藏"}")
         uiScope.launch { settings?.setBoardDrawEnabled(next) }
+    }
+
+    /** 信息框显隐（操控条「信息框」按钮）：仅内存态，不持久化（每次弹出悬浮窗默认打开）。 */
+    private fun onInfoToggle() {
+        val next = !BotRuntime.infoShown.value
+        BotRuntime.infoShown.value = next
+        LogBus.log(LogKind.INFO, LogTag.SYSTEM, "信息框已${if (next) "显示" else "隐藏"}")
     }
 
     /** ⌂ 返回 App：自动停止对弈并退出悬浮窗（操控条+信息框+棋盘），回到主界面。运行中→先确认（3s 超时还原）。 */
@@ -537,14 +516,16 @@ object OverlayManager {
         uiScope.launch { settings?.setOverlayControl(ctrlX, ctrlY) }
     }
 
-    private fun dragInfo(dy: Float) {
-        infoYAuto = false
-        infoY = (infoY - dy.roundToInt()).coerceAtLeast(0)
-        infoHost?.updateLayout { y = infoY }
+    private fun dragInfo(dx: Float, dy: Float) {
+        // TOP|END 锚定：y 向下增大（y += dy）；x 为右缘边距，手指向右（dx>0）→ 边距减小（x -= dx）。
+        // 自由拖动：仅钳制不越出屏幕（边距 ≥0），不再要求贴边。
+        infoX = (infoX - dx.roundToInt()).coerceAtLeast(0)
+        infoY = (infoY + dy.roundToInt()).coerceAtLeast(0)
+        infoHost?.updateLayout { x = infoX; y = infoY }
     }
 
     private fun persistInfo() {
-        uiScope.launch { settings?.setOverlayInfo(infoX, infoY) }
+        uiScope.launch { settings?.setOverlayInfo2(infoX, infoY) }
     }
 
     private fun dragBoard(dx: Float, dy: Float) {

@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.chess.bot.ui.CalibrationSession
+import com.chess.bot.ui.theme.ChessBotTheme
 
 /**
  * 校准用悬浮操作条（截图 / 返回）：覆盖在象棋 App 之上，chessbot 主界面已隐藏。
@@ -33,10 +34,12 @@ object CalibrationCaptureOverlay {
                 y = 120
             },
         ) {
-            CaptureBarContent(
-                onCapture = { CalibrationSession.onScreenshot(context.applicationContext) },
-                onBack = { CalibrationSession.onBack(context.applicationContext) },
-            )
+            ChessBotTheme {
+                CaptureBarContent(
+                    onCapture = { CalibrationSession.onScreenshot(context.applicationContext) },
+                    onBack = { CalibrationSession.onBack(context.applicationContext) },
+                )
+            }
         }
     }
 

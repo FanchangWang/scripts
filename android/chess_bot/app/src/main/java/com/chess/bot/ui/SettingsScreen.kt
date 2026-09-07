@@ -3,7 +3,7 @@ package com.chess.bot.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,18 +11,21 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,19 +43,22 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.chess.bot.data.BotConfig
 import com.chess.bot.data.BotConfigData
+import com.chess.bot.data.BotSettings
 import com.chess.bot.data.ThinkMode
 import com.chess.bot.log.FileLogger
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogKind
 import com.chess.bot.log.LogTag
+import com.chess.bot.overlay.OverlayManager
+import com.chess.bot.ui.theme.LocalExtendedColors
 import kotlinx.coroutines.launch
 
 /**
  * 运行设置页：
  * - 子页 TopAppBar + 返回（SubPageScaffold）已统一；
- * - 无卡片容器，改用「小灰大写分组标签」(引擎/开局库/悬浮窗/其他)；
+ * - 「小灰大写分组标签」(引擎/开局库/对弈/悬浮窗/其他) + 每组一张卡片容器（GroupCard，2026-09-07 对齐 HTML）；
  * - 每一项均为单行左右结构：左侧文字、右侧控件（下拉框 / 开关 / ›导航）；
- * - 下拉框统一为 ExposedDropdownMenu（替代滑块），选项集与标签严格对齐预览。
+ * - 下拉框统一为 ExposedDropdownMenu，样式对齐 HTML .dd（36dp 高、outlineVariant 描边、primary 文字）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +66,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var cfg by remember { mutableStateOf(BotConfigData()) }
+    var showResetConfirm by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         BotConfig.load(context)
         cfg = BotConfig.data
@@ -81,98 +89,147 @@ fun SettingsScreen(onBack: () -> Unit) {
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            // 对齐 HTML .content gap 12：分组卡之间 12dp；组内行距 4dp 由卡内 Column 统一
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             GroupLabel("引擎")
-            DropdownRow(
-                title = "思考模式",
-                options = ThinkMode.entries.toList(),
-                selected = cfg.thinkMode,
-                label = { it.cn },
-            ) { v -> update { it.copy(thinkMode = v) } }
-            DropdownRow(
-                title = "思考时间",
-                options = MOVETIME_OPTIONS,
-                selected = cfg.movetimeMs,
-                label = { "$it ms" },
-            ) { v -> update { it.copy(movetimeMs = v) } }
-            DropdownRow(
-                title = "思考层数",
-                options = DEPTH_OPTIONS,
-                selected = cfg.depth,
-                label = { "$it 层" },
-            ) { v -> update { it.copy(depth = v) } }
-            DropdownRow(
-                title = "线程数",
-                options = THREADS_OPTIONS,
-                selected = cfg.threads,
-                label = { "$it" },
-            ) { v -> update { it.copy(threads = v) } }
-            DropdownRow(
-                title = "置换表 Hash",
-                options = HASH_OPTIONS,
-                selected = cfg.hashMb,
-                label = { "$it MB" },
-            ) { v -> update { it.copy(hashMb = v) } }
+            GroupCard {
+                DropdownRow(
+                    title = "思考模式",
+                    options = ThinkMode.entries.toList(),
+                    selected = cfg.thinkMode,
+                    label = { it.cn },
+                ) { v -> update { it.copy(thinkMode = v) } }
+                DropdownRow(
+                    title = "思考时间",
+                    options = MOVETIME_OPTIONS,
+                    selected = cfg.movetimeMs,
+                    label = { "$it ms" },
+                ) { v -> update { it.copy(movetimeMs = v) } }
+                DropdownRow(
+                    title = "思考层数",
+                    options = DEPTH_OPTIONS,
+                    selected = cfg.depth,
+                    label = { "$it 层" },
+                ) { v -> update { it.copy(depth = v) } }
+                DropdownRow(
+                    title = "线程数",
+                    options = THREADS_OPTIONS,
+                    selected = cfg.threads,
+                    label = { "$it" },
+                ) { v -> update { it.copy(threads = v) } }
+                DropdownRow(
+                    title = "置换表 Hash",
+                    options = HASH_OPTIONS,
+                    selected = cfg.hashMb,
+                    label = { "$it MB" },
+                ) { v -> update { it.copy(hashMb = v) } }
+            }
 
             GroupLabel("开局库")
-            SwitchRow(
-                title = "启用开局库",
-                checked = cfg.bookEnabled,
-            ) { v -> update { it.copy(bookEnabled = v) } }
-            DropdownRow(
-                title = "最大使用步数",
-                options = BOOK_MOVES_OPTIONS,
-                selected = cfg.bookMaxMoves,
-                label = { "$it" },
-                hint = "下拉选择 6~20",
-            ) { v -> update { it.copy(bookMaxMoves = v) } }
+            GroupCard {
+                SwitchRow(
+                    title = "启用开局库",
+                    checked = cfg.bookEnabled,
+                ) { v -> update { it.copy(bookEnabled = v) } }
+                DropdownRow(
+                    title = "最大使用步数",
+                    options = BOOK_MOVES_OPTIONS,
+                    selected = cfg.bookMaxMoves,
+                    label = { "$it" },
+                    hint = "下拉选择 6~20",
+                ) { v -> update { it.copy(bookMaxMoves = v) } }
+            }
 
             GroupLabel("对弈")
-            DropdownRow(
-                title = "落子间隔",
-                options = TAP_HOLD_OPTIONS,
-                selected = cfg.tapHoldMs,
-                label = { "$it ms" },
-            ) { v -> update { it.copy(tapHoldMs = v) } }
-            DropdownRow(
-                title = "走棋动画",
-                options = VERIFY_ANIM_OPTIONS,
-                selected = cfg.verifyAnimBaseMs,
-                label = { "$it ms" },
-            ) { v -> update { it.copy(verifyAnimBaseMs = v) } }
-            DropdownRow(
-                title = "走棋检测间隔",
-                options = VERIFY_NEXT_FRAME_OPTIONS,
-                selected = cfg.verifyNextFrameMs,
-                label = { "$it ms" },
-            ) { v -> update { it.copy(verifyNextFrameMs = v) } }
+            GroupCard {
+                DropdownRow(
+                    title = "落子间隔",
+                    options = TAP_HOLD_OPTIONS,
+                    selected = cfg.tapHoldMs,
+                    label = { "$it ms" },
+                ) { v -> update { it.copy(tapHoldMs = v) } }
+                DropdownRow(
+                    title = "走棋动画",
+                    options = VERIFY_ANIM_OPTIONS,
+                    selected = cfg.verifyAnimBaseMs,
+                    label = { "$it ms" },
+                ) { v -> update { it.copy(verifyAnimBaseMs = v) } }
+                DropdownRow(
+                    title = "走棋检测间隔",
+                    options = VERIFY_NEXT_FRAME_OPTIONS,
+                    selected = cfg.verifyNextFrameMs,
+                    label = { "$it ms" },
+                ) { v -> update { it.copy(verifyNextFrameMs = v) } }
+            }
 
             GroupLabel("悬浮窗")
-            SwitchRow(
-                title = "自动下一局",
-                checked = cfg.autoNext,
-            ) { v -> update { it.copy(autoNext = v) } }
-            SwitchRow(
-                title = "棋盘绘制",
-                checked = cfg.boardDraw,
-            ) { v -> update { it.copy(boardDraw = v) } }
+            GroupCard {
+                SwitchRow(
+                    title = "自动下一局",
+                    checked = cfg.autoNext,
+                ) { v -> update { it.copy(autoNext = v) } }
+                SwitchRow(
+                    title = "棋盘绘制",
+                    checked = cfg.boardDraw,
+                ) { v -> update { it.copy(boardDraw = v) } }
+            }
 
             GroupLabel("其他")
-            DropdownRow(
-                title = "文件日志级别",
-                options = listOf(LogKind.DEBUG, LogKind.INFO, LogKind.WARN, LogKind.ERROR),
-                selected = cfg.fileLogLevel,
-                label = { it.name },
-            ) { v -> update { it.copy(fileLogLevel = v) } }
-            NavRow("导出日志（分享）") { exportLog(context) }
+            GroupCard {
+                DropdownRow(
+                    title = "文件日志级别",
+                    options = listOf(LogKind.DEBUG, LogKind.INFO, LogKind.WARN, LogKind.ERROR),
+                    selected = cfg.fileLogLevel,
+                    label = { it.name },
+                ) { v -> update { it.copy(fileLogLevel = v) } }
+                ChevronRow("导出日志（分享）") { exportLog(context) }
+                ResetRow(onClick = { showResetConfirm = true })
+            }
         }
+    }
+
+    // 恢复默认确认对话框（危险操作二次确认）
+    if (showResetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirm = false },
+            title = { Text("恢复默认设置？") },
+            text = {
+                Text(
+                    "将清除全部运行配置与悬浮窗位置记忆，仅保留棋盘四角校准数据。此操作不可撤销。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResetConfirm = false
+                    scope.launch {
+                        // ① 清 DataStore 全部键（含悬浮窗位置记忆；四角校准在独立文件，不受影响）
+                        BotSettings(context).resetAll()
+                        // ② 刷新内存配置 + UI
+                        BotConfig.load(context)
+                        cfg = BotConfig.data
+                        // ③ 复位悬浮窗内存态（位置/开关，下次弹窗按默认位创建）
+                        OverlayManager.resetToDefaults()
+                        LogBus.log(
+                            LogKind.OK,
+                            LogTag.SYSTEM,
+                            "已恢复默认设置（保留棋盘四角校准数据）"
+                        )
+                    }
+                }) {
+                    Text("恢复默认", color = LocalExtendedColors.current.danger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirm = false }) { Text("取消") }
+            },
+        )
     }
 }
 
-// ---------- 控件 ----------
+// ---------- 控件（行统一复用 Components.kt 的 SettingRow 基座） ----------
 
-/** 分组标签：小号灰字、大写、加字距（对齐 HTML .group-label）。 */
+/** 分组标签：小号灰字、大写、加字距（对齐 HTML .group；上 4dp + 卡距 12dp = HTML 的 16px）。 */
 @Composable
 private fun GroupLabel(text: String) {
     Text(
@@ -181,42 +238,20 @@ private fun GroupLabel(text: String) {
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         letterSpacing = 0.8.sp,
-        modifier = Modifier.padding(top = 18.dp, bottom = 2.dp),
+        modifier = Modifier.padding(top = 4.dp, bottom = 0.dp),
     )
 }
 
-/** 开关行：左文字，右 M3 Switch（对齐 HTML list-row 左右结构，无副标题）。 */
+/** 分组卡片容器（对齐 HTML：每组一个 .card，组内行距 4dp）。 */
 @Composable
-private fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-/** 导航行：左文字，右 ›（对齐 HTML list-row 的 chevron 行，如「导出日志（分享）」）。 */
-@Composable
-private fun NavRow(title: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Text(
-            "›",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+private fun GroupCard(content: @Composable () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) { content() }
     }
 }
 
@@ -240,32 +275,18 @@ private fun <T> DropdownRow(
     onChange: (T) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(end = 12.dp)
-        ) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (hint != null) {
-                Text(
-                    hint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+    SettingRow(title = title, subtitle = hint) {
         Box {
             OutlinedButton(
                 onClick = { expanded = !expanded },
-                shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                // 对齐 HTML .dd：高 36、描边 outlineVariant、文字 primary、胶囊形
+                modifier = Modifier.height(36.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
             ) {
                 // 注意：此处不能 fillMaxWidth，否则按钮被撑满整行（HTML .dd-box 仅 min-width 128）
                 Row(
@@ -277,7 +298,7 @@ private fun <T> DropdownRow(
                     Text(
                         "▾",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -302,7 +323,24 @@ private fun <T> DropdownRow(
     }
 }
 
-/** 导出全部保留的会话日志（最多 10 个）：FileProvider + 系统分享面板（不写公共存储）。 */
+/** 恢复默认行：左侧标题+说明、右侧「恢复」按钮（danger 色，点击弹确认对话框）。 */
+@Composable
+private fun ResetRow(onClick: () -> Unit) {
+    SettingRow(
+        title = "恢复默认设置",
+        subtitle = "清除配置与悬浮窗位置记忆，保留四角校准",
+    ) {
+        OutlinedButton(
+            onClick = onClick,
+            border = BorderStroke(1.dp, LocalExtendedColors.current.danger),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = LocalExtendedColors.current.danger,
+            ),
+        ) { Text("恢复") }
+    }
+}
+
+/** 导出全部保留的会话分片（最多 5 个）：FileProvider + 系统分享面板（不写公共存储）。 */
 private fun exportLog(context: Context) {
     val files = FileLogger.retainedFiles(context)
     if (files.isEmpty()) {
@@ -332,8 +370,8 @@ private fun exportLog(context: Context) {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
         }
-        context.startActivity(Intent.createChooser(intent, "导出运行日志（${files.size} 个会话）"))
-        LogBus.log(LogKind.OK, LogTag.SYSTEM, "已调起日志导出：${files.size} 个会话文件")
+        context.startActivity(Intent.createChooser(intent, "导出运行日志（${files.size} 个分片）"))
+        LogBus.log(LogKind.OK, LogTag.SYSTEM, "已调起日志导出：${files.size} 个日志分片")
     }.onFailure { e ->
         LogBus.log(
             LogKind.ERROR,

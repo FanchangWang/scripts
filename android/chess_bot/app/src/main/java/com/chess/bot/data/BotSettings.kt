@@ -118,9 +118,12 @@ class BotSettings(private val context: Context) {
     val overlayBoardX: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_BOARD_X] ?: -1 }
     val overlayBoardY: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_BOARD_Y] ?: -1 }
 
-    /** 信息框（收起小窗）独立记忆位置（-1 = 未记忆，用默认值）。 */
-    val overlayInfoX: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_INFO_X] ?: -1 }
-    val overlayInfoY: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_INFO_Y] ?: -1 }
+    /**
+     * 信息框记忆位置 v2（2026-09-07 锚点改 TOP|END：x=右缘边距、y=顶缘边距，与旧键语义不兼容，
+     * 故另开新键；-1 = 未记忆，用默认值：贴右缘 x=0、y=状态栏+5 与棋盘小窗一致）。
+     */
+    val overlayInfo2X: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_INFO2_X] ?: -1 }
+    val overlayInfo2Y: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_INFO2_Y] ?: -1 }
 
     // 对弈节奏（设置页「对弈」分组）
     val tapHoldMs: Flow<Int> =
@@ -157,10 +160,17 @@ class BotSettings(private val context: Context) {
         it[KEY_OVERLAY_BOARD_Y] = y
     }
 
-    suspend fun setOverlayInfo(x: Int, y: Int) = context.dataStore.edit {
-        it[KEY_OVERLAY_INFO_X] = x
-        it[KEY_OVERLAY_INFO_Y] = y
+    suspend fun setOverlayInfo2(x: Int, y: Int) = context.dataStore.edit {
+        it[KEY_OVERLAY_INFO2_X] = x
+        it[KEY_OVERLAY_INFO2_Y] = y
     }
+
+    /**
+     * 恢复默认设置（2026-09-07 设置页「恢复默认」按钮）：清空本 DataStore 全部键——
+     * 引擎/开局库/对弈节奏/开关/悬浮窗位置记忆一并回到默认；
+     * 棋盘四角校准数据存独立 JSON 文件（BoardCornersStore），不受影响。
+     */
+    suspend fun resetAll() = context.dataStore.edit { it.clear() }
 
     companion object {
         /** 配置默认值唯一源头：与 BotConfigData 数据类默认保持单一事实，改默认值只动 BotConfigData。 */
@@ -180,8 +190,8 @@ class BotSettings(private val context: Context) {
         private val KEY_OVERLAY_CONTROL_Y = intPreferencesKey("overlay_control_y")
         private val KEY_OVERLAY_BOARD_X = intPreferencesKey("overlay_board_x")
         private val KEY_OVERLAY_BOARD_Y = intPreferencesKey("overlay_board_y")
-        private val KEY_OVERLAY_INFO_X = intPreferencesKey("overlay_info_x")
-        private val KEY_OVERLAY_INFO_Y = intPreferencesKey("overlay_info_y")
+        private val KEY_OVERLAY_INFO2_X = intPreferencesKey("overlay_info2_x")
+        private val KEY_OVERLAY_INFO2_Y = intPreferencesKey("overlay_info2_y")
         private val KEY_TAP_HOLD = intPreferencesKey("tap_hold_ms")
         private val KEY_VERIFY_ANIM_BASE = intPreferencesKey("verify_anim_base_ms")
         private val KEY_VERIFY_NEXT_FRAME = intPreferencesKey("verify_next_frame_ms")

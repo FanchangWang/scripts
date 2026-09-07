@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -25,7 +24,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -37,10 +35,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -51,11 +50,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.chess.bot.data.BoardCornersStore
+import com.chess.bot.data.BotConfig
+import com.chess.bot.ui.theme.LocalExtendedColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val CORNER_LABELS = listOf("左上", "右上", "左下", "右下")
-private val ACCENT = Color(0xFF1E8E3E)
 
 /** 主界面「棋盘四角校准」卡片：分辨率 + 状态 + 开始/重新校准；权限未齐时禁用并提示。 */
 @Composable
@@ -66,15 +67,13 @@ fun CalibrationCard(permsOk: Boolean, onStart: () -> Unit) {
     val calibrated = BoardCornersStore.has(w, h, context)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                "棋盘四角校准",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
-            )
-            InfoRow("分辨率 ${w} × ${h}", if (calibrated) "已校准" else "未校准")
+            Text("棋盘四角校准", style = MaterialTheme.typography.titleMedium)
+            ValueRow("分辨率 ${w} × ${h}", if (calibrated) "已校准" else "未校准")
             if (!permsOk) {
                 Text(
                     "请先在上方完成「权限与授权」四项授权，再进行校准。",
@@ -82,18 +81,13 @@ fun CalibrationCard(permsOk: Boolean, onStart: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            // 与「开始对弈」完全同款：启用=主色填充（.fbtn.fill），禁用=灰底实心
-            Button(
+            // 与「开始对弈」完全同款：启用=主色填充（.fbtn.fill），禁用=灰底+描边（PrimaryActionButton）
+            PrimaryActionButton(
+                text = if (calibrated) "重新校准" else "开始校准",
                 enabled = permsOk,
                 onClick = onStart,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-            ) {
-                Text(if (calibrated) "重新校准" else "开始校准")
-            }
+            )
         }
     }
 }
@@ -114,27 +108,37 @@ fun Step1Screen(onGoScreenshot: () -> Unit, onCancel: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // 指引卡：标题 + 说明（对齐 HTML「操作指引」卡）
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    Text("操作指引", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "打开象棋 App → 人机对战 → 选择执红，停在 32 子开局、未走棋 状态，再点下方按钮。\n\n" +
+                        "打开象棋 App → 人机对战 → 选择执红，停在 32 子开局、未走棋状态，再点下方按钮。\n\n" +
                                 "黑車位于上方两角、红俥位于下方两角，算法据此定位四个角。",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
-                    Text("取消")
-                }
-                Button(onClick = onGoScreenshot, modifier = Modifier.weight(1f)) {
-                    Text("去截图")
+            // 操作卡：按钮纵向全宽堆叠，主操作在上（对齐 HTML：去截图 → 取消）
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Button(onClick = onGoScreenshot, modifier = Modifier.fillMaxWidth()) {
+                        Text("去截图")
+                    }
+                    OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+                        Text("取消")
+                    }
                 }
             }
         }
@@ -152,37 +156,34 @@ fun PlayCard(
     onStop: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var cfgState by remember { mutableStateOf(cfg) }
+    LaunchedEffect(cfg) { cfgState = cfg }
+    val scope = rememberCoroutineScope()
+    fun update(transform: (com.chess.bot.data.BotConfigData) -> com.chess.bot.data.BotConfigData) {
+        cfgState = transform(cfgState)
+        val snap = cfgState
+        scope.launch { BotConfig.save(context, snap) }
+    }
+
     val enabled = permsOk && calibrated
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(
-                "对弈",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
-            )
+            Text("对弈", style = MaterialTheme.typography.titleMedium)
             // 配置摘要（引擎仅模式名、开局库仅启用状态）
-            InfoRow("引擎", cfg.thinkMode.cn)
+            ValueRow("引擎", cfgState.thinkMode.cn)
             // 思考摘要：跟随思考模式显示对应参数（时长→思考时间 / 层数→思考层数 / 先到为准→两者）
-            InfoRow("思考", thinkSummary(cfg))
-            InfoRow("开局库", if (cfg.bookEnabled) "已启用" else "已关闭")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenSettings() }
-                    .padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("设置", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "›",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            ValueRow("思考", thinkSummary(cfgState))
+            ValueRow("开局库", if (cfgState.bookEnabled) "已启用" else "已关闭")
+            // 主界面快捷开关：与设置页一致，BotConfig.save → DataStore，开局时读取（不实时驱动运行中的 BotRuntime）
+            SwitchRow("自动下一局", cfgState.autoNext) { v -> update { it.copy(autoNext = v) } }
+            SwitchRow("棋盘绘制", cfgState.boardDraw) { v -> update { it.copy(boardDraw = v) } }
+            ChevronRow("设置", onOpenSettings)
             if (!enabled) {
                 val reason = when {
                     !permsOk -> "请先在上方完成「权限与授权」四项授权"
@@ -200,37 +201,14 @@ fun PlayCard(
                     Text("停止并退出悬浮窗")
                 }
             } else {
-                Button(
+                PrimaryActionButton(
+                    text = "开始对弈（悬浮窗模式）",
                     enabled = enabled,
                     onClick = onStart,
                     modifier = Modifier.fillMaxWidth(),
-                    // 禁用态保持可见：surfaceVariant 底 + 次级文字（默认 12% 透明度过淡）
-                    colors = ButtonDefaults.buttonColors(
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                ) {
-                    Text("开始对弈（悬浮窗模式）")
-                }
+                )
             }
         }
-    }
-}
-
-/** 单行配置摘要：左侧标题、右侧值。 */
-@Composable
-private fun InfoRow(title: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.bodyMedium)
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -306,7 +284,7 @@ fun CalibrationResultScreen() {
             ) {
                 Text("返回 / 放弃")
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { CalibrationSession.start(context) },
                     modifier = Modifier.weight(1f)
@@ -336,7 +314,8 @@ fun CalibrationResultScreen() {
             }
             // 32 子校验结果提示：置于保存按钮正下方，便于查看
             if (dispCorners != null) {
-                val badgeColor = if (passed) Color(0xFF1E8E3E) else Color(0xFFC0202E)
+                val ext = LocalExtendedColors.current
+                val badgeColor = if (passed) ext.success else ext.danger
                 val badgeText =
                     if (passed) "校验通过 · 识别为 32 子开局 ✓" else "校验未通过 · 可重新截图或手动微调"
                 Row(
@@ -399,6 +378,7 @@ fun ManualTuneScreen() {
     val selected = remember { mutableStateOf(0) }
     val zoom = remember { mutableStateOf(1f) }
     val handles = remember { mutableStateListOf<Offset>() } // 位图坐标系
+    val accentColor = LocalExtendedColors.current.success // 角标强调色（深浅自适应，A3）
 
     // 显示尺寸（含缩放）：基准宽度 = 屏宽 - 列表内边距(32dp)，再乘 zoom
     val density = LocalDensity.current
@@ -444,7 +424,7 @@ fun ManualTuneScreen() {
             )
 
             // 操作按钮置于图片上方（不覆盖图片）
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { CalibrationSession.backToResult() },
                     modifier = Modifier.weight(1f)
@@ -556,12 +536,12 @@ fun ManualTuneScreen() {
                                     }
                                     .size(handleDp)
                                     .background(
-                                        ACCENT.copy(alpha = if (isSel) 0.35f else 0.2f),
+                                        accentColor.copy(alpha = if (isSel) 0.35f else 0.2f),
                                         CircleShape
                                     )
                                     .border(
                                         2.dp,
-                                        if (isSel) Color(0xFF0F6E56) else ACCENT,
+                                        accentColor,
                                         CircleShape
                                     )
                                     // 单击即选中：detectDragGestures 的 onDragStart 要过触摸阈值才触发，纯点击选不中
@@ -596,7 +576,7 @@ fun ManualTuneScreen() {
                         Text(
                             "${CORNER_LABELS[i]}：(${p.x.roundToInt()}, ${p.y.roundToInt()})",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (i == selected.value) ACCENT else MaterialTheme.colorScheme.outline,
+                            color = if (i == selected.value) accentColor else MaterialTheme.colorScheme.outline,
                         )
                     }
                 }
@@ -613,7 +593,7 @@ fun ManualTuneScreen() {
 @Composable
 private fun CornerCropGrid(bitmap: Bitmap, corners: List<Pair<Double, Double>>) {
     val half = 100
-    val accent = ACCENT.toArgb()
+    val accent = LocalExtendedColors.current.success.toArgb()
     val crops = remember(bitmap, corners, accent) {
         corners.map { (x, y) ->
             val cx = x.roundToInt()
@@ -663,7 +643,7 @@ private fun CornerCropGrid(bitmap: Bitmap, corners: List<Pair<Double, Double>>) 
                         Text(
                             "${CORNER_LABELS[i]}（${corners[i].first.roundToInt()}, ${corners[i].second.roundToInt()}）",
                             style = MaterialTheme.typography.labelSmall,
-                            color = ACCENT,
+                            color = LocalExtendedColors.current.success,
                         )
                     }
                 }
