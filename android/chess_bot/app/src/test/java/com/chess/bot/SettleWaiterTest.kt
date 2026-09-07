@@ -1,5 +1,6 @@
 package com.chess.bot
 
+import com.chess.bot.game.Const
 import com.chess.bot.game.SettleWaiter
 import com.chess.bot.game.Side
 import org.junit.Assert.assertTrue
@@ -106,5 +107,77 @@ class SettleWaiterTest {
         assertTrue(waiter.feed(b2) is SettleWaiter.Feed.Waiting) // 稳定 1（逐值相等）
         assertTrue(waiter.feed(b1) is SettleWaiter.Feed.Waiting) // 稳定 2
         assertTrue(waiter.feed(TB.copy(b1)) is SettleWaiter.Feed.Ready) // 稳定 3
+    }
+
+    // ---------- 2026-09-08 lift 感知 + 32 子布局校验（game_start_lift_recovery_plan） ----------
+
+    /** 32 子双方各偏 1 子（如重摆动画瞬态/上局残留）→ 非开局形态。 */
+    private fun board32Deviated(): com.chess.bot.game.Board {
+        val b = TB.fullBoard(Side.RED)
+        TB.movePiece(b, 0, 0, 4, 0) // 黑車离位
+        TB.movePiece(b, 9, 0, 5, 0) // 红車离位
+        return b
+    }
+
+    @Test
+    fun `32子非开局形态需3帧稳定_Q1修复`() {
+        val b = board32Deviated()
+        assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting)
+        assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting)
+        assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting)
+        val ready = waiter.feed(b)
+        assertTrue(ready is SettleWaiter.Feed.Ready && ready.count == 32)
+    }
+
+    @Test
+    fun `32子仅红方走一子立即就绪_D2严格版`() {
+        val b = TB.fullBoard(Side.BLACK) // 我方黑，红方在上
+        TB.movePiece(b, 2, 7, 2, 4) // 红炮走一步
+        val feed = waiter.feed(b)
+        assertTrue(feed is SettleWaiter.Feed.Ready && feed.count == 32)
+    }
+
+    @Test
+    fun `32子仅黑方走一子需3帧稳定_D2严格版`() {
+        val b = TB.fullBoard(Side.RED) // 我方红，黑方在上
+        TB.movePiece(b, 0, 1, 3, 1) // 黑馬走一步
+        repeat(3) { assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting) }
+        assertTrue(waiter.feed(b) is SettleWaiter.Feed.Ready)
+    }
+
+    @Test
+    fun `我方提子确认后返回OwnLift`() {
+        val b = TB.fullBoard(Side.RED)
+        b[6][4] = Const.LIFT // 红兵提起（我方半区 r>=5）
+        assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting) // 确认 1/2
+        val f = waiter.feed(b)
+        assertTrue(f is SettleWaiter.Feed.OwnLift && f.liftPos == (6 to 4))
+    }
+
+    @Test
+    fun `我方提子位置变化重置确认计数`() {
+        val a = TB.fullBoard(Side.RED).also { it[6][4] = Const.LIFT }
+        val b = TB.fullBoard(Side.RED).also { it[6][3] = Const.LIFT }
+        assertTrue(waiter.feed(a) is SettleWaiter.Feed.Waiting) // 确认 1
+        assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting) // 位置变，重置为 1
+        val f = waiter.feed(b)
+        assertTrue(f is SettleWaiter.Feed.OwnLift && f.liftPos == (6 to 3))
+    }
+
+    @Test
+    fun `敌方提子等待落子永不就绪_D3无超时`() {
+        val b = TB.fullBoard(Side.RED)
+        b[3][4] = Const.LIFT // 黑卒提起（敌方半区）
+        repeat(5) { assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting) }
+    }
+
+    @Test
+    fun `我方提子被排除后恢复普通稳定计数`() {
+        val lifted = TB.fullBoard(Side.RED).also { it[6][4] = Const.LIFT }
+        assertTrue(waiter.feed(lifted) is SettleWaiter.Feed.Waiting) // 确认 1/2
+        assertTrue(waiter.feed(lifted) is SettleWaiter.Feed.OwnLift) // 确认 2/2 → 交恢复流程
+        // 提子落定（棋子归位）→ 32 子开局形态立即就绪
+        val ready = waiter.feed(TB.fullBoard(Side.RED))
+        assertTrue(ready is SettleWaiter.Feed.Ready && ready.count == 32)
     }
 }

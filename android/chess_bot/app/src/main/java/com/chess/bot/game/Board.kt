@@ -22,6 +22,16 @@ fun copyBoard(board: Board): Board = Array(ROWS) { r -> board[r].copyOf() }
 fun pieceCount(board: Board): Int =
     board.sumOf { row -> row.count { it != null && it != Const.LIFT } }
 
+/** lift 提子格坐标列表（摆棋等待期 lift 感知分流用，2026-09-08）。 */
+fun liftCells(board: Board): List<Pair<Int, Int>> =
+    buildList {
+        for (r in 0 until ROWS) {
+            for (c in 0 until COLS) {
+                if (board[r][c] == Const.LIFT) add(r to c)
+            }
+        }
+    }
+
 // 棋子 ID -> FEN 字符（黑小写/红大写）
 val PIECE_FEN: Map<String, Char> = mapOf(
     "b_r" to 'r', "b_n" to 'n', "b_b" to 'b', "b_a" to 'a',
@@ -138,4 +148,28 @@ fun fenOfBoard(
         lines.add(parts.joinToString(""))
     }
     return "${lines.joinToString("/")} $sideChar - - $halfmoveClock 1"
+}
+
+/**
+ * 布局日志格式化（2026-09-08 Q1：打印视角跟随我方——「下方为我方棋子」）。
+ * 网格恒定「我方在屏幕下半区（rows 5..9）」；执红打印 r9→r0 使红子落在文本块底部
+ * （与屏幕一致）；执黑时行序翻转为 r0→r9，使我方黑子落在文本块底部。
+ * 行号标签保留原始网格坐标 r0..r9，与其他日志（gridToSquare 等）可对照。
+ * 空格用全宽中点「・」(U+30FB) 与汉字等宽（2026-09-08 Q2：窄字符「·」导致列不对齐）。
+ * lift 提子瞬时态显示为「提」。纯函数（无 OpenCV 依赖），JVM 单测可直接覆盖。
+ */
+fun formatLayoutLines(board: Board, mySide: Side = Side.RED): List<String> {
+    val lines = mutableListOf<String>()
+    val rowRange = if (mySide == Side.BLACK) 0 until ROWS else ROWS - 1 downTo 0
+    for (r in rowRange) {
+        val cells = (0 until COLS).joinToString(" ") { c ->
+            when (val v = board[r][c]) {
+                null -> "・"
+                Const.LIFT -> "提"
+                else -> PIECE_CN[v] ?: v
+            }
+        }
+        lines.add("r$r $cells")
+    }
+    return lines
 }

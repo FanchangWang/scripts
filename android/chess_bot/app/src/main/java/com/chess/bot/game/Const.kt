@@ -57,6 +57,26 @@ object Const {
     // 注：2026-09-07 修复双重 softmax 前此门控是死代码（liftProb 被压到天花板 0.1534 < 0.30
     // 永不触发），修复后按模型真实概率工作，0.30 待真机实测确认。
 
+    // ---------- 提子恢复（2026-09-08 game_start_lift_recovery_plan） ----------
+    /** 我方半区起始行（屏幕网格约定：我方恒在 rows 5..9，与执红执黑无关）。 */
+    const val OWN_HALF_MIN_ROW = 5
+
+    /** 我方提子确认帧数：连续同位置 lift 达此帧数才触发恢复流程（过滤飞行途经瞬态伪影）。 */
+    const val LIFT_CONFIRM_FRAMES = 2
+
+    /** 提子身份识别：从 lift 格中心向上扫描的 dy 范围与步长（px；一格高 100px）。
+     *  原理：提子 3D 悬浮特效投影 2D 后棋子位于格子上半部（部分覆盖正上方格子），
+     *  向上逐 dy 裁 64x64 送 cls，必有一档让悬浮棋子居中。 */
+    const val LIFT_SCAN_MIN_DY_PX = 8
+
+    // 2026-09-08 真机实测：有效识别带止于 dy≈58（棋子悬空不足一格），70 = 58+12px 余量；
+    // 上限收紧后 dy>70 的「正上方格污染档」从源头消失（D2-B）。
+    const val LIFT_SCAN_MAX_DY_PX = 70
+    const val LIFT_SCAN_STEP_PX = 10
+
+    /** 提子身份识别：单档读数接受阈值（悬浮棋子带阴影/特效，置信度低于静止棋子的 0.98）。 */
+    const val LIFT_SCAN_MIN_PROB = 0.5f
+
     // ---------- 延时（毫秒） ----------
     // 落子间隔：按下到松开的最短保持时间；DataStore 持久化用户可在设置页「对弈」分组覆盖
     const val TAP_HOLD_MS = 50
@@ -132,7 +152,8 @@ object Const {
     const val ENEMY_FRAME_PIXEL_THRESHOLD = 18.0 // 【已废弃】原 frameDiff 单像素灰度差阈值
     const val ENEMY_FRAME_CHANGED_MIN = 12      // 【已废弃】原 frameDiff 触发识别的最小变化像素数
     const val ENEMY_FORCE_RECOGNIZE_MS = 200L // 【已废弃】原 frameDiff 兜底强制识别间隔，现每轮均全量识别
-    const val ENEMY_IDLE_POLL_MS = 30L // 每轮全量识别后的短暂让步间隔（节流；识别本身已 ~250ms）
+    const val ENEMY_IDLE_POLL_MS =
+        50L // 每轮全量识别后的短暂让步间隔（2026-09-07 D1=B：30→50，降低 grab 频率/GC 压力，敌着检出延迟 +~20ms）
 
     // ---------- 对局结束 / 认输检测 ----------
     const val RESIGN_CONFIRM_COUNT = 3 // 双方将帅缺失需连续几帧才确认

@@ -87,13 +87,17 @@ object VisionInit {
         return bgr
     }
 
-    /** Bitmap -> BGR Mat。 */
-    fun bitmapToBgr(bitmap: Bitmap): Mat {
-        val rgba = Mat()
+    /**
+     * Bitmap -> BGR Mat。
+     * dstRgba 非空时复用其中转 Mat（调用方保证生命周期与单线程访问，2026-09-07 GC 优化：
+     * 消掉每次 grab ~10MB 的 rgba 临时分配）；为空时临时分配并释放（默认行为不变）。
+     */
+    fun bitmapToBgr(bitmap: Bitmap, dstRgba: Mat? = null): Mat {
+        val rgba = dstRgba ?: Mat()
         Utils.bitmapToMat(bitmap, rgba)
         val bgr = Mat()
         Imgproc.cvtColor(rgba, bgr, Imgproc.COLOR_RGBA2BGR)
-        rgba.release()
+        if (dstRgba == null) rgba.release()
         return bgr
     }
 }

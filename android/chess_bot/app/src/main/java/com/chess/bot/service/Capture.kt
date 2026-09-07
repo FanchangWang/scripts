@@ -34,6 +34,10 @@ class Capture(
     /** 上次和棋检查时间（纳秒），节流用。 */
     private var lastDrawCheckAt = 0L
 
+    /** rgba 中转 Mat 缓存（2026-09-07 GC 优化：同分辨率复用，消每次 grab ~10MB 分配；Capture 随会话销毁）。 */
+    private var rgbaCache: Mat? = null
+    private var rgbaKey: Pair<Int, Int>? = null
+
     /** 原始最新帧（供文字识别）。 */
     fun screenshot(): Bitmap? = ScreenCaptureSource.get().latest()
 
@@ -42,7 +46,13 @@ class Capture(
         // 任何 Mat 使用前必须确保 OpenCV native 已加载（新进程首个入口就在这里）
         if (!VisionInit.init(context)) return null
         val bmp = screenshot() ?: return null
-        return correct(bmp)
+        // 矫正完成后 raw Bitmap（~10MB）即刻归还（D2=A：调用点显式 recycle）
+        val dst = try {
+            correct(bmp)
+        } finally {
+            bmp.recycle()
+        }
+        return dst
     }
 
     /** 透视矫正（缓存 homography）。 */
@@ -50,7 +60,9 @@ class Capture(
         if (!VisionInit.init(context)) return null
         val h = Homography.get(raw.width, raw.height)
         homography = h
-        val src = VisionInit.bitmapToBgr(raw)
+        val key = raw.width to raw.height
+        val rgba = if (rgbaKey == key) rgbaCache!! else Mat().also { rgbaCache = it; rgbaKey = key }
+        val src = VisionInit.bitmapToBgr(raw, rgba)
         val dst = Mat()
         Imgproc.warpPerspective(
             src,
@@ -90,8 +102,9 @@ class Capture(
         val now = System.nanoTime()
         if (now - lastDrawCheckAt < Const.DRAW_CHECK_THROTTLE_MS * 1_000_000) return false
         lastDrawCheckAt = now
-        var img = screenshot() ?: return false
-        var buttons = TextMatcher.findDrawDialog(context, img)
+        val first = screenshot() ?: return false
+        var buttons = TextMatcher.findDrawDialog(context, first)
+        first.recycle() // 2026-09-07 D2=A：raw Bitmap 用完即还
         if (buttons.isEmpty()) return false // 三词不全，不是和棋页面
         val reject = decideDrawReject()
         var count = 0
@@ -109,8 +122,9 @@ class Capture(
             )
             if (!tapXy(target.x, target.y)) break // 点击失败即中止
             delay(Const.DRAW_DIALOG_SETTLE_MS)
-            img = screenshot() ?: break
+            val img = screenshot() ?: break
             buttons = TextMatcher.findDrawDialog(context, img)
+            img.recycle() // 2026-09-07 D2=A：raw Bitmap 用完即还
             if (buttons.isEmpty()) break // 弹窗已消失
         }
         return true

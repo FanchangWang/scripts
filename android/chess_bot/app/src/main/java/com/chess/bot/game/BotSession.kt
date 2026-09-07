@@ -127,13 +127,21 @@ class BotSession(private val context: Context) {
         try {
             visionWarmup()
             state.reset()
+            adoptedByRecovery = false
             pendingPonderMove = null
             pendingPonderResult = null
             emit()
             val corrected = waitForBoardSettled()
             if (corrected == null) {
-                running = false
-                emit()
+                if (adoptedByRecovery) {
+                    // 我方提子恢复流程已接管棋局（已初始化、已走恢复着法、轮到敌方），
+                    // corrected 已由恢复流程释放，跳过 initialize/decideStartTurn 直接进入主循环
+                    LogBus.log(LogLevel.INFO, LogTag.PLAY, "提子恢复已接管棋局，跳过重新初始化")
+                    startFlow()
+                } else {
+                    running = false
+                    emit()
+                }
                 return
             }
             try {
@@ -163,14 +171,20 @@ class BotSession(private val context: Context) {
 
     private val startGuard = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    /** 提子恢复流程已接管棋局（waitForBoardSettled 返回 ADOPTED 时置位，start 据此跳过重新初始化）。 */
+    private var adoptedByRecovery = false
+
     /**
-     * 摆棋稳定等待（绝杀探测改造同期）：
-     * - 检测不到棋盘（0 子）→ 持续等待（周期日志）
-     * - 32 子 → 新开局快速返回；31 子 → 持续等待（不降级，天然吸收提子中间帧）
-     * - 其余子数 → SettleWaiter 逐值稳定计数（连续 3 帧相同）
-     * - 不设超时：开始之后一直等摆棋直到手动停止（⌂ 返回 / 长按中断）。
+     * 摆棋稳定等待（2026-09-08 lift 感知改造）：
+     * - 我方半区提子（连续 2 帧确认）→ recoverOwnLift 恢复走子（ADOPTED 时 adoptedByRecovery
+     *   置位并返回 null，start 走接管路径）；
+     * - 敌方提子 → 等待落子（无超时，D3=A）；
+     * - 32 子开局形态（默认位或红方走一子，D2=A）→ 快速返回；非开局形态 → 3 帧稳定（Q1 修复）；
+     * - 31 子全初始位（提子过渡态）→ 等待；31 子残局 → 逐值稳定计数；
+     * - 其余子数 → SettleWaiter 逐值稳定计数（连续 3 帧相同）+ 将帅同现门控；
+     * - 不设总超时：开始之后一直等摆棋直到手动停止（⌂ 返回 / 长按中断）。
      *
-     * 返回摆棋完毕的矫正帧（所有权归调用方）；中断返回 null。
+     * 返回摆棋完毕的矫正帧（所有权归调用方）；中断/恢复接管返回 null。
      */
     private suspend fun waitForBoardSettled(): Mat? {
         val waiter = SettleWaiter(LogTag.PLAY)
@@ -198,10 +212,30 @@ class BotSession(private val context: Context) {
                     else -> "子数 $count · 稳定 ${waiter.stableProgress}/${waiter.threshold}"
                 }
                 if (count > 0) {
-                    if (waiter.feed(board) is SettleWaiter.Feed.Ready) {
-                        handOff = true
-                        LogBus.log(LogLevel.INFO, LogTag.PLAY, "棋盘已就绪（$count 子）")
-                        return corrected
+                    when (val f = waiter.feed(board)) {
+                        is SettleWaiter.Feed.Ready -> {
+                            handOff = true
+                            LogBus.log(LogLevel.INFO, LogTag.PLAY, "棋盘已就绪（$count 子）")
+                            return corrected
+                        }
+
+                        is SettleWaiter.Feed.OwnLift -> {
+                            // 我方提子确认：Mat 所有权移交恢复流程（内部释放）；
+                            // ADOPTED → 恢复走子完成、状态已接管，返回 null 让 start 走接管路径；
+                            // ABORT → 恢复走子失败中止启动；RETRY → 继续等待下帧重试
+                            handOff = true
+                            when (recoverOwnLift(corrected, f.liftPos)) {
+                                LiftRecovery.ADOPTED -> {
+                                    adoptedByRecovery = true
+                                    return null
+                                }
+
+                                LiftRecovery.ABORT -> return null
+                                LiftRecovery.RETRY -> {}
+                            }
+                        }
+
+                        SettleWaiter.Feed.Waiting -> {}
                     }
                 }
                 val now = System.nanoTime()
@@ -236,8 +270,86 @@ class BotSession(private val context: Context) {
                 LogTag.PLAY,
                 "无法推断轮次（${state.phase.cn}），默认我方（${state.mySide.cn}）先走"
             )
-            Recognizer.formatLayout(state.board)
-                .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "开局布局 $it") }
+            // 布局不在此打印：initialize 已无条件落「摆棋布局」（2026-09-08 Q1 去重）
+        }
+    }
+
+    // ---------- 我方提子恢复（2026-09-08 game_start_lift_recovery_plan） ----------
+
+    /**
+     * 摆棋等待中检测到我方半区 lift（此前我方走棋失败，棋子被提起未落）时的恢复流程。
+     * 两条入口共用（开始对弈 waitForBoardSettled / 自动下一局 AutoNext.onOwnLift）。
+     *
+     * 步骤：
+     * 1. 重新接管会话语义（state.reset；AutoNext 入口此前的旧局状态一并清除）；
+     * 2. 向上逐 px cls 扫描识别提起子身份（悬浮棋子位于格子上半部，无需先验猜测，D1）；
+     * 3. 恢复棋盘（提起子落回原格）并按 initialize 语义接管状态（resetCellImgs 基线、
+     *    turn=我方；恢复着法计入 moveCount，D4=A）；
+     * 4. 复用 doMove 主链路走恢复着法（开局库→皮卡鱼）：源格==提子格时子已在手，
+     *    首击直接补落目标格（dstOnlySrc）；源格为其他棋子时常规两击——点源格会令提起的
+     *    棋子被 App 自动落回原格，其 diff 为「lift 外观→棋子」但读数==已提交值 →
+     *    走 driftCells 自愈刷新基线，不进 changes、不干扰帧分类（v3 白名单天然兼容）。
+     *
+     * Mat 所有权归本函数，所有路径 finally 释放。
+     */
+    private suspend fun recoverOwnLift(correctedOwned: Mat, liftPos: Pair<Int, Int>): LiftRecovery {
+        try {
+            state.reset()
+            pendingPonderMove = null
+            pendingPonderResult = null
+            val (lr, lc) = liftPos
+            val raw = Recognizer.analyzeBoard(correctedOwned)
+            val abovePiece = if (lr > 0) raw[lr - 1][lc] else null
+            val piece = Recognizer.identifyLiftedPiece(correctedOwned, lr, lc, abovePiece)
+            if (piece == null || piece == Const.LIFT) {
+                LogBus.log(
+                    LogLevel.WARN, LogTag.PLAY,
+                    "提子身份识别失败（r$lr c$lc 向上扫描无有效棋子读数），下帧重试"
+                )
+                return LiftRecovery.RETRY
+            }
+            val mySide = pieceColor(piece)
+            // 合理性校验：对方将/帅须在敌方半区（防飞行棋子途经瞬态伪触发 OwnLift）
+            val enemyGeneral = if (mySide == Side.RED) "b_k" else "r_K"
+            val enemyGeneralTop = (0 until Const.OWN_HALF_MIN_ROW).any { r ->
+                (0 until COLS).any { c -> raw[r][c] == enemyGeneral }
+            }
+            if (!enemyGeneralTop) {
+                LogBus.log(
+                    LogLevel.WARN, LogTag.PLAY,
+                    "提子识别为${pieceLabel(piece)}但对方将帅不在上半区，疑似动画伪影，下帧重试"
+                )
+                return LiftRecovery.RETRY
+            }
+            // 恢复棋盘并接管状态（对齐 initialize 语义：replaceBoard 归一化 lift 后写回提起子）
+            raw[lr][lc] = piece // analyzeBoard 每次返回新分配数组，可原地修改
+            state.replaceBoard(raw) // 其余残留 lift 格（若有瞬态伪影）一并归一化为 null
+            state.board[lr][lc] = piece
+            state.markInitialized(mySide, detectPhase(state.board, mySide))
+            state.turn = mySide
+            state.resetCellImgs(correctedOwned)
+            LogBus.log(
+                LogLevel.INFO, LogTag.PLAY,
+                "我方提子识别为${pieceLabel(piece)}（r$lr c$lc），棋盘已恢复，开始走恢复着法"
+            )
+            Recognizer.formatLayout(state.board, mySide)
+                .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "恢复布局 $it") }
+            emit()
+            engine.newGame(context)
+            if (!doMove(dstOnlySrc = liftPos)) {
+                LogBus.log(
+                    LogLevel.ERROR, LogTag.PLAY,
+                    "提子恢复走子未完成（doMove 失败），中止启动；处理后可重新点「开始」"
+                )
+                return LiftRecovery.ABORT
+            }
+            LogBus.log(
+                LogLevel.INFO, LogTag.PLAY,
+                "提子恢复走子完成，轮到${state.turn.cn}方，对弈继续"
+            )
+            return LiftRecovery.ADOPTED
+        } finally {
+            correctedOwned.release()
         }
     }
 
@@ -327,18 +439,32 @@ class BotSession(private val context: Context) {
         state.resetCellImgs(corrected) // 开局全量重建 90 格中心小图（无动画中间帧风险）
         state.markInitialized(mySide, phase)
         LogBus.log(LogLevel.INFO, LogTag.PLAY, "我方为${mySide.cn}方，当前棋盘为${phase.cn}")
+        // 摆棋布局无条件落日志（2026-09-08 意见1：Q1 类问题直接从布局定位，不再靠猜）
+        LogBus.log(LogLevel.INFO, LogTag.VISION, "摆棋布局（${pieceCount(board)} 子）")
+        Recognizer.formatLayout(board, mySide)
+            .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "摆棋布局 $it") }
+        val lifts = liftCells(board)
+        if (lifts.isNotEmpty()) {
+            LogBus.log(LogLevel.WARN, LogTag.VISION, "摆棋帧含提子格：$lifts（不应出现，请排查）")
+        }
         return true
     }
 
     // ---------- 我方走棋（无限重试 + 守卫） ----------
 
-    private suspend fun doMove(): Boolean {
+    /**
+     * 我方走棋（无限重试 + 守卫）。
+     * @param dstOnlySrc 提子恢复场景（2026-09-08）传提子格坐标：着法源格==该格时棋子已在手，
+     * 首击直接补落目标格（跳过点源格——对提着中的棋子再点源格行为不可控）。
+     */
+    private suspend fun doMove(dstOnlySrc: Pair<Int, Int>? = null): Boolean {
         val pending = computeMove() ?: return false
         val unpacked = unpackMove(pending.move) ?: return false
         val (r1, c1, r2, c2, piece) = unpacked
         state.resignStreak = 0
         var zeroChange = 0
-        var dstOnly = false // 上一轮 verify 判「提起未落」→ 本轮只点目标格补落（防重点源格把已提起的子又点下）
+        // 提子恢复：源格==提子格 → 棋子已在手，首轮直接只点目标格
+        var dstOnly = dstOnlySrc != null && r1 == dstOnlySrc.first && c1 == dstOnlySrc.second
         var attempt = 0
         while (true) {
             attempt++
@@ -1185,7 +1311,9 @@ class BotSession(private val context: Context) {
         lastOcrEndScanAt = now
         val cap = capture ?: return false
         val img = cap.screenshot() ?: return false
-        val hit = TextMatcher.findGameoverScan(context, img) ?: run {
+        val hit = TextMatcher.findGameoverScan(context, img)
+        img.recycle() // 2026-09-07 D2=A：raw Bitmap（~10MB）用完即还，hit 已含词文本与坐标
+        if (hit == null) {
             LogBus.log(
                 LogLevel.DEBUG,
                 LogTag.PLAY,
@@ -1287,14 +1415,25 @@ class BotSession(private val context: Context) {
                 autoNextEnabled = autoNextEnabled,
                 onPhase = { setStatus(it) },
                 interruptSession = { interrupt() },
+                onOwnLift = { corrected, liftPos -> recoverOwnLift(corrected, liftPos) },
             )
-            val corrected = autoNext.scanAndWait() ?: return false
+            val settledCorrected = when (val result = autoNext.scanAndWait()) {
+                null -> return false
+                is ScanResult.Adopted -> {
+                    // 我方提子恢复走子已完成并接管状态（已初始化、轮到敌方）：
+                    // 跳过 state.reset/initialize/轮次判定，直接回主循环等敌方走子
+                    LogBus.log(LogLevel.INFO, LogTag.NEXT, "提子恢复已接管棋局，跳过重新初始化")
+                    return true
+                }
+
+                is ScanResult.Settled -> result.corrected
+            }
             try {
                 // state.reset() 不触碰 running（对齐最终版 python：无 keepRunning 过渡）
                 state.reset()
                 pendingPonderMove = null
                 pendingPonderResult = null
-                if (!initialize(corrected)) return false
+                if (!initialize(settledCorrected)) return false
                 engine.newGame(context)
                 if (state.phase == Phase.ENDGAME) {
                     state.turn = state.mySide
@@ -1320,13 +1459,12 @@ class BotSession(private val context: Context) {
                             LogTag.NEXT,
                             "排局模式：${state.phase.cn}，默认轮到${state.mySide.cn}方（我方）走棋"
                         )
-                        Recognizer.formatLayout(state.board)
-                            .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "排局布局 $it") }
+                        // 布局不在此打印：initialize 已无条件落「摆棋布局」（2026-09-08 Q1 去重）
                     }
                 }
                 return true
             } finally {
-                corrected.release()
+                settledCorrected.release()
             }
         } finally {
             autoNextFlag = false
