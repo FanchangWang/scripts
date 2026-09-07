@@ -2,7 +2,7 @@ package com.chess.bot.game
 
 import android.content.Context
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.service.Capture
 import com.chess.bot.vision.PieceClsModel
@@ -28,7 +28,7 @@ class AutoNext(
 
     /** 返回摆棋完毕的矫正帧；中断/超时/失败返回 null。 */
     suspend fun scanAndWait(): Mat? {
-        LogBus.log(LogKind.INFO, LogTag.NEXT, "开始扫描结算画面")
+        LogBus.log(LogLevel.INFO, LogTag.NEXT, "开始扫描结算画面")
         var lastWord: String? = null
         var retryCount = 0
         val waiter = SettleWaiter(LogTag.NEXT)
@@ -38,12 +38,12 @@ class AutoNext(
         while (true) {
             if (!shouldContinue()) return null
             if (!autoNextEnabled()) {
-                LogBus.log(LogKind.WARN, LogTag.NEXT, "自动下一局已关闭，中止扫描")
+                LogBus.log(LogLevel.WARN, LogTag.NEXT, "自动下一局已关闭，中止扫描")
                 return null
             }
             if (elapsedSeconds(startAt) > Const.AUTO_NEXT_TIMEOUT_S) {
                 LogBus.log(
-                    LogKind.WARN,
+                    LogLevel.WARN,
                     LogTag.NEXT,
                     "${Const.AUTO_NEXT_TIMEOUT_S}秒未完成结算交互与摆棋，中止自动下一局，请手动处理",
                 )
@@ -66,39 +66,39 @@ class AutoNext(
                 if (!isButton) {
                     if (retryCount > Const.GAMEOVER_RETRY_MAX) {
                         LogBus.log(
-                            LogKind.ERROR,
+                            LogLevel.ERROR,
                             LogTag.NEXT,
                             "遮罩「$word」发送返回键 ${Const.GAMEOVER_RETRY_MAX} 次仍无响应，中止自动下一局，请手动处理",
                         )
                         return null
                     }
                     LogBus.log(
-                        LogKind.INFO,
+                        LogLevel.INFO,
                         LogTag.NEXT,
                         "识别到遮罩文字「$word」，发送返回键（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
                     )
                     onPhase(BotStatus.NEXT_MASK)
                     if (!capture.back()) {
-                        LogBus.log(LogKind.ERROR, LogTag.NEXT, "自动下一局交互失败（返回键）")
+                        LogBus.log(LogLevel.ERROR, LogTag.NEXT, "自动下一局交互失败（返回键）")
                         return null
                     }
                 } else {
                     if (retryCount > Const.GAMEOVER_RETRY_MAX) {
                         LogBus.log(
-                            LogKind.ERROR,
+                            LogLevel.ERROR,
                             LogTag.NEXT,
                             "结算按钮「$word」点击 ${Const.GAMEOVER_RETRY_MAX} 次仍无响应，中止自动下一局，请手动处理",
                         )
                         return null
                     }
                     LogBus.log(
-                        LogKind.INFO,
+                        LogLevel.INFO,
                         LogTag.NEXT,
                         "识别到结算按钮「$word」，点击进入下一局（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
                     )
                     onPhase(BotStatus.NEXT_BUTTON)
                     if (!capture.tapXy(x, y)) {
-                        LogBus.log(LogKind.ERROR, LogTag.NEXT, "自动下一局交互失败（点击结算按钮）")
+                        LogBus.log(LogLevel.ERROR, LogTag.NEXT, "自动下一局交互失败（点击结算按钮）")
                         return null
                     }
                 }
@@ -113,7 +113,7 @@ class AutoNext(
                 val board = Recognizer.analyzeBoard(corrected)
                 val count = pieceCount(board)
                 if (count == 0) {
-                    LogBus.log(LogKind.DEBUG, LogTag.NEXT, "未识别到结算文字，棋盘为空")
+                    LogBus.log(LogLevel.DEBUG, LogTag.NEXT, "未识别到结算文字，棋盘为空")
                 } else {
                     // 棋子出现 = 操作已生效，清空重试状态
                     lastWord = null

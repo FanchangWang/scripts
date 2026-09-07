@@ -7,7 +7,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.chess.bot.game.Const
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -32,7 +32,7 @@ data class BotConfigData(
     val tapHoldMs: Int = Const.TAP_HOLD_MS,
     val verifyAnimBaseMs: Int = Const.VERIFY_ANIM_BASE_MS,
     val verifyNextFrameMs: Int = Const.VERIFY_NEXT_FRAME_MS,
-    val fileLogLevel: LogKind = LogKind.DEBUG,
+    val fileLogLevel: LogLevel = LogLevel.DEBUG,
 )
 
 /** 全局配置单例：服务启动时 load；设置页保存时整体刷新。引擎/会话直接读 data。 */
@@ -101,9 +101,9 @@ class BotSettings(private val context: Context) {
         context.dataStore.data.map { it[KEY_BOOK_MAX_MOVES] ?: DEFAULTS.bookMaxMoves }
     val autoNextEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_AUTO_NEXT] ?: DEFAULTS.autoNext }
-    val fileLogLevel: Flow<LogKind> =
+    val fileLogLevel: Flow<LogLevel> =
         context.dataStore.data.map {
-            LogKind.valueOf(
+            LogLevel.valueOf(
                 it[KEY_LOG_LEVEL] ?: DEFAULTS.fileLogLevel.name
             )
         }
@@ -141,7 +141,7 @@ class BotSettings(private val context: Context) {
     suspend fun setBookEnabled(v: Boolean) = context.dataStore.edit { it[KEY_BOOK_ENABLED] = v }
     suspend fun setBookMaxMoves(v: Int) = context.dataStore.edit { it[KEY_BOOK_MAX_MOVES] = v }
     suspend fun setAutoNextEnabled(v: Boolean) = context.dataStore.edit { it[KEY_AUTO_NEXT] = v }
-    suspend fun setFileLogLevel(v: LogKind) = context.dataStore.edit { it[KEY_LOG_LEVEL] = v.name }
+    suspend fun setFileLogLevel(v: LogLevel) = context.dataStore.edit { it[KEY_LOG_LEVEL] = v.name }
     suspend fun setBoardDrawEnabled(v: Boolean) = context.dataStore.edit { it[KEY_BOARD_DRAW] = v }
     suspend fun setTapHoldMs(v: Int) = context.dataStore.edit { it[KEY_TAP_HOLD] = v }
     suspend fun setVerifyAnimBaseMs(v: Int) =

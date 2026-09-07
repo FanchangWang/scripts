@@ -11,7 +11,7 @@ import android.os.IBinder
 import com.chess.bot.data.BotConfig
 import com.chess.bot.log.FileLogger
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +31,7 @@ class BotForegroundService : Service() {
         // 配置先于日志加载：文件日志级别过滤读 BotConfig（默认 DEBUG 兜底）
         serviceScope.launch { BotConfig.load(applicationContext) }
         // 会话日志在 handleStart 按模式开启：仅「开始对弈」清历史并新建（校准不动日志）
-        LogBus.log(LogKind.OK, LogTag.SERVICE, "前台服务已创建")
+        LogBus.log(LogLevel.INFO, LogTag.SERVICE, "前台服务已创建")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -39,11 +39,15 @@ class BotForegroundService : Service() {
             return handleStart(intent)
         } catch (e: Exception) {
             LogBus.log(
-                LogKind.ERROR,
+                LogLevel.ERROR,
                 LogTag.SERVICE,
                 "前台服务处理异常：${e::class.java.simpleName}: ${e.message}"
             )
-            android.util.Log.e("BotForegroundService", "handleStart 失败", e)
+            LogBus.log(
+                LogLevel.ERROR,
+                LogTag.SERVICE,
+                "handleStart 失败：${e::class.java.simpleName}: ${e.message}"
+            )
             stopSelf()
             return START_NOT_STICKY
         }
@@ -62,14 +66,14 @@ class BotForegroundService : Service() {
         @Suppress("DEPRECATION")
         val resultData = intent?.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
         if (resultCode == Int.MIN_VALUE || resultData == null) {
-            LogBus.log(LogKind.ERROR, LogTag.SERVICE, "启动服务缺少屏幕捕获授权参数")
+            LogBus.log(LogLevel.ERROR, LogTag.SERVICE, "启动服务缺少屏幕捕获授权参数")
             stopSelf()
             return START_NOT_STICKY
         }
         // 校准模式：仅持有截屏管线，不弹出对弈控制条
         val isCalibration = intent?.getBooleanExtra(EXTRA_CALIBRATION, false) == true
         LogBus.log(
-            LogKind.DEBUG,
+            LogLevel.DEBUG,
             LogTag.SERVICE,
             "收到授权结果：code=$resultCode${if (isCalibration) "（校准模式）" else ""}"
         )
@@ -77,7 +81,7 @@ class BotForegroundService : Service() {
         // 校准模式不开日志（不清历史、不写文件）
         if (!isCalibration) {
             FileLogger.start(this)
-            LogBus.log(LogKind.INFO, LogTag.SERVICE, "会话日志已开启（历史已清空）")
+            LogBus.log(LogLevel.INFO, LogTag.SERVICE, "会话日志已开启（历史已清空）")
         }
 
         // Android 14+：必须先进入 mediaProjection 型前台服务，再获取 MediaProjection
@@ -86,10 +90,10 @@ class BotForegroundService : Service() {
             buildNotification(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
         )
-        LogBus.log(LogKind.DEBUG, LogTag.SERVICE, "前台服务已进入 mediaProjection 类型")
+        LogBus.log(LogLevel.DEBUG, LogTag.SERVICE, "前台服务已进入 mediaProjection 类型")
 
         if (ScreenCaptureSource.get().start(this, resultCode, resultData)) {
-            LogBus.log(LogKind.OK, LogTag.SERVICE, "截屏管线已启动")
+            LogBus.log(LogLevel.INFO, LogTag.SERVICE, "截屏管线已启动")
             val appCtx = applicationContext
             // 预热（2026-08-29 #2 提速）：OpenCV + cls 会话立即在后台加载，
             // 对弈模式再并行启动 pikafish 子进程（uci 握手 + NNUE 加载 ~1.4s），
@@ -107,7 +111,7 @@ class BotForegroundService : Service() {
                     runCatching { com.chess.bot.engine.PikafishEngine.get().ensureStarted(appCtx) }
                         .onFailure { e ->
                             LogBus.log(
-                                LogKind.WARN,
+                                LogLevel.WARN,
                                 LogTag.ENGINE,
                                 "引擎预热失败（首次走棋时将重试）：${e.message}"
                             )
@@ -117,7 +121,7 @@ class BotForegroundService : Service() {
                 serviceScope.launch { com.chess.bot.overlay.OverlayManager.ensureShown(this@BotForegroundService) }
             }
         } else {
-            LogBus.log(LogKind.ERROR, LogTag.SERVICE, "截屏管线启动失败，请重新授权")
+            LogBus.log(LogLevel.ERROR, LogTag.SERVICE, "截屏管线启动失败，请重新授权")
             stopSelf()
         }
         return START_NOT_STICKY

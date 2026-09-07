@@ -31,7 +31,7 @@ fun recognizeBoardChanged(
     val changes = mutableListOf<Change>()
     val driftCells = mutableListOf<Pair<Int, Int>>()
     val clsDetails = mutableListOf<String>()
-    var diffFires = 0
+    var diffCells = 0
     var transitLifts = 0
     var unconfirmed = 0
     for (r in 0 until ROWS) {
@@ -39,7 +39,7 @@ fun recognizeBoardChanged(
             val patch = Recognizer.cropCellGray(corrected, r, c)
             val base = baseline[r][c]
             if (base == null || Recognizer.cellChanged(patch, base)) {
-                diffFires++
+                diffCells++
                 // gateLift=true：变化格启用 lift 混淆门控（走子动画/选中高亮的棋子判提起，不判错子）
                 val (new, res) = Recognizer.analyzeCellEx(corrected, r, c, gateLift = true)
                 val old = committed[r][c]
@@ -85,7 +85,7 @@ fun recognizeBoardChanged(
         }
     }
     return BoardScan(
-        board, changes, diffFires, driftCells, transitLifts,
+        board, changes, diffCells, driftCells, transitLifts,
         clsDetails.takeIf { it.isNotEmpty() }?.joinToString(", "),
         unconfirmed,
     )
@@ -95,7 +95,7 @@ fun recognizeBoardChanged(
 data class BoardScan(
     val board: Board,
     val changes: List<Change>,
-    val diffFires: Int,
+    val diffCells: Int,
     val driftCells: List<Pair<Int, Int>>,
     val transitLifts: Int = 0,
     /** 变化格 cls 置信度明细（2026-09-07 诊断用）：「格=读数(top1,liftX)」逗号拼接，无变化格为 null。 */

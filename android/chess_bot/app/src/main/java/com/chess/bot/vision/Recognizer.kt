@@ -75,7 +75,7 @@ object Recognizer {
             val res = PieceClsModel.classifyCellEx(VisionInit.requireContext(), cell)
             val key = if (gateLift && PieceClsModel.isLiftAmbiguous(res.key, res.liftProb)) {
                 LogBus.log(
-                    com.chess.bot.log.LogKind.DEBUG, com.chess.bot.log.LogTag.VISION,
+                    com.chess.bot.log.LogLevel.DEBUG, com.chess.bot.log.LogTag.VISION,
                     "动画帧抑制 r$r c$c：top1=${res.key}(%.2f) lift=%.2f -> 判提起".format(
                         res.top1Prob, res.liftProb
                     )

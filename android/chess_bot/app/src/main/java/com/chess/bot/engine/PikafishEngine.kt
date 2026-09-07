@@ -3,7 +3,7 @@ package com.chess.bot.engine
 import android.content.Context
 import com.chess.bot.game.Const
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import java.io.File
 
@@ -53,7 +53,7 @@ class PikafishEngine private constructor() {
             val nnue = File(cwd, "pikafish.nnue")
             if (!nnue.exists()) {
                 // 先写临时名再 rename：避免中途被杀残留截断权重文件
-                LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "首次启动：拷贝 NNUE 权重到 filesDir")
+                LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "首次启动：拷贝 NNUE 权重到 filesDir")
                 val tmp = File(cwd, "pikafish.nnue.tmp")
                 app.assets.open("pikafish.nnue").use { input ->
                     tmp.outputStream().use { output -> input.copyTo(output) }
@@ -85,7 +85,7 @@ class PikafishEngine private constructor() {
                 writeLine("isready")
                 waitFor("readyok", 15_000)
                 LogBus.log(
-                    LogKind.OK,
+                    LogLevel.INFO,
                     LogTag.ENGINE,
                     "pikafish 引擎已就绪（Threads=${cfg.threads} Hash=${cfg.hashMb}MB）"
                 )
@@ -199,7 +199,7 @@ class PikafishEngine private constructor() {
                 // 超时：引擎未在时限内回 bestmove（移动端慢 / 无限 ponder 未停）。
                 // 必须重建干净进程，否则残留 ponder 状态会让后续 bestMove 的 go 不发 bestmove → 连锁超时。
                 LogBus.log(
-                    LogKind.WARN, LogTag.ENGINE,
+                    LogLevel.WARN, LogTag.ENGINE,
                     "stopPonder 超时，重建引擎：${e.message}"
                 )
                 restart() // restart 内已置 pondering=false
@@ -234,7 +234,7 @@ class PikafishEngine private constructor() {
                 // 否则在 ponder 状态下发 go 会让引擎不发 bestmove → 等 bestmove 超时
                 if (pondering) {
                     LogBus.log(
-                        LogKind.WARN,
+                        LogLevel.WARN,
                         LogTag.ENGINE,
                         "bestMove 前引擎仍处 ponder，强制 stopPonder"
                     )
@@ -251,7 +251,7 @@ class PikafishEngine private constructor() {
                     val snapshot = synchronized(lines) { lines.toList() }
                     snapshot.lastOrNull { it.startsWith("info") }?.let { info ->
                         // 原始 info 行落文件日志（截断防巨行），排查引擎决策用
-                        LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "info ${info.take(160)}")
+                        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "info ${info.take(160)}")
                     }
                     return snapshot
                 }

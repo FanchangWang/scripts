@@ -7,7 +7,7 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.mutableStateOf
 import com.chess.bot.data.BoardCornersStore
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.overlay.CalibrationCaptureOverlay
 import com.chess.bot.service.ScreenCaptureSource
@@ -123,13 +123,13 @@ object CalibrationSession {
             CalibrationCaptureOverlay.dismiss()
             if (frame == null) {
                 recognizing.value = false
-                LogBus.log(LogKind.WARN, LogTag.CALIB, "未捕获到画面，请确认象棋 App 在前台")
+                LogBus.log(LogLevel.WARN, LogTag.CALIB, "未捕获到画面，请确认象棋 App 在前台")
                 screen.value = CalibrationScreen.HOME
                 return@launch
             }
             screen.value = CalibrationScreen.RECOGNIZING
             LogBus.log(
-                LogKind.DEBUG, LogTag.CALIB,
+                LogLevel.DEBUG, LogTag.CALIB,
                 "截图完成 ${frame.width}x${frame.height}，开始识别"
             )
             // 3. 后台识别（OpenCV 初始化 + det → 全套角子模板精修 → cls 32 子校验，
@@ -164,7 +164,7 @@ object CalibrationSession {
                     manualCorners = null
                     errorMsg.value =
                         "模板与 YOLO det 均未能定位棋盘四角，请点击「手动微调」拖动 4 个角标"
-                    LogBus.log(LogKind.ERROR, LogTag.CALIB, errorMsg.value ?: "")
+                    LogBus.log(LogLevel.ERROR, LogTag.CALIB, errorMsg.value ?: "")
                     screen.value = CalibrationScreen.RESULT
                     return@launch
                 }
@@ -177,7 +177,7 @@ object CalibrationSession {
                 manualCorners = null
                 screen.value = CalibrationScreen.RESULT
                 LogBus.log(
-                    LogKind.OK,
+                    LogLevel.INFO,
                     LogTag.CALIB,
                     "识别完成（${result.source}），开局校验${if (ok) "通过" else "未通过"}"
                 )
@@ -187,7 +187,7 @@ object CalibrationSession {
                 corners = null
                 validationPassed.value = false
                 errorMsg.value = "识别失败：${e.message}"
-                LogBus.log(LogKind.ERROR, LogTag.CALIB, "识别失败：${e.message}")
+                LogBus.log(LogLevel.ERROR, LogTag.CALIB, "识别失败：${e.message}")
                 screen.value = CalibrationScreen.HOME
             } finally {
                 recognizing.value = false
@@ -224,12 +224,12 @@ object CalibrationSession {
     fun save(context: Context, onSaved: () -> Unit) {
         val c = manualCorners ?: corners
         if (c == null) {
-            LogBus.log(LogKind.WARN, LogTag.CALIB, "无可用四角，无法保存")
+            LogBus.log(LogLevel.WARN, LogTag.CALIB, "无可用四角，无法保存")
             return
         }
         val frame = capturedBitmap
         if (frame == null) {
-            LogBus.log(LogKind.WARN, LogTag.CALIB, "无校准截图，无法执行 32 子校验")
+            LogBus.log(LogLevel.WARN, LogTag.CALIB, "无校准截图，无法执行 32 子校验")
             return
         }
         scope.launch {
@@ -238,7 +238,7 @@ object CalibrationSession {
             }
             if (!ok) {
                 errorMsg.value = "32 子校验未通过，已禁止保存：请重新截图或手动微调四角"
-                LogBus.log(LogKind.WARN, LogTag.CALIB, "保存被拦截：32 子校验未通过")
+                LogBus.log(LogLevel.WARN, LogTag.CALIB, "保存被拦截：32 子校验未通过")
                 return@launch
             }
             Homography.invalidate(width, height)

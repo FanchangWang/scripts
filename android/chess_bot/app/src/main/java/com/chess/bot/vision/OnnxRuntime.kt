@@ -5,7 +5,7 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import java.nio.FloatBuffer
 import java.util.concurrent.locks.ReentrantLock
@@ -39,7 +39,7 @@ object OnnxRuntime {
             }
             val s = environment().createSession(bytes, opts)
             sessions[assetPath] = s
-            LogBus.log(LogKind.OK, LogTag.VISION, "ONNX 模型已加载：$assetPath")
+            LogBus.log(LogLevel.INFO, LogTag.VISION, "ONNX 模型已加载：$assetPath")
             s
         }
     }

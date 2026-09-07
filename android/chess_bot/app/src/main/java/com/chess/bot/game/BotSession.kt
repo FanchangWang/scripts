@@ -7,7 +7,7 @@ import com.chess.bot.engine.EngineError
 import com.chess.bot.engine.EngineResult
 import com.chess.bot.engine.PikafishEngine
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.overlay.BotRuntime
 import com.chess.bot.service.Capture
@@ -121,7 +121,7 @@ class BotSession(private val context: Context) {
         running = true
         // 防抖：上一次 start 未结束前忽略重复点击（单线程队列会串行执行两次全量同步）
         if (!startGuard.compareAndSet(false, true)) {
-            LogBus.log(LogKind.WARN, LogTag.PLAY, "启动流程进行中，忽略重复点击")
+            LogBus.log(LogLevel.WARN, LogTag.PLAY, "启动流程进行中，忽略重复点击")
             return
         }
         try {
@@ -150,7 +150,7 @@ class BotSession(private val context: Context) {
             startFlow()
         } catch (e: Exception) {
             LogBus.log(
-                LogKind.ERROR,
+                LogLevel.ERROR,
                 LogTag.PLAY,
                 "启动棋局异常：${e::class.java.simpleName}: ${e.message}"
             )
@@ -177,7 +177,7 @@ class BotSession(private val context: Context) {
         val startAt = System.nanoTime()
         var lastLogAt = startAt
         setStatus(BotStatus.WAIT_PLACEMENT)
-        LogBus.log(LogKind.INFO, LogTag.PLAY, "等待棋盘就绪（开始棋局，无超时，手动停止为止）")
+        LogBus.log(LogLevel.INFO, LogTag.PLAY, "等待棋盘就绪（开始棋局，无超时，手动停止为止）")
         while (true) {
             if (interrupted) return null
             val corrected = capture.grab()
@@ -200,14 +200,14 @@ class BotSession(private val context: Context) {
                 if (count > 0) {
                     if (waiter.feed(board) is SettleWaiter.Feed.Ready) {
                         handOff = true
-                        LogBus.log(LogKind.INFO, LogTag.PLAY, "棋盘已就绪（$count 子）")
+                        LogBus.log(LogLevel.INFO, LogTag.PLAY, "棋盘已就绪（$count 子）")
                         return corrected
                     }
                 }
                 val now = System.nanoTime()
                 if ((now - lastLogAt) / 1_000_000_000L >= Const.WAIT_BOARD_LOG_INTERVAL_S) {
                     lastLogAt = now
-                    LogBus.log(LogKind.INFO, LogTag.PLAY, "等待摆棋：当前识别到 $count 个棋子")
+                    LogBus.log(LogLevel.INFO, LogTag.PLAY, "等待摆棋：当前识别到 $count 个棋子")
                 }
             } finally {
                 if (!handOff) corrected.release()
@@ -221,23 +221,23 @@ class BotSession(private val context: Context) {
         val count = pieceCount(state.board)
         if (count == 32 && plausibleNewGame(state.board, state.mySide)) {
             state.turn = Side.RED
-            LogBus.log(LogKind.GAME, LogTag.PLAY, "完整新开局（32 子默认位），红方先走")
+            LogBus.log(LogLevel.INFO, LogTag.PLAY, "完整新开局（32 子默认位），红方先走")
             return
         }
         val inferred = inferTurn(state.board, state.mySide, state.phase)
         if (inferred != null) {
             state.turn = inferred
-            LogBus.log(LogKind.GAME, LogTag.PLAY, "轮次推断：轮到${inferred.cn}方走棋")
+            LogBus.log(LogLevel.INFO, LogTag.PLAY, "轮次推断：轮到${inferred.cn}方走棋")
         } else {
             // 闯关排局 / 残局：无法静态推断轮次，默认我方（玩家）先行
             state.turn = state.mySide
             LogBus.log(
-                LogKind.GAME,
+                LogLevel.INFO,
                 LogTag.PLAY,
                 "无法推断轮次（${state.phase.cn}），默认我方（${state.mySide.cn}）先走"
             )
             Recognizer.formatLayout(state.board)
-                .forEach { LogBus.log(LogKind.DEBUG, LogTag.VISION, "开局布局 $it") }
+                .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "开局布局 $it") }
         }
     }
 
@@ -251,7 +251,7 @@ class BotSession(private val context: Context) {
             flowLoop()
         } catch (e: Exception) {
             LogBus.log(
-                LogKind.ERROR,
+                LogLevel.ERROR,
                 LogTag.PLAY,
                 "自动对弈异常终止：${e::class.java.simpleName}: ${e.message}"
             )
@@ -260,7 +260,7 @@ class BotSession(private val context: Context) {
             running = false
             setStatus(BotStatus.PAUSED)
         }
-        LogBus.log(LogKind.DEBUG, LogTag.PLAY, "对弈主循环已退出")
+        LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "对弈主循环已退出")
     }
 
     private suspend fun flowLoop() {
@@ -274,11 +274,11 @@ class BotSession(private val context: Context) {
                 setStatus(BotStatus.WAIT_SELF)
                 if (!doMove()) {
                     if (state.gameOver) {
-                        LogBus.log(LogKind.DEBUG, LogTag.PLAY, "我方走棋阶段检测到对局结束")
+                        LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "我方走棋阶段检测到对局结束")
                     } else if (running) {
                         // 走棋失败但未结束：doMove 内部已按守卫/中断处理并落日志
                         LogBus.log(
-                            LogKind.WARN,
+                            LogLevel.WARN,
                             LogTag.PLAY,
                             "走棋中止，自动对弈已暂停，可点击「开始」续弈"
                         )
@@ -294,7 +294,7 @@ class BotSession(private val context: Context) {
                 if (autoNextEnabled()) {
                     if (!autoNextGame()) break
                 } else {
-                    LogBus.log(LogKind.WARN, LogTag.NEXT, "自动下一局未开启")
+                    LogBus.log(LogLevel.WARN, LogTag.NEXT, "自动下一局未开启")
                     break
                 }
             }
@@ -310,15 +310,15 @@ class BotSession(private val context: Context) {
         val mySide = detectSide(board)
         if (mySide == null) {
             LogBus.log(
-                LogKind.ERROR,
+                LogLevel.ERROR,
                 LogTag.VISION,
                 "无法判断我方红黑方（未识别到将/帥），已暂停；请检查棋盘画面后重新同步"
             )
             // 布局落盘（替代原轮次弹窗的兜底），便于定位误识别
             val count = pieceCount(board)
-            LogBus.log(LogKind.ERROR, LogTag.VISION, "失败帧诊断：识别到 $count 个棋子")
+            LogBus.log(LogLevel.ERROR, LogTag.VISION, "失败帧诊断：识别到 $count 个棋子")
             Recognizer.formatLayout(board)
-                .forEach { LogBus.log(LogKind.ERROR, LogTag.VISION, "识别布局 $it") }
+                .forEach { LogBus.log(LogLevel.ERROR, LogTag.VISION, "识别布局 $it") }
             status = BotStatus.PAUSED
             return false
         }
@@ -326,7 +326,7 @@ class BotSession(private val context: Context) {
         state.replaceBoard(board)
         state.resetCellImgs(corrected) // 开局全量重建 90 格中心小图（无动画中间帧风险）
         state.markInitialized(mySide, phase)
-        LogBus.log(LogKind.OK, LogTag.PLAY, "我方为${mySide.cn}方，当前棋盘为${phase.cn}")
+        LogBus.log(LogLevel.INFO, LogTag.PLAY, "我方为${mySide.cn}方，当前棋盘为${phase.cn}")
         return true
     }
 
@@ -344,7 +344,7 @@ class BotSession(private val context: Context) {
             attempt++
             if (!running || interrupted) return false
             if (state.gameOver) {
-                LogBus.log(LogKind.DEBUG, LogTag.SELF, "对局已结束，停止走棋重试")
+                LogBus.log(LogLevel.DEBUG, LogTag.SELF, "对局已结束，停止走棋重试")
                 return false
             }
             // v3：attemptMove 纯点击（稳判职责已移入 verify）；仅 RETRY_DST（提起未落）时只点目标格补落
@@ -357,7 +357,7 @@ class BotSession(private val context: Context) {
                 // 点按注入失败：保留一个固定延迟兜底，避免零延迟自旋占满 CPU；
                 // 正常走子路径由 verifyForSelfMove 首帧 delay(firstWaitMs) 约 700ms+ 节流，无需额外退避。
                 LogBus.log(
-                    LogKind.WARN,
+                    LogLevel.WARN,
                     LogTag.SELF,
                     "走棋注入失败（第 $attempt 次），${Const.RETRY_BACKOFF_START_MS}ms 后重试",
                 )
@@ -407,18 +407,18 @@ class BotSession(private val context: Context) {
             }
             if (zeroChange >= Const.SELF_MOVE_ZERO_CHANGE_MAX) {
                 LogBus.log(
-                    LogKind.ERROR,
+                    LogLevel.ERROR,
                     LogTag.SELF,
                     "连续 ${Const.SELF_MOVE_ZERO_CHANGE_MAX} 轮走棋重试无进展（RETRY），疑似弹窗遮挡或着法被拒，自动对弈已暂停（处理后点「开始」续弈）",
                 )
                 Recognizer.formatLayout(state.board)
-                    .forEach { LogBus.log(LogKind.ERROR, LogTag.VISION, "守卫触发布局 $it") }
+                    .forEach { LogBus.log(LogLevel.ERROR, LogTag.VISION, "守卫触发布局 $it") }
                 running = false
                 setStatus(BotStatus.ABNORMAL_PAUSED)
                 return false
             }
             LogBus.log(
-                LogKind.DEBUG,
+                LogLevel.DEBUG,
                 LogTag.SELF,
                 "走棋未确认（第 $attempt 次，$outcome，zeroChange=$zeroChange）",
             )
@@ -436,7 +436,7 @@ class BotSession(private val context: Context) {
             fenOfBoard(state.board, state.mySide, state.turn, state.halfmoveClock)
         engine.startPonder(context, fenAfterMyMove, predicted)
         LogBus.log(
-            LogKind.DEBUG,
+            LogLevel.DEBUG,
             LogTag.ENGINE,
             "已启动 ponder（预测敌着 $predicted），敌方思考期预搜我方应手"
         )
@@ -447,7 +447,7 @@ class BotSession(private val context: Context) {
 
     private suspend fun computeMove(): PendingMove? {
         if (!state.initialized) {
-            LogBus.log(LogKind.WARN, LogTag.PLAY, "棋盘未初始化，无法生成着法")
+            LogBus.log(LogLevel.WARN, LogTag.PLAY, "棋盘未初始化，无法生成着法")
             return null
         }
         setStatus(BotStatus.THINKING)
@@ -466,14 +466,14 @@ class BotSession(private val context: Context) {
                 BotRuntime.bookWinRate.value = 0f
                 emit()
                 LogBus.log(
-                    LogKind.DEBUG, LogTag.ENGINE,
+                    LogLevel.DEBUG, LogTag.ENGINE,
                     "命中预判：直接使用 ponder 预搜着法 ${pre.move}（评估 ${pre.scoreCp}，depth ${pre.depth}）",
                 )
                 return PendingMove(pre.move!!)
             }
             if (pre.move != null) {
                 LogBus.log(
-                    LogKind.DEBUG, LogTag.ENGINE,
+                    LogLevel.DEBUG, LogTag.ENGINE,
                     "预搜着法 ${pre.move} 无评估佐证（depth=0, eval=0），丢弃预搜，常规搜索",
                 )
             }
@@ -491,7 +491,7 @@ class BotSession(private val context: Context) {
                 runCatching { ObkBook.get(context).queryBest(bookBoard, state.turn == Side.RED) }
                     .onFailure { e ->
                         LogBus.log(
-                            LogKind.WARN,
+                            LogLevel.WARN,
                             LogTag.PLAY,
                             "开局库查询异常：${e::class.java.simpleName}: ${e.message}"
                         )
@@ -505,7 +505,7 @@ class BotSession(private val context: Context) {
                 BotRuntime.bookWinRate.value = hit.winRate
                 emit()
                 LogBus.log(
-                    LogKind.INFO,
+                    LogLevel.INFO,
                     LogTag.PLAY,
                     "开局库命中：${hit.iccs}（vkey=${hit.vkey}，vscore=${hit.vscore}，" +
                             "胜率${(hit.winRate * 100).roundToInt()}%）",
@@ -513,7 +513,7 @@ class BotSession(private val context: Context) {
                 return PendingMove(hit.iccs)
             }
             LogBus.log(
-                LogKind.DEBUG,
+                LogLevel.DEBUG,
                 LogTag.PLAY,
                 "开局库未命中（已走 ${state.moveCount} 步），回落引擎"
             )
@@ -521,29 +521,29 @@ class BotSession(private val context: Context) {
 
         // ---------- 引擎 ----------
         val fen = fenOfBoard(state.board, state.mySide, state.turn, state.halfmoveClock)
-        LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "生成 FEN：$fen")
-        LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "计算着法中…")
+        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "生成 FEN：$fen")
+        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "计算着法中…")
         var result: EngineResult
         try {
             result = engine.bestMove(context, fen)
         } catch (e: EngineError) {
-            LogBus.log(LogKind.ERROR, LogTag.ENGINE, "引擎错误：${e.message}")
+            LogBus.log(LogLevel.ERROR, LogTag.ENGINE, "引擎错误：${e.message}")
             return null
         }
         // 记录引擎预测敌着，供我方走子后启动 ponder 预搜（仅引擎来源；开局库无预测）
         pendingPonderMove = result.ponderMove
         if (result.move == null) {
             val shortTime = Const.ENGINE_MOVETIME_MS * 2 / 3
-            LogBus.log(LogKind.WARN, LogTag.ENGINE, "引擎无可用着法，改用 $shortTime ms 短时限重试")
+            LogBus.log(LogLevel.WARN, LogTag.ENGINE, "引擎无可用着法，改用 $shortTime ms 短时限重试")
             try {
                 result = engine.bestMove(context, fen, movetimeMs = shortTime)
             } catch (e: EngineError) {
-                LogBus.log(LogKind.ERROR, LogTag.ENGINE, "重试引擎错误：${e.message}")
+                LogBus.log(LogLevel.ERROR, LogTag.ENGINE, "重试引擎错误：${e.message}")
                 return null
             }
         }
         if (result.move == null) {
-            LogBus.log(LogKind.WARN, LogTag.ENGINE, "引擎无可用着法（对局可能已结束）")
+            LogBus.log(LogLevel.WARN, LogTag.ENGINE, "引擎无可用着法（对局可能已结束）")
             finishGame("引擎判定我方无路可走，对局结束")
             return null
         }
@@ -553,12 +553,12 @@ class BotSession(private val context: Context) {
         // 主搜已声明 mate+1 = 本步着法即杀着；标记后 verify 直接终局，省去二次引擎调用
         selfMatePending = result.matePly == 1
         if (selfMatePending) {
-            LogBus.log(LogKind.GAME, LogTag.ENGINE, "引擎判定本步绝杀（mate+1）：${result.move}")
+            LogBus.log(LogLevel.INFO, LogTag.ENGINE, "引擎判定本步绝杀（mate+1）：${result.move}")
         }
         BotRuntime.bookWinRate.value = 0f
         emit() // 引擎返回后立即刷新悬浮窗引擎行
         LogBus.log(
-            LogKind.DEBUG,
+            LogLevel.DEBUG,
             LogTag.ENGINE,
             "引擎着法：${result.move}（评估 ${result.scoreCp}，depth ${result.depth}）",
         )
@@ -576,7 +576,7 @@ class BotSession(private val context: Context) {
         val piece = state.boardAt(from.first, from.second)
         if (piece == null) {
             LogBus.log(
-                LogKind.WARN,
+                LogLevel.WARN,
                 LogTag.PLAY,
                 "着法 $move 起点无我方棋子，棋盘数据可能已过期，请点击「开始」重同步"
             )
@@ -590,7 +590,7 @@ class BotSession(private val context: Context) {
         val capturedNote = state.boardAt(to.first, to.second)?.let { "（吃${pieceLabel(it)}）" } ?: ""
         val evalNote = state.lastEvalScore.let { if (it > 0) "（评估 +$it）" else "（评估 $it）" }
         LogBus.log(
-            LogKind.MOVE,
+            LogLevel.INFO,
             LogTag.SELF,
             "走棋 $move：${pieceLabel(piece)} " +
                     "${gridToSquare(from.first, from.second, state.mySide)} -> " +
@@ -622,7 +622,7 @@ class BotSession(private val context: Context) {
     //   (b) n ≤ 4 → classifySelfFrame 明确归类（SELF_DONE / SELF_THEN_ENEMY[稳定 + T-D 复判，
     //       敌着就地提交] / LIFTED[超 T2 补点] / SILENT[稳定 K1 帧重试两格] / NOISY[T-B 吞点击恢复]）；
     //   (c) n ∈ 5..VERIFY_OCR_DIFF_CELLS → 动画/噪声灰区，静默继续；
-    //   (d) n > VERIFY_OCR_DIFF_CELLS → 大面积遮挡（弹窗/遮罩/结束画面）→ OCR/终局检查（节流）；
+    //   (d) diffCells > VERIFY_OCR_DIFF_CELLS → 大面积遮挡（弹窗/遮罩/结束画面）→ OCR/终局检查（节流）；
     //   (e) 稳定（变化格子集合与上帧逐格相同）且不可行动持续超 T3 → 终局检查 + RETRY_BOTH 兜底；
     //   liveness 硬顶 VERIFY_HARD_CAP_MS（防非稳定的持续动画模式永久悬挂）。
     // 基线白名单：提交只刷新被提交着法覆盖的格子 + driftCells，其余变化格（敌方仅提起/伪影）
@@ -641,7 +641,7 @@ class BotSession(private val context: Context) {
         // 防御性入口检查（02:27 事故语义保留）：本步若已在别处提交过，不再看画面——我方走子必然
         // 成功，此后画面差异（敌方回复 / 动画残留 / 弹窗）一律交回 waitForEnemyMove 处理。
         if (state.board[r1][c1] == null && state.board[r2][c2] == piece) {
-            LogBus.log(LogKind.DEBUG, LogTag.SELF, "我方走子已提交过，跳过校验直接确认")
+            LogBus.log(LogLevel.DEBUG, LogTag.SELF, "我方走子已提交过，跳过校验直接确认")
             endgameHook()
             return VerifyOutcome.DONE_OK
         }
@@ -665,7 +665,7 @@ class BotSession(private val context: Context) {
             val nowCap = System.nanoTime() / 1_000_000
             if (nowCap - verifyStartMs > Const.VERIFY_HARD_CAP_MS) {
                 LogBus.log(
-                    LogKind.WARN,
+                    LogLevel.WARN,
                     LogTag.SELF,
                     "verify 超过硬顶 ${Const.VERIFY_HARD_CAP_MS}ms，放弃本轮重试"
                 )
@@ -705,7 +705,7 @@ class BotSession(private val context: Context) {
                         state.board
                     )
                     LogBus.log(
-                        LogKind.DEBUG,
+                        LogLevel.DEBUG,
                         LogTag.SELF,
                         "校验帧 n=$n stable=$stable result=${fc.result}"
                     )
@@ -728,7 +728,7 @@ class BotSession(private val context: Context) {
                             val enemyM = fc.enemyMove
                             if (selfM == null || enemyM == null) {
                                 LogBus.log(
-                                    LogKind.WARN,
+                                    LogLevel.WARN,
                                     LogTag.SELF,
                                     "SELF_THEN_ENEMY 缺走子数据，按未确认处理"
                                 )
@@ -743,7 +743,7 @@ class BotSession(private val context: Context) {
                                     return if (state.gameOver) VerifyOutcome.DONE_END else VerifyOutcome.DONE_OK
                                 }
                                 LogBus.log(
-                                    LogKind.DEBUG, LogTag.SELF,
+                                    LogLevel.DEBUG, LogTag.SELF,
                                     "两帧确认未通过（敌着未复现，疑似动画中途帧），丢弃本帧继续校验",
                                 )
                             }
@@ -754,7 +754,7 @@ class BotSession(private val context: Context) {
                             if (liftSinceMs < 0) liftSinceMs = nowMs
                             if (nowMs - liftSinceMs > firstWaitMs) {
                                 LogBus.log(
-                                    LogKind.INFO,
+                                    LogLevel.INFO,
                                     LogTag.SELF,
                                     "棋子提起未落（${nowMs - liftSinceMs}ms），补点落子"
                                 )
@@ -787,8 +787,8 @@ class BotSession(private val context: Context) {
 
                 // ── (c) n ∈ 5..VERIFY_OCR_DIFF_CELLS：动画/噪声灰区，静默继续（不 OCR、不重试）──
 
-                // ── (d) n > VERIFY_OCR_DIFF_CELLS：大面积遮挡 → OCR/终局检查（节流）──
-                if (n > Const.VERIFY_OCR_DIFF_CELLS) {
+                // ── (d) diffCells > VERIFY_OCR_DIFF_CELLS：大面积遮挡 → OCR/终局检查（节流）──
+                if (grabbed.scan.diffCells > Const.VERIFY_OCR_DIFF_CELLS) {
                     verifyEndgameCheck(grabbed)?.let { return it }
                 }
 
@@ -798,7 +798,7 @@ class BotSession(private val context: Context) {
                     if (stableUnknownSinceMs < 0) stableUnknownSinceMs = nowMs
                     if (nowMs - stableUnknownSinceMs > Const.VERIFY_UNKNOWN_STABLE_MS) {
                         LogBus.log(
-                            LogKind.DEBUG, LogTag.SELF,
+                            LogLevel.DEBUG, LogTag.SELF,
                             "稳定未知模式持续超 ${Const.VERIFY_UNKNOWN_STABLE_MS}ms，执行终局/和棋检查后重试",
                         )
                         verifyEndgameCheck(grabbed)?.let { return it }
@@ -822,7 +822,7 @@ class BotSession(private val context: Context) {
         state.resignStreak = 0
         emit()
         LogBus.log(
-            LogKind.DEBUG, LogTag.SELF,
+            LogLevel.DEBUG, LogTag.SELF,
             "我方走子确认 ${
                 gridToSquare(
                     selfMove.src.first,
@@ -849,7 +849,7 @@ class BotSession(private val context: Context) {
     ) {
         state.applySelfThenEnemy(selfMove, enemyMove)
         refreshBaselineCells(grab, cells)
-        LogBus.log(LogKind.ENEMY, LogTag.ENEMY, formatMove(enemyMove, state.mySide))
+        LogBus.log(LogLevel.INFO, LogTag.ENEMY, formatMove(enemyMove, state.mySide))
         state.resignStreak = 0
         emit()
     }
@@ -886,7 +886,7 @@ class BotSession(private val context: Context) {
                     // 敌着未复现（首帧敌变为瞬时态）→ 仅提交我方走子，敌着交回敌方检测
                     commitSelfSettled(reGrab, selfM, setOf(expected.src, expected.dst))
                     LogBus.log(
-                        LogKind.DEBUG, LogTag.SELF,
+                        LogLevel.DEBUG, LogTag.SELF,
                         "敌着未复现（首帧为动画瞬时态），仅提交我方走子",
                     )
                     true
@@ -941,7 +941,7 @@ class BotSession(private val context: Context) {
             lastVerifyDrawScanAt = now
             val cap = capture
             if (cap.dismissDrawDialog()) {
-                LogBus.log(LogKind.INFO, LogTag.SELF, "verify 检出并关闭和棋弹窗，交由重试重新核验")
+                LogBus.log(LogLevel.INFO, LogTag.SELF, "verify 检出并关闭和棋弹窗，交由重试重新核验")
                 setStatus(BotStatus.DRAW_HANDLING)
                 state.resignStreak = 0
                 return VerifyOutcome.RETRY_BOTH
@@ -974,7 +974,7 @@ class BotSession(private val context: Context) {
             confirmGrab.corrected.release()
         }
         LogBus.log(
-            LogKind.WARN,
+            LogLevel.WARN,
             LogTag.SELF,
             "我方点击被吞（对方先走了）：已记录敌着 ${
                 gridToSquare(
@@ -998,7 +998,7 @@ class BotSession(private val context: Context) {
         state.resignStreak = 0
         state.noisyCount = 0
         state.liftLogged = false
-        LogBus.log(LogKind.INFO, LogTag.PLAY, "等待对方走棋")
+        LogBus.log(LogLevel.INFO, LogTag.PLAY, "等待对方走棋")
         val cap = capture
         while (running && !interrupted && !state.gameOver) {
             val grabbed = grabBoard(cap) ?: continue
@@ -1017,7 +1017,7 @@ class BotSession(private val context: Context) {
                             if (confirmGrab == null) {
                                 if (running && !interrupted && !state.gameOver) {
                                     LogBus.log(
-                                        LogKind.DEBUG,
+                                        LogLevel.DEBUG,
                                         LogTag.ENEMY,
                                         "两帧确认未通过（敌着未复现，疑似动画中途帧），丢弃本帧继续等待",
                                     )
@@ -1039,7 +1039,7 @@ class BotSession(private val context: Context) {
                         if (!state.liftLogged) {
                             state.liftLogged = true
                             setStatus(BotStatus.ENEMY_LIFTED)
-                            LogBus.log(LogKind.INFO, LogTag.ENEMY, "对方提起棋子")
+                            LogBus.log(LogLevel.INFO, LogTag.ENEMY, "对方提起棋子")
                         }
                         state.noisyCount = 0
                     }
@@ -1075,7 +1075,7 @@ class BotSession(private val context: Context) {
                         state.noisyCount++
                         formatChanges(changes, state.mySide).forEach {
                             LogBus.log(
-                                LogKind.DEBUG,
+                                LogLevel.DEBUG,
                                 LogTag.VISION,
                                 "识别变动 $it"
                             )
@@ -1099,7 +1099,7 @@ class BotSession(private val context: Context) {
                                         val confirmGrab = reconfirmEnemyMoved(move)
                                         if (confirmGrab == null) {
                                             LogBus.log(
-                                                LogKind.DEBUG,
+                                                LogLevel.DEBUG,
                                                 LogTag.ENEMY,
                                                 "噪声复判帧两帧确认未通过，按噪声流程继续",
                                             )
@@ -1147,7 +1147,7 @@ class BotSession(private val context: Context) {
                             }
                             if (ended) return
                             LogBus.log(
-                                LogKind.WARN,
+                                LogLevel.WARN,
                                 LogTag.PLAY,
                                 "连续 ${Const.ENEMY_NOISY_MAX} 帧无法推断对方完整走法，暂停自动对弈",
                             )
@@ -1164,7 +1164,7 @@ class BotSession(private val context: Context) {
                 grabbed.corrected.release()
             }
         }
-        LogBus.log(LogKind.DEBUG, LogTag.PLAY, "已中断等待对方走棋")
+        LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "已中断等待对方走棋")
     }
 
     // ---------- 认输 / 绝杀 / 和棋 ----------
@@ -1187,14 +1187,14 @@ class BotSession(private val context: Context) {
         val img = cap.screenshot() ?: return false
         val hit = TextMatcher.findGameoverScan(context, img) ?: run {
             LogBus.log(
-                LogKind.DEBUG,
+                LogLevel.DEBUG,
                 LogTag.PLAY,
                 "疑似结束画面 OCR 扫描无结算词命中，走连续确认兜底"
             )
             return false
         }
         LogBus.log(
-            LogKind.INFO,
+            LogLevel.INFO,
             LogTag.PLAY,
             "OCR 命中结算文字「${hit.word}」（置信度 ${"%.2f".format(hit.score)}），立即终局"
         )
@@ -1216,7 +1216,7 @@ class BotSession(private val context: Context) {
         if (suspect) {
             state.resignStreak++
             LogBus.log(
-                LogKind.DEBUG,
+                LogLevel.DEBUG,
                 LogTag.PLAY,
                 "疑似对局结束画面（${state.resignStreak}/${Const.RESIGN_CONFIRM_COUNT}，清盘空格 $emptyDrop）",
             )
@@ -1234,25 +1234,25 @@ class BotSession(private val context: Context) {
         // Option A：仅终局附近（子少）才二次调用引擎验证，常规中局主搜已覆盖将死，跳过以减少引擎开销
         val count = pieceCount(state.board)
         if (count > Const.ENDGAME_PROBE_PIECE_MAX) {
-            LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "非终局（${count} 子），跳过绝杀二次探测")
+            LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "非终局（${count} 子），跳过绝杀二次探测")
             return false
         }
         setStatus(BotStatus.GAMEOVER_CHECK)
         val opp = state.mySide.opponent
         val fen = fenOfBoard(state.board, state.mySide, opp, state.halfmoveClock)
-        LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "绝杀探测 FEN（${opp.cn}方行棋）：$fen")
+        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "绝杀探测 FEN（${opp.cn}方行棋）：$fen")
         val mated = try {
             engine.isMate(context, fen)
         } catch (e: Exception) {
             LogBus.log(
-                LogKind.WARN,
+                LogLevel.WARN,
                 LogTag.ENGINE,
                 "引擎绝杀探测失败，当作未绝杀继续：${e::class.java.simpleName}: ${e.message}"
             )
             return false
         }
         if (!mated) {
-            LogBus.log(LogKind.DEBUG, LogTag.ENGINE, "未绝杀，继续对局")
+            LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "未绝杀，继续对局")
             return false
         }
         finishGame("我方绝杀，${opp.cn}方无路可走")
@@ -1264,7 +1264,7 @@ class BotSession(private val context: Context) {
         val score = state.lastEvalScore
         val reject = decideDraw(score, Const.DRAW_REJECT_CP)
         LogBus.log(
-            LogKind.INFO,
+            LogLevel.INFO,
             LogTag.PLAY,
             if (reject) "和棋决策：我方占优（${score}cp），拒绝和棋" else "和棋决策：均势或劣势（${score}cp），同意和棋",
         )
@@ -1275,7 +1275,7 @@ class BotSession(private val context: Context) {
 
     private suspend fun autoNextGame(): Boolean {
         if (interrupted) return false
-        LogBus.log(LogKind.INFO, LogTag.NEXT, "开始自动下一局")
+        LogBus.log(LogLevel.INFO, LogTag.NEXT, "开始自动下一局")
         autoNextFlag = true
         setStatus(BotStatus.AUTO_NEXT)
         emit()
@@ -1298,7 +1298,7 @@ class BotSession(private val context: Context) {
                 if (state.phase == Phase.ENDGAME) {
                     state.turn = state.mySide
                     LogBus.log(
-                        LogKind.GAME,
+                        LogLevel.INFO,
                         LogTag.NEXT,
                         "残局模式：轮到${state.mySide.cn}方（我方）走棋"
                     )
@@ -1306,17 +1306,21 @@ class BotSession(private val context: Context) {
                     val inferred = inferTurn(state.board, state.mySide, state.phase)
                     if (inferred != null) {
                         state.turn = inferred
-                        LogBus.log(LogKind.GAME, LogTag.NEXT, "下一局开始：轮到${inferred.cn}方走棋")
+                        LogBus.log(
+                            LogLevel.INFO,
+                            LogTag.NEXT,
+                            "下一局开始：轮到${inferred.cn}方走棋"
+                        )
                     } else {
                         // 闯关排局（如 24 子中局形态）：无法静态推断轮次，默认我方（玩家）先行
                         state.turn = state.mySide
                         LogBus.log(
-                            LogKind.GAME,
+                            LogLevel.INFO,
                             LogTag.NEXT,
                             "排局模式：${state.phase.cn}，默认轮到${state.mySide.cn}方（我方）走棋"
                         )
                         Recognizer.formatLayout(state.board)
-                            .forEach { LogBus.log(LogKind.DEBUG, LogTag.VISION, "排局布局 $it") }
+                            .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "排局布局 $it") }
                     }
                 }
                 return true
@@ -1358,9 +1362,9 @@ class BotSession(private val context: Context) {
         // 变化格 cls 置信度（2026-09-07 诊断）：「格=读数(top1,liftX)」，排查 transit 帧误提交时核对
         val clsPart = scan.clsDetail?.let { " / cls: $it" } ?: ""
         LogBus.log(
-            LogKind.DEBUG,
+            LogLevel.DEBUG,
             LogTag.VISION,
-            "grabBoard 耗时拆解 grab=${grabMs}ms recog=${recogMs}ms（diff 命中 ${scan.diffFires} 格 / $changePart$transitPart$unconfirmedPart$clsPart）"
+            "grabBoard 耗时拆解 grab=${grabMs}ms recog=${recogMs}ms（diff 命中 ${scan.diffCells} 格 / $changePart$transitPart$unconfirmedPart$clsPart）"
         )
         return Grabbed(corrected, scan)
     }
@@ -1393,14 +1397,14 @@ class BotSession(private val context: Context) {
             if (enemyIccs == pendingPonderMove) {
                 pendingPonderResult = engine.ponderHit()
                 LogBus.log(
-                    LogKind.DEBUG,
+                    LogLevel.DEBUG,
                     LogTag.ENGINE,
                     "敌方走子命中预测（$enemyIccs），ponderHit 取回预搜结果"
                 )
             } else {
                 engine.stopPonder()
                 LogBus.log(
-                    LogKind.DEBUG,
+                    LogLevel.DEBUG,
                     LogTag.ENGINE,
                     "敌方走子未命中预测（$enemyIccs≠${pendingPonderMove}），丢弃 ponder"
                 )
@@ -1414,14 +1418,14 @@ class BotSession(private val context: Context) {
     private fun finishGame(reason: String) {
         state.markGameOver()
         setStatus(BotStatus.GAME_OVER)
-        LogBus.log(LogKind.GAME, LogTag.PLAY, reason)
+        LogBus.log(LogLevel.INFO, LogTag.PLAY, reason)
     }
 
     private fun applyEnemyMove(move: Move) {
         state.applyEnemyMove(move)
         state.lastMove = "${gridToSquare(move.src.first, move.src.second, state.mySide)}-" +
                 gridToSquare(move.dst.first, move.dst.second, state.mySide)
-        LogBus.log(LogKind.ENEMY, LogTag.ENEMY, formatMove(move, state.mySide))
+        LogBus.log(LogLevel.INFO, LogTag.ENEMY, formatMove(move, state.mySide))
         emit()
     }
 

@@ -4,7 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import android.content.Context
 import com.chess.bot.game.Const
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import org.opencv.core.Core
 import org.opencv.core.CvType
@@ -91,7 +91,7 @@ object CornerDetModel {
             val output = session.run(mapOf(session.inputNames.iterator().next() to input))
             val tInfer = android.os.SystemClock.elapsedRealtime()
             LogBus.log(
-                com.chess.bot.log.LogKind.DEBUG, LogTag.VISION,
+                com.chess.bot.log.LogLevel.DEBUG, LogTag.VISION,
                 "det 预处理 %dms / 推理 %dms".format(tPrep - t0, tInfer - tPrep)
             )
             val tensor = output.get(0) as OnnxTensor
@@ -105,7 +105,7 @@ object CornerDetModel {
 
             decode(out, n, Const.DET_CONF, scale, left.toDouble(), top.toDouble(), w, h)
         } catch (e: Exception) {
-            LogBus.log(LogKind.WARN, LogTag.CALIB, "det 四角检测异常：${e.message}")
+            LogBus.log(LogLevel.WARN, LogTag.CALIB, "det 四角检测异常：${e.message}")
             null
         }
     }

@@ -8,7 +8,7 @@ import com.chess.bot.game.ROWS
 import com.chess.bot.game.Side
 import com.chess.bot.game.fullStartBoard
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.vision.BoardCornerDetector.ROI_HALF
 import com.chess.bot.vision.BoardCornerDetector.isPlausibleQuad
@@ -236,7 +236,7 @@ object BoardCornerDetector {
                 )
                 if (peak == null) {
                     LogBus.log(
-                        LogKind.DEBUG, LogTag.CALIB,
+                        LogLevel.DEBUG, LogTag.CALIB,
                         "${set.name} 精修第 ${i + 1} 角未达阈值，跳过该套"
                     )
                     ok = false
@@ -248,7 +248,7 @@ object BoardCornerDetector {
             if (!ok) return@forEachIndexed
             val mean = scores.average()
             LogBus.log(
-                LogKind.DEBUG, LogTag.CALIB,
+                LogLevel.DEBUG, LogTag.CALIB,
                 "${set.name} 精修命中，均分 %.3f，四角 ${cornersLog(corners)}".format(mean)
             )
             if (mean > bestMean) {
@@ -294,7 +294,7 @@ object BoardCornerDetector {
                 )
                 if (peak == null) {
                     LogBus.log(
-                        LogKind.DEBUG, LogTag.CALIB,
+                        LogLevel.DEBUG, LogTag.CALIB,
                         "${set.name} 象限第 ${i + 1} 角未达阈值，放弃该套"
                     )
                     ok = false
@@ -306,7 +306,7 @@ object BoardCornerDetector {
             if (!ok) return@forEachIndexed
             val mean = scores.average()
             LogBus.log(
-                LogKind.DEBUG, LogTag.CALIB,
+                LogLevel.DEBUG, LogTag.CALIB,
                 "${set.name} 象限命中四角，均分 %.3f，四角 ${cornersLog(corners)}".format(mean)
             )
             if (mean > bestMean) {
@@ -343,21 +343,21 @@ object BoardCornerDetector {
         }
         if (detCorners != null && isPlausibleQuad(detCorners, frame.width, frame.height)) {
             LogBus.log(
-                LogKind.OK, LogTag.CALIB,
+                LogLevel.INFO, LogTag.CALIB,
                 "YOLO det 定位四角 ${cornersLog(detCorners)}，进入模板精修"
             )
             // 2. ROI 模板精修；失败直接采用 det（32 子校验兜底）
             return refineWithTemplates(gray, cornerSets, detCorners, onProgress)
                 ?: Result(detCorners, emptyList(), "det").also {
                     LogBus.log(
-                        LogKind.WARN, LogTag.CALIB,
+                        LogLevel.WARN, LogTag.CALIB,
                         "全部模板精修未通过，直接采用 det 结果（32 子校验兜底）"
                     )
                 }
         }
         // 3. det 无结果或几何不合理 -> 象限全量模板兜底
         LogBus.log(
-            LogKind.INFO, LogTag.CALIB,
+            LogLevel.INFO, LogTag.CALIB,
             if (detCorners == null) "YOLO det 无结果，转全量模板识别"
             else "YOLO det 结果几何不合理 ${cornersLog(detCorners)}，转全量模板识别"
         )
@@ -407,7 +407,7 @@ object BoardCornerDetector {
             corrected.release()
             detected.contentDeepEquals(fullStartBoard(Side.RED))
         } catch (e: Exception) {
-            LogBus.log(LogKind.WARN, LogTag.CALIB, "开局校验异常：${e.message}")
+            LogBus.log(LogLevel.WARN, LogTag.CALIB, "开局校验异常：${e.message}")
             src.release()
             false
         }

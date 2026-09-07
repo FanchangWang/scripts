@@ -3,7 +3,7 @@ package com.chess.bot.vision
 import android.content.Context
 import com.chess.bot.game.Const
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.vision.PieceClsModel.isLiftAmbiguous
 import org.opencv.core.CvType
@@ -99,7 +99,7 @@ object PieceClsModel {
                 output.close()
             }
         } catch (e: Exception) {
-            LogBus.log(LogKind.WARN, LogTag.VISION, "cls 分类异常：${e.message}")
+            LogBus.log(LogLevel.WARN, LogTag.VISION, "cls 分类异常：${e.message}")
             ClsResult(null, 0f, 0f)
         } finally {
             input.close()

@@ -3,7 +3,7 @@ package com.chess.bot.data
 import android.content.Context
 import com.chess.bot.game.Const
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import org.json.JSONArray
 import org.json.JSONObject
@@ -43,7 +43,7 @@ object BoardCornersStore {
                 }
             }.onFailure { e ->
                 LogBus.log(
-                    LogKind.WARN,
+                    LogLevel.WARN,
                     LogTag.CALIB,
                     "读取校准 JSON 失败：${e.message}"
                 )
@@ -73,7 +73,7 @@ object BoardCornersStore {
         val tmp = File(ctx.filesDir, "$FILE_NAME.tmp")
         tmp.writeText(obj.toString(2))
         tmp.renameTo(f)
-        LogBus.log(LogKind.OK, LogTag.CALIB, "已保存 ${width}x${height} 四角校准结果")
+        LogBus.log(LogLevel.INFO, LogTag.CALIB, "已保存 ${width}x${height} 四角校准结果")
     }
 
     private fun parseEntry(arr: JSONArray): List<Pair<Double, Double>> =

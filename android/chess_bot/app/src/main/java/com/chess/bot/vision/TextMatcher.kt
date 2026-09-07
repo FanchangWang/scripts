@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import com.chess.bot.game.Const
 import com.chess.bot.game.OcrRoi
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.paddle.ocr.EngineConfig
 import com.paddle.ocr.PaddleOCR
@@ -46,9 +46,8 @@ object TextMatcher {
                 recConfigAssetPath = "ocr/rec.yml",
             ).also {
                 engine = it
-                android.util.Log.i("TextMatcher", "OCR 引擎就绪（coldLoad ${it.coldLoadTimeMs}ms）")
                 LogBus.log(
-                    LogKind.OK, LogTag.VISION,
+                    LogLevel.INFO, LogTag.VISION,
                     "OCR 引擎已就绪（coldLoad ${it.coldLoadTimeMs}ms）"
                 )
             }
@@ -78,7 +77,7 @@ object TextMatcher {
             )
         }
     } catch (e: Exception) {
-        android.util.Log.w("TextMatcher", "OCR 识别异常：${e.message}")
+        LogBus.log(LogLevel.WARN, LogTag.VISION, "OCR 识别异常：${e.message}")
         emptyList()
     }
 

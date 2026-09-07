@@ -16,7 +16,7 @@ import com.chess.bot.game.Board
 import com.chess.bot.game.BotStatus
 import com.chess.bot.game.MoveSource
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.service.BotForegroundService
 import com.chess.bot.ui.theme.ChessBotTheme
@@ -132,11 +132,11 @@ object OverlayManager {
     private val botScope = CoroutineScope(
         SupervisorJob() + botExecutor.asCoroutineDispatcher() + kotlinx.coroutines.CoroutineExceptionHandler { _, e ->
             LogBus.log(
-                LogKind.ERROR,
+                LogLevel.ERROR,
                 LogTag.SYSTEM,
                 "后台任务未捕获异常：${e::class.java.simpleName}: ${e.message}"
             )
-            android.util.Log.e("OverlayManager", "uncaught in botScope", e)
+            LogBus.log(LogLevel.ERROR, LogTag.SYSTEM, "后台任务未捕获异常：${e.message}")
         },
     )
 
@@ -200,7 +200,7 @@ object OverlayManager {
         uiScope.launch { if (BotRuntime.boardWindowShown.value) showBoardWindow() else dismissBoardWindow() }
         // 弹出即自动开局（保留 ⌂ 返回后手动开始路径）
         if (!BotRuntime.running.value) {
-            LogBus.log(LogKind.INFO, LogTag.PLAY, "悬浮窗已弹出，自动开始棋局")
+            LogBus.log(LogLevel.INFO, LogTag.PLAY, "悬浮窗已弹出，自动开始棋局")
             scopeLaunchStart(ctx)
         }
     }
@@ -390,7 +390,7 @@ object OverlayManager {
             )
         }
         LogBus.log(
-            LogKind.INFO,
+            LogLevel.INFO,
             LogTag.SYSTEM,
             "棋盘小窗已显示（cell=${cellDp.toInt()}dp, 位置 $bx,$by）"
         )
@@ -428,7 +428,7 @@ object OverlayManager {
         val s = ensureSession(ctx)
         if (BotRuntime.running.value) {
             s.interrupt()
-            LogBus.log(LogKind.WARN, LogTag.PLAY, "已请求中断棋局")
+            LogBus.log(LogLevel.WARN, LogTag.PLAY, "已请求中断棋局")
             // 中断后保持操控条（不切信息框，#4）
         } else {
             scopeLaunchStart(ctx)
@@ -438,19 +438,19 @@ object OverlayManager {
     private fun scopeLaunchStart(ctx: Context) {
         // 双窗常驻，开始后无需切换；直接启动会话
         botScope.launch { ensureSession(ctx).start() }
-        LogBus.log(LogKind.INFO, LogTag.PLAY, "开始棋局：等待棋盘就绪并启动对弈")
+        LogBus.log(LogLevel.INFO, LogTag.PLAY, "开始棋局：等待棋盘就绪并启动对弈")
     }
 
     private fun onAutoNextChange(value: Boolean) {
         BotRuntime.autoNext.value = value
-        LogBus.log(LogKind.INFO, LogTag.NEXT, "自动下一局已${if (value) "开启" else "关闭"}")
+        LogBus.log(LogLevel.INFO, LogTag.NEXT, "自动下一局已${if (value) "开启" else "关闭"}")
         uiScope.launch { settings?.setAutoNextEnabled(value) }
     }
 
     private fun onBoardToggle() {
         val next = !BotRuntime.boardWindowShown.value
         BotRuntime.boardWindowShown.value = next
-        LogBus.log(LogKind.INFO, LogTag.SYSTEM, "棋盘小窗已${if (next) "显示" else "隐藏"}")
+        LogBus.log(LogLevel.INFO, LogTag.SYSTEM, "棋盘小窗已${if (next) "显示" else "隐藏"}")
         uiScope.launch { settings?.setBoardDrawEnabled(next) }
     }
 
@@ -458,7 +458,7 @@ object OverlayManager {
     private fun onInfoToggle() {
         val next = !BotRuntime.infoShown.value
         BotRuntime.infoShown.value = next
-        LogBus.log(LogKind.INFO, LogTag.SYSTEM, "信息框已${if (next) "显示" else "隐藏"}")
+        LogBus.log(LogLevel.INFO, LogTag.SYSTEM, "信息框已${if (next) "显示" else "隐藏"}")
     }
 
     /** ⌂ 返回 App：自动停止对弈并退出悬浮窗（操控条+信息框+棋盘），回到主界面。运行中→先确认（3s 超时还原）。 */

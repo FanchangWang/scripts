@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.chess.bot.data.BoardCornersStore
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
@@ -37,13 +37,13 @@ object VisionInit {
         synchronized(this) {
             if (initialized) return true
             if (!OpenCVLoader.initLocal()) {
-                LogBus.log(LogKind.ERROR, LogTag.VISION, "OpenCV 本地库初始化失败")
+                LogBus.log(LogLevel.ERROR, LogTag.VISION, "OpenCV 本地库初始化失败")
                 return false
             }
             initialized = true
             appCtx = context.applicationContext
             BoardCornersStore.attach(context)
-            LogBus.log(LogKind.OK, LogTag.VISION, "OpenCV 已初始化")
+            LogBus.log(LogLevel.INFO, LogTag.VISION, "OpenCV 已初始化")
         }
         return true
     }
@@ -66,7 +66,7 @@ object VisionInit {
                 val rR = loadBgr(context, "templates/$name/r_R.png") ?: continue
                 sets.add(CornerSet(name, bR, rR))
             }
-            LogBus.log(LogKind.DEBUG, LogTag.VISION, "已加载 ${sets.size} 套角子模板")
+            LogBus.log(LogLevel.DEBUG, LogTag.VISION, "已加载 ${sets.size} 套角子模板")
             cornerSets = sets
             sets
         }

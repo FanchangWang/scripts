@@ -1,7 +1,7 @@
 package com.chess.bot.game
 
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 
 /**
@@ -44,7 +44,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 val side = detectSide(board)
                 if (side != null && allOnInitialSquares(board, side)) {
                     LogBus.log(
-                        LogKind.DEBUG, tag,
+                        LogLevel.DEBUG, tag,
                         "识别到 31 子且全在初始位置（提子过渡态），继续等待 32 子",
                     )
                     prevBoard = board
@@ -59,7 +59,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                     }
                     prevBoard = board
                     LogBus.log(
-                        LogKind.DEBUG, tag,
+                        LogLevel.DEBUG, tag,
                         "识别到 31 子残局（有子离初始位置），等待稳定 $stableCount/${Const.BOARD_STABLE_THRESHOLD}",
                     )
                     if (stableCount >= Const.BOARD_STABLE_THRESHOLD) Feed.Ready(count) else Feed.Waiting
@@ -67,7 +67,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
             }
 
             count == 32 -> {
-                LogBus.log(LogKind.INFO, tag, "识别到 32 个棋子，按新开局处理")
+                LogBus.log(LogLevel.INFO, tag, "识别到 32 个棋子，按新开局处理")
                 Feed.Ready(count)
             }
 
@@ -79,7 +79,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 prevBoard = board
                 stableCount = 0
                 LogBus.log(
-                    LogKind.DEBUG, tag,
+                    LogLevel.DEBUG, tag,
                     "等待摆棋：识别到 $count 个棋子但将帅未同时存在，继续等待",
                 )
                 Feed.Waiting
@@ -88,7 +88,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
             prevBoard != null && boardEquals(prevBoard, board) -> {
                 stableCount++
                 LogBus.log(
-                    LogKind.DEBUG, tag,
+                    LogLevel.DEBUG, tag,
                     "等待摆棋：识别到 $count 个棋子（稳定 $stableCount/${Const.BOARD_STABLE_THRESHOLD}）",
                 )
                 if (stableCount >= Const.BOARD_STABLE_THRESHOLD) Feed.Ready(count) else Feed.Waiting
@@ -97,7 +97,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
             else -> {
                 prevBoard = board
                 stableCount = 0
-                LogBus.log(LogKind.DEBUG, tag, "等待摆棋：识别到 $count 个棋子，重新计稳定")
+                LogBus.log(LogLevel.DEBUG, tag, "等待摆棋：识别到 $count 个棋子，重新计稳定")
                 Feed.Waiting
             }
         }

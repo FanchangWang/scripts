@@ -5,7 +5,7 @@ import android.graphics.Bitmap
 import com.chess.bot.accessibility.BotAccessibilityServiceHolder
 import com.chess.bot.game.Const
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.vision.Homography
 import com.chess.bot.vision.TextMatcher
@@ -65,11 +65,11 @@ class Capture(
     /** 点击网格格心（逆透视映射 + 无障碍手势）。 */
     fun tap(r: Int, c: Int): Boolean {
         val h = homography ?: run {
-            LogBus.log(LogKind.ERROR, LogTag.INPUT, "尚无棋盘坐标信息，请先启动截屏")
+            LogBus.log(LogLevel.ERROR, LogTag.INPUT, "尚无棋盘坐标信息，请先启动截屏")
             return false
         }
         val (x, y) = Homography.tapXy(h, r, c)
-        LogBus.log(LogKind.DEBUG, LogTag.INPUT, "点击 ($x,$y)")
+        LogBus.log(LogLevel.DEBUG, LogTag.INPUT, "点击 ($x,$y)")
         return tapXy(x, y)
     }
 
@@ -103,7 +103,7 @@ class Capture(
                 buttons.first { it.word == Const.DRAW_ACCEPT_WORD }
             }
             LogBus.log(
-                LogKind.INFO,
+                LogLevel.INFO,
                 LogTag.INPUT,
                 "检测到和棋弹窗，点击「${if (reject) "拒绝" else "同意"}」（第 $count 次）",
             )

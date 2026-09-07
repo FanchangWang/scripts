@@ -47,7 +47,7 @@ import com.chess.bot.data.BotSettings
 import com.chess.bot.data.ThinkMode
 import com.chess.bot.log.FileLogger
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.overlay.OverlayManager
 import com.chess.bot.ui.theme.LocalExtendedColors
@@ -179,7 +179,13 @@ fun SettingsScreen(onBack: () -> Unit) {
             GroupCard {
                 DropdownRow(
                     title = "文件日志级别",
-                    options = listOf(LogKind.DEBUG, LogKind.INFO, LogKind.WARN, LogKind.ERROR),
+                    options = listOf(
+                        LogLevel.VERBOSE,
+                        LogLevel.DEBUG,
+                        LogLevel.INFO,
+                        LogLevel.WARN,
+                        LogLevel.ERROR
+                    ),
                     selected = cfg.fileLogLevel,
                     label = { it.name },
                 ) { v -> update { it.copy(fileLogLevel = v) } }
@@ -211,7 +217,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         // ③ 复位悬浮窗内存态（位置/开关，下次弹窗按默认位创建）
                         OverlayManager.resetToDefaults()
                         LogBus.log(
-                            LogKind.OK,
+                            LogLevel.INFO,
                             LogTag.SYSTEM,
                             "已恢复默认设置（保留棋盘四角校准数据）"
                         )
@@ -344,7 +350,7 @@ private fun ResetRow(onClick: () -> Unit) {
 private fun exportLog(context: Context) {
     val files = FileLogger.retainedFiles(context)
     if (files.isEmpty()) {
-        LogBus.log(LogKind.WARN, LogTag.SYSTEM, "暂无可导出的会话日志")
+        LogBus.log(LogLevel.WARN, LogTag.SYSTEM, "暂无可导出的会话日志")
         return
     }
     runCatching {
@@ -371,10 +377,10 @@ private fun exportLog(context: Context) {
             }
         }
         context.startActivity(Intent.createChooser(intent, "导出运行日志（${files.size} 个分片）"))
-        LogBus.log(LogKind.OK, LogTag.SYSTEM, "已调起日志导出：${files.size} 个日志分片")
+        LogBus.log(LogLevel.INFO, LogTag.SYSTEM, "已调起日志导出：${files.size} 个日志分片")
     }.onFailure { e ->
         LogBus.log(
-            LogKind.ERROR,
+            LogLevel.ERROR,
             LogTag.SYSTEM,
             "日志导出失败：${e::class.java.simpleName}: ${e.message}"
         )

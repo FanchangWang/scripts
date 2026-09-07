@@ -4,7 +4,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import com.chess.bot.game.Board
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import java.io.File
 
@@ -45,7 +45,7 @@ class ObkBook private constructor(context: Context) {
                 (assetLen != null && assetLen != file.length())
         if (needCopy) {
             LogBus.log(
-                LogKind.INFO, LogTag.PLAY,
+                LogLevel.INFO, LogTag.PLAY,
                 "拷贝开局库 $BOOK_FILE_NAME 到私有目录" +
                         (if (file.exists()) "（检测到旧副本，长度不一致，重新拷贝）" else ""),
             )
@@ -58,7 +58,11 @@ class ObkBook private constructor(context: Context) {
                 tmp.delete()
             }
             if (assetLen != null && file.length() != assetLen) {
-                LogBus.log(LogKind.WARN, LogTag.PLAY, "开局库拷贝后长度与资产不一致，可能拷贝不完整")
+                LogBus.log(
+                    LogLevel.WARN,
+                    LogTag.PLAY,
+                    "开局库拷贝后长度与资产不一致，可能拷贝不完整"
+                )
             }
         }
         db = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
@@ -101,7 +105,7 @@ class ObkBook private constructor(context: Context) {
                 BookMove(iccs, vscore, winRate, viaMirror, key)
             }
         } catch (e: Exception) {
-            LogBus.log(LogKind.WARN, LogTag.PLAY, "开局库查询失败：${e.message}")
+            LogBus.log(LogLevel.WARN, LogTag.PLAY, "开局库查询失败：${e.message}")
             null
         }
     }

@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.chess.bot.data.BoardCornersStore
 import com.chess.bot.data.BotConfig
 import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogKind
+import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.service.BotForegroundService
 import com.chess.bot.ui.CalibrationCard
@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             notificationsGranted.value = granted
             if (!granted) LogBus.log(
-                LogKind.WARN,
+                LogLevel.WARN,
                 LogTag.SYSTEM,
                 "通知权限被拒绝：前台服务通知将不显示"
             )
@@ -101,9 +101,9 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK && result.data != null) {
                 BotForegroundService.start(this, result.resultCode, result.data!!)
-                LogBus.log(LogKind.OK, LogTag.SYSTEM, "屏幕捕获已授权，服务已启动")
+                LogBus.log(LogLevel.INFO, LogTag.SYSTEM, "屏幕捕获已授权，服务已启动")
             } else {
-                LogBus.log(LogKind.WARN, LogTag.SYSTEM, "屏幕捕获授权被拒绝")
+                LogBus.log(LogLevel.WARN, LogTag.SYSTEM, "屏幕捕获授权被拒绝")
             }
         }
 
@@ -118,9 +118,9 @@ class MainActivity : ComponentActivity() {
                     calibration = true
                 )
                 CalibrationSession.onProjectionGranted(this)
-                LogBus.log(LogKind.OK, LogTag.CALIB, "屏幕捕获已授权，进入截屏")
+                LogBus.log(LogLevel.INFO, LogTag.CALIB, "屏幕捕获已授权，进入截屏")
             } else {
-                LogBus.log(LogKind.WARN, LogTag.CALIB, "屏幕捕获授权被拒绝")
+                LogBus.log(LogLevel.WARN, LogTag.CALIB, "屏幕捕获授权被拒绝")
             }
         }
 

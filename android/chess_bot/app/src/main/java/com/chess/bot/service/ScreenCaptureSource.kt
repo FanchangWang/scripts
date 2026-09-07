@@ -57,7 +57,7 @@ class ScreenCaptureSource private constructor() {
                 manager.getMediaProjection(resultCode, data)
                     ?: run {
                         com.chess.bot.log.LogBus.log(
-                            com.chess.bot.log.LogKind.ERROR,
+                            com.chess.bot.log.LogLevel.ERROR,
                             com.chess.bot.log.LogTag.SERVICE,
                             "getMediaProjection 返回 null",
                         )
@@ -65,11 +65,15 @@ class ScreenCaptureSource private constructor() {
                     }
             } catch (e: Exception) {
                 com.chess.bot.log.LogBus.log(
-                    com.chess.bot.log.LogKind.ERROR,
+                    com.chess.bot.log.LogLevel.ERROR,
                     com.chess.bot.log.LogTag.SERVICE,
                     "getMediaProjection 异常：${e::class.java.simpleName}: ${e.message}",
                 )
-                android.util.Log.e(TAG, "getMediaProjection 失败", e)
+                com.chess.bot.log.LogBus.log(
+                    com.chess.bot.log.LogLevel.ERROR,
+                    com.chess.bot.log.LogTag.SERVICE,
+                    "getMediaProjection 失败：${e::class.java.simpleName}: ${e.message}"
+                )
                 return false
             }
         projection = mp
@@ -85,7 +89,7 @@ class ScreenCaptureSource private constructor() {
             override fun onStop() {
                 // 用户从系统面板停止投屏或授权被回收：清理并通知
                 com.chess.bot.log.LogBus.log(
-                    com.chess.bot.log.LogKind.WARN,
+                    com.chess.bot.log.LogLevel.WARN,
                     com.chess.bot.log.LogTag.SERVICE,
                     "屏幕捕获已停止（系统回收），请重新点击启动",
                 )
@@ -124,7 +128,7 @@ class ScreenCaptureSource private constructor() {
         teardown = false
         active.value = true
         com.chess.bot.log.LogBus.log(
-            com.chess.bot.log.LogKind.DEBUG,
+            com.chess.bot.log.LogLevel.DEBUG,
             com.chess.bot.log.LogTag.SERVICE,
             "VirtualDisplay 已创建：${width}x${height}@$dpi",
         )
@@ -181,12 +185,15 @@ class ScreenCaptureSource private constructor() {
             synchronized(lock) { latest = snapshot }
         } catch (e: IllegalStateException) {
             // Image 已被 reader.close() 在另一线程关闭（典型：停采竞态）。丢弃该帧即可。
-            android.util.Log.w(TAG, "consume 跳过已关闭帧：${e.message}")
+            com.chess.bot.log.LogBus.log(
+                com.chess.bot.log.LogLevel.WARN,
+                com.chess.bot.log.LogTag.SERVICE,
+                "consume 跳过已关闭帧：${e.message}"
+            )
         }
     }
 
     companion object {
-        private const val TAG = "ScreenCaptureSource"
         private const val MAX_IMAGES = 2
 
         /** 截屏管线是否运行中（供 UI 同步状态）。 */

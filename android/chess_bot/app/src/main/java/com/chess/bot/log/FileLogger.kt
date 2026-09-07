@@ -52,7 +52,7 @@ object FileLogger {
         current = file
         writer = file.printWriter()
         bytes = 0
-        write(LogKind.INFO, LogTag.SYSTEM, "会话日志开始（分片 #$seq）：${file.name}")
+        write(LogLevel.INFO, LogTag.SYSTEM, "会话日志开始（分片 #$seq）：${file.name}")
         d.listFiles { f -> f.name.startsWith(PREFIX) }
             ?.sortedByDescending { it.name }
             ?.drop(MAX_FILES)
@@ -60,10 +60,10 @@ object FileLogger {
     }
 
     /** 写一条（等级低于设置级别时丢弃；超 5MB 自动轮转到下一分片）。 */
-    fun write(kind: LogKind, tag: LogTag, msg: String) {
+    fun write(level: LogLevel, tag: LogTag, msg: String) {
         val w = writer ?: return
-        if (kind.rank() < BotConfig.data.fileLogLevel.rank()) return
-        val line = "${fmt.get()!!.format(Date())} [${kind.name}] [${tag.cn}] $msg"
+        if (level.priority < BotConfig.data.fileLogLevel.priority) return
+        val line = "${fmt.get()!!.format(Date())} ${level.letter} [${tag.name}] $msg"
         synchronized(this) {
             val out = writer ?: return
             out.println(line)
@@ -72,7 +72,7 @@ object FileLogger {
                 out.println(
                     "${
                         fmt.get()!!.format(Date())
-                    } [WARN] [系统] 单文件超过 5MB，轮转到下一分片"
+                    } ${LogLevel.WARN.letter} [${LogTag.SYSTEM.name}] 单文件超过 5MB，轮转到下一分片"
                 )
                 out.flush()
                 out.close()
