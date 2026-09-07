@@ -90,8 +90,8 @@ def poly_to_box(poly) -> list[int]:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("image", nargs="?", default="b.png", help="待识别图片路径")
-    ap.add_argument("--model", choices=MODEL_TIERS, default="small",
-                    help="模型档位（默认 small，能正确分开相邻按钮；疑难字可改 medium）")
+    ap.add_argument("--model", choices=MODEL_TIERS, default="tiny",
+                    help="模型档位（默认 tiny，能正确分开相邻按钮；疑难字可改 small、medium）")
     ap.add_argument("--engine", default="onnxruntime",
                     help="推理后端（默认 onnxruntime；可改 paddle）")
     ap.add_argument("--min-conf", type=float, default=0.0,
