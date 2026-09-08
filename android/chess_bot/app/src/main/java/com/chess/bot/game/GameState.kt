@@ -19,7 +19,13 @@ enum class Phase(val cn: String) {
 }
 
 /** 一格变动：(行, 列, 旧棋子, 新棋子)。 */
-data class Change(val r: Int, val c: Int, val old: String?, val new: String?)
+data class Change(
+    val r: Int, val c: Int, val old: String?, val new: String?,
+    /** 变化格 cls top1 置信度（2026-09-09 日志拆分 D1：变化行内联显示，替代原 cls 明细段）。 */
+    val top1Prob: Float = 0f,
+    /** lift 类概率（显著时变化行附注，排查飞行帧误读用）。 */
+    val liftProb: Float = 0f,
+)
 
 /** 一步棋：起子格 -> 落子格，走动棋子，被吃棋子（如有）。 */
 data class Move(

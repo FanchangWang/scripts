@@ -22,9 +22,6 @@ enum class LogLevel(val priority: Int, val letter: Char) {
     INFO(Log.INFO, 'I'),
     WARN(Log.WARN, 'W'),
     ERROR(Log.ERROR, 'E');
-
-    /** 级别数值（越大越严重），文件日志级别过滤用。 */
-    val rank: Int get() = priority
 }
 
 /** 模块标签：日志来源，logcat/文件均作为 [TAG] 前缀展示（替代手工「[校准]」等前缀）。 */

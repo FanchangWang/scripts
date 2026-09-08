@@ -87,8 +87,9 @@ class AutoNext(
             if (hit != null) {
                 // ---------- 终止类词（2026-09-07）：识别到即自动中断对弈（等价用户点停止） ----------
                 if (hit.word in Const.GAMEOVER_INTERRUPT_WORDS) {
+                    // 设计内流程（等价用户点停止），INFO 与「OCR 命中结算文字」同级（2026-09-09 D2）
                     LogBus.log(
-                        LogLevel.ERROR,
+                        LogLevel.INFO,
                         LogTag.NEXT,
                         "识别到终止弹窗「${hit.word}」，自动中断对弈"
                     )

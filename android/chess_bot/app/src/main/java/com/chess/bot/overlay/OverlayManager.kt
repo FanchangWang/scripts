@@ -428,7 +428,7 @@ object OverlayManager {
         val s = ensureSession(ctx)
         if (BotRuntime.running.value) {
             s.interrupt()
-            LogBus.log(LogLevel.WARN, LogTag.PLAY, "已请求中断棋局")
+            LogBus.log(LogLevel.INFO, LogTag.PLAY, "已请求中断棋局")
             // 中断后保持操控条（不切信息框，#4）
         } else {
             scopeLaunchStart(ctx)

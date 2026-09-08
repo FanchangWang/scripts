@@ -209,7 +209,7 @@ class PikafishEngine private constructor() {
         LogBus.log(
             LogLevel.DEBUG, LogTag.ENGINE,
             "最终 info：depth=$depth seldepth=${info?.seldepth ?: 0} " +
-                    "nodes=${info?.nodes ?: 0} score=$score mate=$matePly " +
+                    "nodes=${info?.nodes ?: 0} score=$score mate=${matePly ?: "-"} " +
                     "quality=$qualityReached" +
                     (if (scoreUnreliable) " scoreUnreliable(${if (picked == null) "无有效info" else "全bound"})" else "")
         )

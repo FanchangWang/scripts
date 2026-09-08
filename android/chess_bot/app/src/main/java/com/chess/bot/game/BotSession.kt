@@ -80,6 +80,21 @@ class BotSession(private val context: Context) {
      */
     private var mateInfoSolid = false
 
+    /**
+     * 绝杀探测上次「跳过原因」（日志降噪，2026-09-09 D3）：常态每步都走同一条跳过路径，
+     * 仅当原因变化（子数跨越探测窗口阈值 / mate 记账翻转 / 探测真正执行）时打一条 DEBUG。
+     */
+    private var lastProbeSkip: String? = null
+
+    /** grabBoard「变化行」上次记录的内容（内容相同则静默，2026-09-09 日志拆分 D1=A）。 */
+    private var lastGrabLogKey: String? = null
+
+    /** grabBoard「异常行」上次事件指纹（非慢帧部分连续相同只打首条，变化行打印时重置；2026-09-09 R5=A）。 */
+    private var lastAnomalyKey: String? = null
+
+    /** grabBoard 异常行上次漂移打点时刻（单调 ms）；漂移限频 GRAB_LOG_DRIFT_INTERVAL_MS 内不重复打（R7）。 */
+    private var lastDriftLogMs = 0L
+
     /** 我方走子时引擎返回的预测敌着（ponder）；用于敌方思考期启动 ponder 预搜。 */
     private var pendingPonderMove: String? = null
 
@@ -364,7 +379,11 @@ class BotSession(private val context: Context) {
         val inferred = inferTurn(state.board, state.mySide, state.phase)
         if (inferred != null) {
             state.turn = inferred
-            LogBus.log(LogLevel.INFO, LogTag.PLAY, "轮次推断：轮到${inferred.cn}方走棋")
+            LogBus.log(
+                LogLevel.INFO, LogTag.PLAY,
+                if (inferred == state.mySide) "轮次推断：轮到${inferred.cn}方（我方）走棋"
+                else "轮次推断：轮到${inferred.cn}方走棋"
+            )
         } else {
             // 闯关排局 / 残局：无法静态推断轮次，默认我方（玩家）先行
             state.turn = state.mySide
@@ -537,9 +556,9 @@ class BotSession(private val context: Context) {
             )
             // 布局落盘（替代原轮次弹窗的兜底），便于定位误识别
             val count = pieceCount(board)
-            LogBus.log(LogLevel.ERROR, LogTag.VISION, "失败帧诊断：识别到 $count 个棋子")
+            LogBus.log(LogLevel.WARN, LogTag.PLAY, "失败帧诊断：识别到 $count 个棋子")
             Recognizer.formatLayout(board)
-                .forEach { LogBus.log(LogLevel.ERROR, LogTag.VISION, "识别布局 $it") }
+                .forEach { LogBus.log(LogLevel.WARN, LogTag.PLAY, "识别布局 $it") }
             status = BotStatus.PAUSED
             return false
         }
@@ -618,7 +637,7 @@ class BotSession(private val context: Context) {
                 }
 
                 VerifyOutcome.RETRY_DST -> {
-                    // 棋子提起未落：补点目标格。首轮为进度态清零守卫；连续两轮补点仍未落
+                    // 我方提子未落：补点目标格。首轮为进度态清零守卫；连续两轮补点仍未落
                     // = 无进展，计入零变化守卫（防「点目标格始终无效」死循环）
                     if (dstOnly) zeroChange++ else zeroChange = 0
                     dstOnly = true
@@ -647,7 +666,7 @@ class BotSession(private val context: Context) {
                     "连续 ${Const.SELF_MOVE_ZERO_CHANGE_MAX} 轮走棋重试无进展（RETRY），疑似弹窗遮挡或着法被拒，自动对弈已暂停（处理后点「开始」续弈）",
                 )
                 Recognizer.formatLayout(state.board)
-                    .forEach { LogBus.log(LogLevel.ERROR, LogTag.VISION, "守卫触发布局 $it") }
+                    .forEach { LogBus.log(LogLevel.WARN, LogTag.VISION, "守卫触发布局 $it") }
                 running = false
                 setStatus(BotStatus.ABNORMAL_PAUSED)
                 return false
@@ -671,10 +690,13 @@ class BotSession(private val context: Context) {
         val fenAfterMyMove =
             fenOfBoard(state.board, state.mySide, state.turn, state.halfmoveClock)
         engine.startPonder(context, fenAfterMyMove, predicted)
+        // 预测敌着中文化（2026-09-09 D6）：从「我方走子后」局面取起点格棋子名（黑马 b9 -> c7）
+        val (pr, pc) = squareToGrid(predicted.take(2), state.mySide)
+        val predictedLabel = state.board.getOrNull(pr)?.getOrNull(pc)?.let(::pieceLabel) ?: "未知子"
         LogBus.log(
             LogLevel.DEBUG,
             LogTag.ENGINE,
-            "已启动 ponder（预测敌着 $predicted），敌方思考期预搜我方应手"
+            "已启动 ponder（预测敌着 $predictedLabel ${predicted.take(2)} -> ${predicted.drop(2)}），敌方思考期预搜我方应手"
         )
     }
 
@@ -704,7 +726,7 @@ class BotSession(private val context: Context) {
                 emit()
                 LogBus.log(
                     LogLevel.DEBUG, LogTag.ENGINE,
-                    "命中预判：直接使用 ponder 预搜着法 ${pre.move}（评估 ${pre.scoreCp}，depth ${pre.depth}）",
+                    "命中预判：直接使用 ponder 预搜着法 ${pre.move}（评估 ${"%+d".format(pre.scoreCp)}，depth ${pre.depth}）",
                 )
                 return PendingMove(pre.move!!)
             }
@@ -729,7 +751,7 @@ class BotSession(private val context: Context) {
                     .onFailure { e ->
                         LogBus.log(
                             LogLevel.WARN,
-                            LogTag.PLAY,
+                            LogTag.ENGINE,
                             "开局库查询异常：${e::class.java.simpleName}: ${e.message}"
                         )
                     }
@@ -744,23 +766,18 @@ class BotSession(private val context: Context) {
                 emit()
                 LogBus.log(
                     LogLevel.INFO,
-                    LogTag.PLAY,
+                    LogTag.ENGINE,
                     "开局库命中：${hit.iccs}（vkey=${hit.vkey}，vscore=${hit.vscore}，" +
                             "胜率${(hit.winRate * 100).roundToInt()}%）",
                 )
                 return PendingMove(hit.iccs)
             }
-            LogBus.log(
-                LogLevel.DEBUG,
-                LogTag.PLAY,
-                "开局库未命中，回落引擎"
-            )
+            // 未命中回落引擎为常态路径，不打日志（命中已有 INFO；降噪 2026-09-09 D3）
         }
 
         // ---------- 引擎 ----------
         val fen = fenOfBoard(state.board, state.mySide, state.turn, state.halfmoveClock)
-        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "生成 FEN：$fen")
-        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "计算着法中…")
+        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "计算着法中：$fen")
         var result: EngineResult
         try {
             result = engine.bestMove(context, fen)
@@ -803,7 +820,7 @@ class BotSession(private val context: Context) {
         LogBus.log(
             LogLevel.DEBUG,
             LogTag.ENGINE,
-            "引擎着法：${result.move}（评估 ${result.scoreCp}，depth ${result.depth}）",
+            "引擎着法：${result.move}（评估 ${"%+d".format(result.scoreCp)}，depth ${result.depth}）",
         )
         return PendingMove(result.move)
     }
@@ -999,7 +1016,7 @@ class BotSession(private val context: Context) {
                                 LogBus.log(
                                     LogLevel.INFO,
                                     LogTag.SELF,
-                                    "棋子提起未落（${nowMs - liftSinceMs}ms），补点落子"
+                                    "我方提子未落（${nowMs - liftSinceMs}ms），补点落子"
                                 )
                                 return VerifyOutcome.RETRY_DST
                             }
@@ -1241,8 +1258,9 @@ class BotSession(private val context: Context) {
         state.resignStreak = 0
         state.noisyCount = 0
         state.liftLogged = false
-        var silentStreak = 0 // Q4-3：连续静默帧计数（单帧 SILENT 常为误读，防「提起棋子」双打）
-        LogBus.log(LogLevel.INFO, LogTag.PLAY, "等待对方走棋")
+        var silentStreak = 0 // Q4-3：连续静默帧计数（单帧 SILENT 常为误读，防「对方提子」双打）
+        // 节奏信息降 DEBUG（2026-09-09 D3）：敌着事件本身有 INFO（对方提子 / X方走炮），避免每步重复
+        LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "等待对方走棋")
         val cap = capture
         while (running && !interrupted && !state.gameOver) {
             // F2-A：敌方思考超 CAP 仍未走子 → 提前 ponderhit 按质量门控收割预搜（裸 go ponder 唯一闸门）。
@@ -1287,7 +1305,7 @@ class BotSession(private val context: Context) {
                         if (!state.liftLogged) {
                             state.liftLogged = true
                             setStatus(BotStatus.ENEMY_LIFTED)
-                            LogBus.log(LogLevel.INFO, LogTag.ENEMY, "对方提起棋子")
+                            LogBus.log(LogLevel.INFO, LogTag.ENEMY, "对方提子")
                         }
                         state.noisyCount = 0
                     }
@@ -1496,16 +1514,19 @@ class BotSession(private val context: Context) {
     private suspend fun checkmateProbe(): Boolean {
         // Y 方案：本轮着法的引擎 info 质量达标且带明确 mate 值（非杀）→ 对方必有应手，跳过二次探测
         if (mateInfoSolid) {
-            LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "本轮 info mate 明确（质量达标），跳过绝杀二次探测")
+            logProbeSkipChange("mate 明确", "mate 明确（质量达标）")
             return false
         }
         // Option A：仅终局附近（子少）才二次调用引擎验证，常规中局主搜已覆盖将死，跳过以减少引擎开销
         val count = pieceCount(state.board)
         if (count > Const.ENDGAME_PROBE_PIECE_MAX) {
-            LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "非终局（${count} 子），跳过绝杀二次探测")
+            // 常态路径：仅原因变化时打点（每步一条曾占单局日志 66 行）。
+            // 注意 key 用稳定类别「非终局」，文案才可携带实时子数——key 内嵌子数会永不去重（2026-09-09 复审 R1 修复）
+            logProbeSkipChange("非终局", "非终局（$count 子 > ${Const.ENDGAME_PROBE_PIECE_MAX}）")
             return false
         }
         setStatus(BotStatus.GAMEOVER_CHECK)
+        lastProbeSkip = null // 本轮真正执行了探测，下轮跳过原因需重新打点
         val opp = state.mySide.opponent
         val fen = fenOfBoard(state.board, state.mySide, opp, state.halfmoveClock)
         LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "绝杀探测 FEN（${opp.cn}方行棋）：$fen")
@@ -1525,6 +1546,14 @@ class BotSession(private val context: Context) {
         }
         finishGame("我方绝杀，${opp.cn}方无路可走")
         return true
+    }
+
+    /** 绝杀探测「跳过原因」变化时才打 DEBUG（常态每步同因跳过不再刷屏）。key 用稳定类别，text 可携带实时数值。 */
+    private fun logProbeSkipChange(key: String, text: String) {
+        if (lastProbeSkip != key) {
+            lastProbeSkip = key
+            LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "跳过绝杀二次探测：$text")
+        }
     }
 
     private fun decideDraw(): Boolean {
@@ -1589,7 +1618,8 @@ class BotSession(private val context: Context) {
                         LogBus.log(
                             LogLevel.INFO,
                             LogTag.NEXT,
-                            "下一局开始：轮到${inferred.cn}方走棋"
+                            if (inferred == state.mySide) "下一局开始：轮到${inferred.cn}方（我方）走棋"
+                            else "下一局开始：轮到${inferred.cn}方走棋"
                         )
                     } else {
                         // 闯关排局（如 24 子中局形态）：无法静态推断轮次，默认我方（玩家）先行
@@ -1628,23 +1658,51 @@ class BotSession(private val context: Context) {
         val tRecog = System.nanoTime()
         val scan = recognizeBoardChanged(corrected, state.prevCellImgs, state.board, state.mySide)
         val recogMs = (System.nanoTime() - tRecog) / 1_000_000
-        // 变化格详情并入本行（2026-09-06）：校验帧等下游日志只留结论，逐格明细统一在 grabBoard 查看
-        val changeDetail = scan.changes.joinToString(", ") {
-            "${gridToSquare(it.r, it.c, state.mySide)} ${it.old ?: "空"}->${it.new ?: "空"}"
+        // 两行拆分（2026-09-09 D1=A，替代原「耗时拆解」单行混装；R4=A 收紧漂移触发）：
+        // 行1「异常行」：仅慢帧/暂缓/剔除/漂移事件必打，安静期全静默——grep grabBoard 即性能与识别异常流；
+        //   漂移仅在「无变化帧」（静止棋盘白点/高亮自愈）时才报——过渡期内已变格持续 diff 且识别值==提交值
+        //   必然计为漂移，属物理必然（log3.txt 实测 611 次/2 局曾把门控击穿），不进异常行；
+        //   且静止漂移本身高频（UI 光效逐帧像素漂移，log3 实测 468 条无变化帧漂移；指纹去重 R5 对
+        //   逐帧波动噪音基本无效，467 行）→ 漂移限频打点（R7）：GRAB_LOG_DRIFT_INTERVAL_MS(3s) 内
+        //   同因最多 1 条，log3 模拟 641 → 109 行；
+        // 行2「变化行」：变化+未确认中文明细并一行，内容与上一条相同才静默——grep 棋盘变化 即走子过程回放
+        val slow = grabMs > Const.GRAB_LOG_SLOW_MS
+        val nowMs = System.nanoTime() / 1_000_000
+        val driftReport = scan.driftCells.isNotEmpty() && scan.changes.isEmpty() &&
+                nowMs - lastDriftLogMs >= Const.GRAB_LOG_DRIFT_INTERVAL_MS
+        if (slow || scan.transitLifts > 0 || scan.unconfirmedCells > 0 || driftReport) {
+            val parts = buildList {
+                add("diff ${scan.diffCells}")
+                if (scan.unconfirmedCells > 0) add("暂缓 ${scan.unconfirmedCells}")
+                if (scan.transitLifts > 0) add("剔除 ${scan.transitLifts}")
+                if (driftReport) add("漂移 ${scan.driftCells.size}")
+            }
+            val eventKey = parts.joinToString(" / ")
+            if (slow || driftReport || eventKey != lastAnomalyKey) {
+                lastAnomalyKey = eventKey
+                if (driftReport) lastDriftLogMs = nowMs
+                val prefix = if (slow) "慢帧 / " else ""
+                LogBus.log(
+                    LogLevel.DEBUG,
+                    LogTag.VISION,
+                    "grabBoard grab=${grabMs}ms recog=${recogMs}ms（$prefix$eventKey）"
+                )
+            }
         }
-        val changePart =
-            if (scan.changes.isEmpty()) "变化 0 格" else "变化 ${scan.changes.size} 格: $changeDetail"
-        val transitPart =
-            if (scan.transitLifts > 0) " / 途经瞬态剔除 ${scan.transitLifts} 格" else ""
-        val unconfirmedPart =
-            if (scan.unconfirmedCells > 0) " / 低置信暂缓 ${scan.unconfirmedCells} 格" else ""
-        // 变化格 cls 置信度（2026-09-07 诊断）：「格=读数(top1,liftX)」，排查 transit 帧误提交时核对
-        val clsPart = scan.clsDetail?.let { " / cls: $it" } ?: ""
-        LogBus.log(
-            LogLevel.DEBUG,
-            LogTag.VISION,
-            "grabBoard 耗时拆解 grab=${grabMs}ms recog=${recogMs}ms（diff 命中 ${scan.diffCells} 格 / $changePart$transitPart$unconfirmedPart$clsPart）"
-        )
+        // 行2：变化项「格 红X->黑Y[top1]」（D5 中文化；lift 概率仅显著时附注，D2=A）
+        val items = scan.changes.mapTo(mutableListOf()) { ch ->
+            val liftNote =
+                if (ch.liftProb > Const.GRAB_LOG_LIFT_NOTE_MIN) ",lift${"%.2f".format(ch.liftProb)}" else ""
+            "${gridToSquare(ch.r, ch.c, state.mySide)} ${ch.old?.let(::pieceLabel) ?: "空"}->" +
+                    "${ch.new?.let(::pieceLabel) ?: "空"}[${"%.2f".format(ch.top1Prob)}$liftNote]"
+        }
+        scan.unconfirmedDetail?.let { items.add(it) } // 未确认格并入变化行（D4=A）
+        val changeLine = items.joinToString(", ")
+        if (changeLine.isNotEmpty() && changeLine != lastGrabLogKey) {
+            lastGrabLogKey = changeLine
+            lastAnomalyKey = null // 真实变化发生：异常行指纹重置，下一节拍的漂移/暂缓可重新首打
+            LogBus.log(LogLevel.DEBUG, LogTag.VISION, "棋盘变化：$changeLine")
+        }
         return Grabbed(corrected, scan)
     }
 

@@ -63,22 +63,15 @@ fun recognizeBoardChanged(
                                 // 提交）、board 写回 committed、基线不刷新——下帧 diff 自动复检。
                                 board[r][c] = old
                                 unconfirmed++
+                                // 未确认明细（2026-09-09 D5）：中文化「格 ?->黑X(置信)未确认」，grabBoard 变化行并入
                                 clsDetails.add(
-                                    "${gridToSquare(r, c, mySide)}=${new ?: "空"}" +
-                                            "(${("%.2f".format(res.top1Prob))})未确认"
+                                    "${gridToSquare(r, c, mySide)} ?->" +
+                                            "${new?.let(::pieceLabel) ?: "空"}(${("%.2f".format(res.top1Prob))})未确认"
                                 )
                             } else {
-                                changes.add(Change(r, c, old, new))
-                                // 变化格 cls 置信度明细（2026-09-07 诊断用）：排查 transit 帧
-                                // 「棋子在飞但 cls 照样高置信读出落点子」（res 为抑制前原始 top1）
-                                clsDetails.add(
-                                    "${gridToSquare(r, c, mySide)}=${new ?: "空"}" +
-                                            "(${("%.2f".format(res.top1Prob))},lift${
-                                                "%.2f".format(
-                                                    res.liftProb
-                                                )
-                                            })"
-                                )
+                                changes.add(Change(r, c, old, new, res.top1Prob, res.liftProb))
+                                // 变化格 cls 置信度改由 Change 结构化携带（2026-09-09 日志拆分 D1=A），
+                                // grabBoard 变化行内联显示——消除「变化段 + cls 段」一格打两遍的冗余
                             }
                         } else if (base != null) {
                             // diff 触发但识别值与已提交一致（无真实走子）：画面漂移（白点/高亮/光照）。
@@ -96,8 +89,8 @@ fun recognizeBoardChanged(
     }
     return BoardScan(
         board, changes, diffCells, driftCells, transitLifts,
-        clsDetails.takeIf { it.isNotEmpty() }?.joinToString(", "),
-        unconfirmed,
+        unconfirmedDetail = clsDetails.takeIf { it.isNotEmpty() }?.joinToString(", "),
+        unconfirmedCells = unconfirmed,
     )
 }
 
@@ -108,8 +101,9 @@ data class BoardScan(
     val diffCells: Int,
     val driftCells: List<Pair<Int, Int>>,
     val transitLifts: Int = 0,
-    /** 变化格 cls 置信度明细（2026-09-07 诊断用）：「格=读数(top1,liftX)」逗号拼接，无变化格为 null。 */
-    val clsDetail: String? = null,
+    /** 低置信未确认格明细（2026-09-09 D1=A/D5：「格 ?->黑X(置信)未确认」逗号拼接，无则 null）。
+     *  已确认变化格的置信度改由 [Change] 结构化携带，grabBoard 变化行统一拼装。 */
+    val unconfirmedDetail: String? = null,
     /** 低置信未确认格数（< CLS_TRUST_MIN，不进 changes 待下帧复检，2026-09-07）。 */
     val unconfirmedCells: Int = 0,
 )
