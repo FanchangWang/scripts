@@ -11,6 +11,8 @@ import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.overlay.BotRuntime
 import com.chess.bot.service.Capture
+import com.chess.bot.vision.BoardGeometryGuard
+import com.chess.bot.vision.CornerDetModel
 import com.chess.bot.vision.PieceClsModel
 import com.chess.bot.vision.Recognizer
 import com.chess.bot.vision.TextMatcher
@@ -31,7 +33,7 @@ import kotlin.math.roundToInt
  * - verify 首帧按走子动画公式等待（400+dist×60+50），后续帧 150ms 兜底；tapHold 固定 250ms
  * - 开始棋局走共享 SettleWaiter 摆棋等待（31 子持续等待 / 32 子新开局 / 其余稳定计数）；
  *   轮次确认弹窗移除：detectSide 失败→暂停+布局落盘，排局默认红先
- * - 开局库（OBK）优先：bookEnabled 且未超最大步数时先查书，未命中回落引擎
+ * - 开局库（OBK）优先：启用时全程先查书，未命中回落引擎
  *
  * 2026-08-29 性能改造（T1）：和棋弹窗检查事件化（异常帧/终局确认前才查，不再每帧全图 matchTemplate）
  * 2026-08-30 识别提速（方案 A 变种）：
@@ -69,11 +71,27 @@ class BotSession(private val context: Context) {
      */
     private var selfMatePending = false
 
+    /**
+     * Y 方案 mate 记账（2026-09-08）：本轮着法来自引擎且其 info 质量达标、matePly 非空且非 1
+     * （≥2 = 我方尚需 N 步杀；负值 = 我方被将死序列中）→ 引擎确证对方必有应手、对局必续，
+     * endgameHook 跳过 200ms 绝杀二次探测。matePly==1 走 selfMatePending；
+     * 无 mate / TT 盲区（picked==null）/ 开局库着法 → false，探测照常（保困毙 + 盲区漏判兜底）。
+     * 每轮 computeMove 重置；由 [recordMateInfo] 在主搜与 ponderHit 两条引擎路径写入。
+     */
+    private var mateInfoSolid = false
+
     /** 我方走子时引擎返回的预测敌着（ponder）；用于敌方思考期启动 ponder 预搜。 */
     private var pendingPonderMove: String? = null
 
     /** 敌方走子命中预测后，ponderHit 取回的我方预搜结果；下一轮 computeMove 直接消费（省一次引擎调用）。 */
     private var pendingPonderResult: EngineResult? = null
+
+    /**
+     * F2-A（2026-09-08）：CAP 提前收割标志——敌方思考超 Const.ENGINE_PONDER_CAP_MS 时已在
+     * waitForEnemyMove 轮询里 ponderHit 收割并缓存进 [pendingPonderResult]。敌着提交时：
+     * 命中预测 → 直接消费缓存；未命中 → 作废缓存（结果属「Q=我方走子+预测敌着」局面）。
+     */
+    private var prematurePonderHarvested = false
 
     /** 当前状态机阶段（BotRuntime.status 的本地镜像，emit 时推送悬浮窗）。 */
     @Volatile
@@ -97,6 +115,9 @@ class BotSession(private val context: Context) {
     private fun visionWarmup() {
         VisionInit.init(context)
         PieceClsModel.ensure(context)
+        // Q1（2026-09-08）：det 四角模型随启动整体预加载——几何守卫已进入正常对弈路径
+        // （摆棋接受门 + 提子卡死诊断），懒加载会让首局扫描多等一次 ~700ms 推理+加载
+        CornerDetModel.ensure(context)
     }
     // ---------- 公共接口 ----------
 
@@ -214,9 +235,14 @@ class BotSession(private val context: Context) {
                 if (count > 0) {
                     when (val f = waiter.feed(board)) {
                         is SettleWaiter.Feed.Ready -> {
-                            handOff = true
-                            LogBus.log(LogLevel.INFO, LogTag.PLAY, "棋盘已就绪（$count 子）")
-                            return corrected
+                            // 几何守卫（2026-09-08）：稳定≠完整尺寸棋盘（缩小棋盘内容级校验全过）。
+                            // det 重定位四角通过才接受；拒绝则重新计稳定继续等待
+                            if (geometryOk()) {
+                                handOff = true
+                                LogBus.log(LogLevel.INFO, LogTag.PLAY, "棋盘已就绪（$count 子）")
+                                return corrected
+                            }
+                            waiter.resetStable()
                         }
 
                         is SettleWaiter.Feed.OwnLift -> {
@@ -235,6 +261,28 @@ class BotSession(private val context: Context) {
                             }
                         }
 
+                        is SettleWaiter.Feed.OwnLiftStalled -> {
+                            // 提子卡死诊断门（G1=A，N=2）：同 AutoNext——缩小棋盘被误读为
+                            // 提子时确认计数永远到不了 Ready，几何守卫挂 Ready 分支形同虚设，
+                            // 这里在卡死时主动诊断；MISMATCH → 封锁提子格回摆棋等待
+                            //（log2.txt 复审：静止棋盘重置确认计数无效，同位置不再恢复）；
+                            // PASS/NO_DETECT → ack 放行真提子；节流期内不 ack，10s 到点重检
+                            if (!stallCheckThrottled()) {
+                                when (geometryVerify().verdict) {
+                                    BoardGeometryGuard.Verdict.MISMATCH -> {
+                                        warnGeomThrottled(
+                                            "提子卡死诊断：棋盘几何与校准不符（疑似结束动画缩小棋盘），" +
+                                                    "封锁提子格，回摆棋等待棋盘变化"
+                                        )
+                                        waiter.resetStable()
+                                        waiter.blockLift(f.liftPos)
+                                    }
+
+                                    else -> waiter.ackStall()
+                                }
+                            }
+                        }
+
                         SettleWaiter.Feed.Waiting -> {}
                     }
                 }
@@ -248,6 +296,61 @@ class BotSession(private val context: Context) {
             }
             delay(Const.GAMEOVER_SCAN_INTERVAL_MS)
         }
+    }
+
+    /** 几何守卫拒绝日志节流（waitForBoardSettled 专用）。 */
+    private var lastGeomWarnAt = 0L
+
+    /** 提子卡死诊断节流（det 推理 ~500ms，缩小棋盘持续期间限频）。 */
+    private var lastStallCheckAt = 0L
+
+    /** recoverOwnLift「将帅不在上半区」伪影告警节流。 */
+    private var lastLiftArtifactWarnAt = 0L
+
+    private fun stallCheckThrottled(): Boolean {
+        val now = System.nanoTime()
+        if (now - lastStallCheckAt < Const.LIFT_STALL_CHECK_INTERVAL_MS * 1_000_000) return true
+        lastStallCheckAt = now
+        return false
+    }
+
+    /** det 四角重定位校验（截屏→verify→回收），返回完整结论供分支判断。 */
+    private fun geometryVerify(): BoardGeometryGuard.Result {
+        val raw = capture.screenshot()
+        if (raw == null) {
+            warnGeomThrottled("几何校验截屏不可用，按未通过处理，继续等待")
+            return BoardGeometryGuard.Result(BoardGeometryGuard.Verdict.NO_DETECT)
+        }
+        return try {
+            BoardGeometryGuard.verify(context, raw)
+        } finally {
+            raw.recycle()
+        }
+    }
+
+    /** 摆棋接受前几何校验（det 四角 vs 校准四角）；未通过打节流 WARN 并返回 false。 */
+    private fun geometryOk(): Boolean {
+        val result = geometryVerify()
+        return when (result.verdict) {
+            BoardGeometryGuard.Verdict.PASS -> true
+            BoardGeometryGuard.Verdict.MISMATCH ->
+                warnGeomThrottled(
+                    "棋盘几何与校准不符（最大偏差 %.0fpx > ${Const.BOARD_GEOMETRY_TOL_PX}px，" +
+                            "疑似结束动画/缩放棋盘），拒绝接受，继续等待".format(result.maxDevPx ?: -1.0)
+                )
+
+            BoardGeometryGuard.Verdict.NO_DETECT ->
+                warnGeomThrottled("det 四角未检出（过渡帧/遮挡），拒绝接受，继续等待")
+        }
+    }
+
+    private fun warnGeomThrottled(msg: String): Boolean {
+        val now = System.nanoTime()
+        if (now - lastGeomWarnAt > 3_000_000_000L) {
+            lastGeomWarnAt = now
+            LogBus.log(LogLevel.WARN, LogTag.PLAY, msg)
+        }
+        return false
     }
 
     /** 首局轮次判定（审计 §二.E 三路径；轮次确认弹窗已删除）。 */
@@ -315,10 +418,16 @@ class BotSession(private val context: Context) {
                 (0 until COLS).any { c -> raw[r][c] == enemyGeneral }
             }
             if (!enemyGeneralTop) {
-                LogBus.log(
-                    LogLevel.WARN, LogTag.PLAY,
-                    "提子识别为${pieceLabel(piece)}但对方将帅不在上半区，疑似动画伪影，下帧重试"
-                )
+                // B（G1=B）：该告警在缩小棋盘误读为提子时会逐帧重试刷屏（真机日志 10+ 条），
+                // 加 3s 节流；根因由提子卡死诊断门（OwnLiftStalled → det）兜底
+                val now = System.nanoTime()
+                if (now - lastLiftArtifactWarnAt > 3_000_000_000L) {
+                    lastLiftArtifactWarnAt = now
+                    LogBus.log(
+                        LogLevel.WARN, LogTag.PLAY,
+                        "提子识别为${pieceLabel(piece)}但对方将帅不在上半区，疑似动画伪影，下帧重试"
+                    )
+                }
                 return LiftRecovery.RETRY
             }
             // 恢复棋盘并接管状态（对齐 initialize 语义：replaceBoard 归一化 lift 后写回提起子）
@@ -557,6 +666,7 @@ class BotSession(private val context: Context) {
         // 若已 SELF_THEN_ENEMY（敌方与本方走子动画重叠、敌方已落子），轮到我方，ponder 无意义且会被紧接着的 bestMove 强制 stopPonder 浪费。
         if (state.turn != state.mySide.opponent) return
         val predicted = pendingPonderMove ?: return
+        prematurePonderHarvested = false // 新一轮预搜开始，清除上一轮 CAP 收割标志
         // 当前 state.board 已含我方走子、轮到敌方 → 取「我方走子后」局面 FEN，叠加预测敌着 Y 作为 ponder 起点
         val fenAfterMyMove =
             fenOfBoard(state.board, state.mySide, state.turn, state.halfmoveClock)
@@ -578,6 +688,7 @@ class BotSession(private val context: Context) {
         }
         setStatus(BotStatus.THINKING)
         selfMatePending = false
+        mateInfoSolid = false
         // 敌方走子命中预判：直接消费 ponderHit 预搜结果，省去一次完整引擎搜索（仅当着法有效）
         val pre = pendingPonderResult
         pendingPonderMove = null
@@ -588,7 +699,7 @@ class BotSession(private val context: Context) {
                 state.lastMoveSource = MoveSource.ENGINE
                 state.lastMoveDepth = pre.depth
                 state.lastEvalScore = pre.scoreCp
-                selfMatePending = pre.matePly == 1
+                recordMateInfo(pre)
                 BotRuntime.bookWinRate.value = 0f
                 emit()
                 LogBus.log(
@@ -607,8 +718,8 @@ class BotSession(private val context: Context) {
         }
         val cfg = BotConfig.data
 
-        // ---------- 开局库优先 ----------
-        if (cfg.bookEnabled && state.moveCount < cfg.bookMaxMoves) {
+        // ---------- 开局库优先（启用即全程生效，命中走书、未命中回落引擎） ----------
+        if (cfg.bookEnabled) {
             // 书库 vkey 按 ICCS 标准方向（黑上红下、a 列在左）计算；执黑时屏幕棋盘需先 180° 旋转归一化，
             // 返回的 ICCS 着法再经 unpackMove 的 squareToGrid(iccs, mySide) 转回屏幕网格（两条链路对称）
             val bookBoard =
@@ -627,6 +738,7 @@ class BotSession(private val context: Context) {
                 state.lastMoveSource = MoveSource.BOOK
                 state.lastMoveDepth = 0
                 selfMatePending = false
+                mateInfoSolid = false // 开局库着法无引擎 info，探测按子数门控照常
                 state.lastEvalScore = hit.vscore
                 BotRuntime.bookWinRate.value = hit.winRate
                 emit()
@@ -641,7 +753,7 @@ class BotSession(private val context: Context) {
             LogBus.log(
                 LogLevel.DEBUG,
                 LogTag.PLAY,
-                "开局库未命中（已走 ${state.moveCount} 步），回落引擎"
+                "开局库未命中，回落引擎"
             )
         }
 
@@ -677,9 +789,14 @@ class BotSession(private val context: Context) {
         state.lastMoveDepth = result.depth
         state.lastEvalScore = result.scoreCp
         // 主搜已声明 mate+1 = 本步着法即杀着；标记后 verify 直接终局，省去二次引擎调用
-        selfMatePending = result.matePly == 1
+        recordMateInfo(result)
         if (selfMatePending) {
             LogBus.log(LogLevel.INFO, LogTag.ENGINE, "引擎判定本步绝杀（mate+1）：${result.move}")
+        } else if (mateInfoSolid) {
+            LogBus.log(
+                LogLevel.DEBUG, LogTag.ENGINE,
+                "info mate=${result.matePly}（质量达标）→ 对局确证仍将继续，本轮跳过绝杀探测"
+            )
         }
         BotRuntime.bookWinRate.value = 0f
         emit() // 引擎返回后立即刷新悬浮窗引擎行
@@ -1124,9 +1241,13 @@ class BotSession(private val context: Context) {
         state.resignStreak = 0
         state.noisyCount = 0
         state.liftLogged = false
+        var silentStreak = 0 // Q4-3：连续静默帧计数（单帧 SILENT 常为误读，防「提起棋子」双打）
         LogBus.log(LogLevel.INFO, LogTag.PLAY, "等待对方走棋")
         val cap = capture
         while (running && !interrupted && !state.gameOver) {
+            // F2-A：敌方思考超 CAP 仍未走子 → 提前 ponderhit 按质量门控收割预搜（裸 go ponder 唯一闸门）。
+            // 收割阻塞通常 <200ms（elapsed 已 ≥ TARGET，质量多半已达标），期间不取帧——敌方尚未走子无信息损失
+            maybeHarvestPonderCap()
             val grabbed = grabBoard(cap) ?: continue
             try {
                 val newBoard = grabbed.scan.board
@@ -1162,6 +1283,7 @@ class BotSession(private val context: Context) {
                     }
 
                     EnemyFrameResult.LIFTED -> {
+                        silentStreak = 0
                         if (!state.liftLogged) {
                             state.liftLogged = true
                             setStatus(BotStatus.ENEMY_LIFTED)
@@ -1171,7 +1293,10 @@ class BotSession(private val context: Context) {
                     }
 
                     EnemyFrameResult.SILENT -> {
-                        state.liftLogged = false
+                        // Q4-3（log 1432-1433 双打实证）：提子悬停期 LIFTED/SILENT 交替，
+                        // 单帧 SILENT 是 cls 误读——连续 2 帧静默才视为提子结束并重置日志门
+                        silentStreak++
+                        if (silentStreak >= 2) state.liftLogged = false
                         state.noisyCount = 0
                     }
 
@@ -1198,6 +1323,7 @@ class BotSession(private val context: Context) {
                             ResignResult.NONE -> {}
                         }
                         state.liftLogged = false
+                        silentStreak = 0
                         state.noisyCount++
                         formatChanges(changes, state.mySide).forEach {
                             LogBus.log(
@@ -1284,8 +1410,9 @@ class BotSession(private val context: Context) {
                         delay(Const.ENEMY_RECHECK_WAIT_MS)
                     }
                 }
-                // 每轮全量识别后短暂让步，避免单工作线程被识别独占（识别本身已 ~250ms，此延迟仅节流）
-                delay(Const.ENEMY_IDLE_POLL_MS)
+                // 每轮全量识别后短暂让步，避免单工作线程被识别独占（识别本身已 ~250ms，此延迟仅节流）；
+                // 间隔可调（设置页「敌方走棋」分组，默认 Const.ENEMY_IDLE_POLL_MS=50）
+                delay(BotConfig.data.enemyPollMs.toLong())
             } finally {
                 grabbed.corrected.release()
             }
@@ -1358,7 +1485,20 @@ class BotSession(private val context: Context) {
         return ResignResult.NONE
     }
 
+    /** Y 方案记账入口（主搜 / ponderHit 两条引擎路径共用）：写 selfMatePending 与 mateInfoSolid。 */
+    private fun recordMateInfo(result: EngineResult) {
+        selfMatePending = result.matePly == 1
+        // matePly 非 null 已隐含「有效非 bound info」（bound 行的 mate 在引擎层即被滤除）；
+        // 再叠加 qualityReached 排除硬顶兜底场景，双重保险
+        mateInfoSolid = !selfMatePending && result.matePly != null && result.qualityReached
+    }
+
     private suspend fun checkmateProbe(): Boolean {
+        // Y 方案：本轮着法的引擎 info 质量达标且带明确 mate 值（非杀）→ 对方必有应手，跳过二次探测
+        if (mateInfoSolid) {
+            LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "本轮 info mate 明确（质量达标），跳过绝杀二次探测")
+            return false
+        }
         // Option A：仅终局附近（子少）才二次调用引擎验证，常规中局主搜已覆盖将死，跳过以减少引擎开销
         val count = pieceCount(state.board)
         if (count > Const.ENDGAME_PROBE_PIECE_MAX) {
@@ -1526,6 +1666,25 @@ class BotSession(private val context: Context) {
     }
 
     /**
+     * F2-A/F3-A（2026-09-08）：敌方思考超 Const.ENGINE_PONDER_CAP_MS 仍未走子 → 提前 ponderhit
+     * 收割 ponder 预搜（裸 go ponder 无限预搜的唯一时间闸门，防慢敌手无限占 CPU）。
+     * 结果缓存进 [pendingPonderResult]：Q 局面的我方应手——敌随后走 Y 直接消费，走 Z 作废重搜。
+     * 非 ponder 态（ponderElapsedMs=-1 < CAP）自然跳过。
+     */
+    private fun maybeHarvestPonderCap() {
+        if (pendingPonderMove == null || prematurePonderHarvested) return
+        if (engine.ponderElapsedMs() < Const.ENGINE_PONDER_CAP_MS) return
+        prematurePonderHarvested = true
+        pendingPonderResult = engine.ponderHit()
+        LogBus.log(
+            LogLevel.DEBUG,
+            LogTag.ENGINE,
+            "敌方思考超 ${Const.ENGINE_PONDER_CAP_MS}ms，提前 ponderHit 收割预搜结果" +
+                    "（${pendingPonderResult?.move ?: "无"}，depth ${pendingPonderResult?.depth ?: 0}）"
+        )
+    }
+
+    /**
      * 敌着提交公共路径（三处提交点对称复用：waitForEnemyMove MOVED / 噪声复判 / 吞点击恢复）：
      * ponder 命中取预搜、未命中丢弃 → cellImgs 与 board 局部同步更新 → applyEnemyMove。
      */
@@ -1534,14 +1693,27 @@ class BotSession(private val context: Context) {
                 gridToSquare(move.dst.first, move.dst.second, state.mySide)
         if (pendingPonderMove != null) {
             if (enemyIccs == pendingPonderMove) {
-                pendingPonderResult = engine.ponderHit()
-                LogBus.log(
-                    LogLevel.DEBUG,
-                    LogTag.ENGINE,
-                    "敌方走子命中预测（$enemyIccs），ponderHit 取回预搜结果"
-                )
+                if (prematurePonderHarvested) {
+                    LogBus.log(
+                        LogLevel.DEBUG,
+                        LogTag.ENGINE,
+                        "敌方走子命中预测（$enemyIccs），直接消费 CAP 提前收割的预搜结果"
+                    )
+                } else {
+                    // F1-A：ponderHit 内部走主搜同款质量门控（elapsed<target 等满、质量达标才 stop）
+                    pendingPonderResult = engine.ponderHit()
+                    LogBus.log(
+                        LogLevel.DEBUG,
+                        LogTag.ENGINE,
+                        "敌方走子命中预测（$enemyIccs），ponderHit 按质量门控取回预搜结果"
+                    )
+                }
             } else {
                 engine.stopPonder()
+                if (prematurePonderHarvested) {
+                    // CAP 提前收割的结果属「Q=我方走子+预测敌着」局面，敌走了别的 → 作废
+                    pendingPonderResult = null
+                }
                 LogBus.log(
                     LogLevel.DEBUG,
                     LogTag.ENGINE,
@@ -1549,6 +1721,7 @@ class BotSession(private val context: Context) {
                 )
             }
             pendingPonderMove = null
+            prematurePonderHarvested = false
         }
         state.updateCellImgs(grab.corrected, grab.scan.changes, grab.scan.driftCells)
         applyEnemyMove(move)

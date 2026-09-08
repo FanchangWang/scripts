@@ -17,7 +17,7 @@
 | 我方走棋 | pikafish 算着法 → 点击起子/落子 → verifyForSelfMove v3 diff 数量分流（n==2 恰两格直接成功 / n≤4 classifySelfFrame 归类 / 5..30 灰区 / >30 OCR 检查 / 稳定兜底），提起未落补点、整步重试 |
 | 敌方走棋检测 | 持续帧差分类（n==2 走法 / 提子 / 噪声 / 无变动），噪声达上限暂停 |
 | 认输检测 | 双方将帅同时缺失连续 3 帧 → 结束 |
-| 绝杀探测 | 仅 n==2 干净走棋后调 engine.is_mate（亦读引擎 `matePly==1` 直接判定） |
+| 绝杀探测 | Y 方案：引擎 info 质量达标且 matePly 非空非 1 → 跳过探测；matePly==1 直接判定绝杀；无 mate / 盲区 → 仅终局附近（≤ENDGAME_PROBE_PIECE_MAX 子）n==2 干净走棋后调 engine.is_mate（保困毙+盲区兜底） |
 | 和棋弹窗 | 同意+拒绝双按钮同现才认定；按最近评估分 > DRAW_REJECT_CP 拒绝否则同意 |
 | 自动下一局 | 结算文字交互（按钮点击/遮罩返回键，重试上限）→ 摆棋稳定等待 → 重新初始化；开关实时可切 |
 | halfmove_clock | 吃子归零/非吃 +1，写入 FEN 供引擎自然限招 |
@@ -85,7 +85,10 @@ updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirm
   highlight/lastMove/lastEvalScore/resignStreak/noisyCount/liftLogged/lastMoveDepth）
 - mySide/turn/phase 非可选 + initialized 标志；flow 入口保证 turn 已定；computeMove 以 initialized 兜底防占位值流入 FEN
 - confirmStart / 轮次判定：不再弹中央模态对话框，改为 `decideStartTurn` 三路径（32 子默认位红先 / inferTurn 推断 / 残局·排局无法推断时默认**我方**先走，非红方），不自动选择
-- **绝杀提前终局**：引擎 `matePly==1` 置 `selfMatePending`，verify 落子后 `SELF_DONE` 或 `RESIGN_SUSPECT` 结束画面即 `finishGame("我方绝杀…")`，省二次引擎调用并阻断 doMove 重复点击死盘
+- **绝杀提前终局**：引擎 `matePly==1` 置 `selfMatePending`，verify 落子后 `SELF_DONE` 或 `RESIGN_SUSPECT` 结束画面即 `finishGame("我方绝杀…")`，省二次引擎调用并阻断 doMove 重复点击死盘；**Y 方案（2026-09-08）**：`recordMateInfo` 同时记 `mateInfoSolid`（质量达标 + matePly 非空非 1，主搜与 ponderHit 两路共用）→ `checkmateProbe` 入口直接跳过 200ms 二次探测
+- **棋盘几何守卫 + 提子卡死诊断门（2026-09-08 G1=A+B；log2.txt 复审修正）**：① 摆棋 Ready 分支 det 重定位四角 vs 校准四角（`BoardGeometryGuard`，容差 `BOARD_GEOMETRY_TOL_PX=10`）拦截结束动画缩小棋盘误开局；② 缩小棋盘可能被误读为我方提子、确认计数永远到不了 Ready → SettleWaiter 在确认超 `LIFT_STALL_FRAMES(2)` 帧仍未恢复时发 `OwnLiftStalled`，两处调用方（AutoNext / waitForBoardSettled）主动 det 诊断（`LIFT_STALL_CHECK_INTERVAL_MS=10s` 限频）：**MISMATCH → `blockLift(liftPos)` 封锁该提子格**（静止缩小棋盘重置确认计数无效——复审实证重置后 2 帧即复原，封锁后同位置不再确认/恢复，换位/消失自动解除），**PASS/NO_DETECT → `ackStall()` 放行真提子恢复**；事件不内置位、节流期内每帧重发不 ack（原实现节流吞事件 + 提前 stallFired 导致门失效），诊断期间不跑恢复流程；③ 提子确认/敌方提子/recoverOwnLift「将帅不在上半区」三类重复日志全部封顶或节流；④ waitForEnemyMove 的 SILENT 需连续 2 帧才重置 `liftLogged`（防「对方提起棋子」双打）
+- **ponder 质量门控改造（2026-09-08 F1-A/F2-A/F3-A）**：`go ponder` 改**裸发**（Stockfish 系 ponder 阶段不做时间检查，旧 `movetime` 实为「ponderhit 后立即到期」），时长控制上移 App 侧——收割两触发点：① 敌着命中预测 → `ponderHit()`；② 敌方思考超 `ENGINE_PONDER_CAP_MS`(3s) → waitForEnemyMove 轮询里 `maybeHarvestPonderCap()` 提前收割（结果缓存 `prematurePonderHarvested`+`pendingPonderResult`，敌走 Y 直接消费、走 Z 作废）。两路共用主搜同款 `monitorSearch` 质量门控（近杀提前停/质量达标停/盲区止损/停更止损/硬顶）后才 stop；F3-A 最短总思考时长自 go ponder 起算（elapsed 含 ponder 段，不足 TARGET 等满），硬顶时钟自 ponderhit 起算（收割等待有界）。`buildResult` 抽出共用，ponder 路径 qualityReached/seldepth/nodes 全字段透传（修复 Y 方案 mateInfoSolid 在 ponder 路径质量判定缺口的隐患）
+- **D6 采样结论 + 盲区提前止损（2026-09-08）**：`ENGINE_INFO_SAMPLE` 采样 14911 行 info（128 段）离线分析（报告 `.workbuddy/d6_dynamic_threshold_plan.md`）证明：① 现行 A1/A2 **零误杀**（KEEP 行 nodes 最小 40935 ≫ 10000 门槛，合法巨 gap 行 gap=239 全幸存）→ **伪影阈值不动**（H1/H2/H3 否决：伪影 nodes 高达 19 万、nps 反而最高，均无区分力；A2 为防御性规则保留）；② 盲区真机理 = TT 饱和时引擎 <100ms 冲到伪深度后**整个搜索期沉默**（55 盲区段 200ms 后 0 新 info），不是伪影误杀；③ 盲区指纹 = 伪深度行（`d≥100 且 sd≤12`）：盲区段 50/55 出现、晚 KEEP 段 0/14 → **盲区提前止损**落地：`elapsed≥min(ENGINE_BLIND_EARLY_MS(200), TARGET) && currentInfo==null && pseudoFloodSeen` → stop（省 ~300ms/次，主搜盲区 38% → 每局省 3~6s；无指纹盲区段退回 TARGET 原时点止损）；采样代码保留、开关默认 false
 - **敌着准入与两帧一致确认（2026-09-06 T-D）**：所有敌着提交点（waitForEnemyMove MOVED / 噪声复判 / verify N2 反吃+N3+N4 的 SELF_THEN_ENEMY / 吞点击恢复 tryRecoverSwallowedTap）统一走「伪合法校验（rules.kt isPseudoLegal）→ `reconfirmEnemyMoved` 两帧一致确认 → `commitEnemyMove` 公共提交（ponder 处理 + cellImgs 更新 + applyEnemyMove）」。复检**不加显式延时**（2026-09-06 02:30 用户实测去除原 ENEMY_MOVE_SETTLE_MS=30ms，常量已删）：单次 grabBoard 耗时 ~70-100ms，复抓本身已越过半格飞行窗口——动画中途帧（如車 C0→C9 途经 C5，几何合法、伪合法拦截不了）的 cls 读数必已变化，两帧同着法即排除中途帧；未复现则丢弃该帧回循环（MOVED 路径不计噪声），SELF_THEN_ENEMY 复判为 SELF_DONE 时仅提交我方走子（敌着视为瞬时伪影，交回 waitForEnemyMove 继续检测）
 - **T-C 稳判提交后跳过 verify（2026-09-06 02:27 事故；v3 后语义调整）**：verifyForSelfMove **入口保留防御检查**（`state.board[r1][c1]==null && state.board[r2][c2]==piece` → 直接 DONE_OK）。v3 后 attemptMove 已是纯点击、不再有「重试稳判提交」入口，该检查为防御性保留；「已落定」场景由 verify 的 n==2 快速成功路径覆盖
 - **v3 verifyForSelfMove 重构（2026-09-06 23:33，Q1 方案 .workbuddy/self_move_verify_redesign.md）**：diff 数量分流、无全局时间窗（maxWaitMs/maxWaitHardMs 废除）。每帧 grabBoard 一次，`n = changes.size`：
@@ -198,7 +201,7 @@ updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirm
 
 - **格式**：兵河五四 OBK（SQLite `start.obk`）。vkey = TChess 64 位 Zobrist、vmove=(from<<8)|to、负键 punned Double 存 REAL、正常 + 镜像双通道、着法伪合法校验
 - **当前库**：`assets/start.obk` 单一优化副本（133.9MB / 293 万行 / 窄而深：起始仅 9 着、常见线路纵深更深；vscore 仅 0~5）。格式 100% 兼容；原库 idxkey 索引对 REAL 通道漏行，已用 `obk_optimize.py fix` 做 REINDEX + 清空 vmemo + VACUUM 修复并验证 0 漏行
-- **查书**：`computeMove` 开局库优先（`bookEnabled && moveCount < bookMaxMoves`，命中推书徽标；未命中回落引擎）；执黑视角 `rotateBoard180` 归一化后再查书，返回经 squareToGrid 转回屏幕网格，两链路对称
+- **查书**：`computeMove` 开局库优先（`bookEnabled` 启用即全局生效，每步先查书、未命中回落皮卡鱼；2026-09-08 删除「最大使用步数」上限，命中推书徽标）；执黑视角 `rotateBoard180` 归一化后再查书，返回经 squareToGrid 转回屏幕网格，两链路对称
 - **换库检测**：`ObkBook` 比对资产精确长度（`assets.openFd().length`）而非存在性，换新库即生效；`build.gradle` 加 `noCompress += ["obk","nnue"]`（不压缩存储、`openFd` 可取长度）
 - **校验脚本**（`scripts/`，Zobrist 常量硬编码、不依赖外部参考）：
   - `obk_check.py` OBK 格式全量校验（起始 vkey=7101337512282506414）

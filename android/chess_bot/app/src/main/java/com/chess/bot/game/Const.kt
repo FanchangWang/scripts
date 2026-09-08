@@ -42,6 +42,11 @@ object Const {
     const val DET_CONF = 0.001
     const val CLS_LIFT_GATE = 0.30
 
+    // 摆棋接受门几何容差（2026-09-08 缩小棋盘误开局防护）：摆棋稳定后用 det 重定位四角，
+    // 与校准四角最大逐点偏差 ≤ 此值才接受，否则视为结束动画/缩放棋盘，继续等待。
+    // det 一次推理仅在接受新局时执行（每局 1 次），不在热路径。
+    const val BOARD_GEOMETRY_TOL_PX = 10
+
     // cls 变化格确认阈值（2026-09-07 真机实测）：修复双重 softmax 后静态棋子 top1 饱和 1.0，
     // 飞行中动画帧（棋子被提起/途经）实测 0.96 且错判、0.98+ 未发现错。低于此值的读数视为
     // 「未确认」：不进 changes（不参与帧分类/敌着两帧确认/提交）、board 沿用已提交值、基线
@@ -63,6 +68,14 @@ object Const {
 
     /** 我方提子确认帧数：连续同位置 lift 达此帧数才触发恢复流程（过滤飞行途经瞬态伪影）。 */
     const val LIFT_CONFIRM_FRAMES = 2
+
+    /** 提子卡死诊断门（G1=A，2026-09-08）：确认次数达到 N 帧仍未完成恢复（首次恢复 RETRY
+     *  后的下帧即满足）→ SettleWaiter 发 OwnLiftStalled，调用方触发一次 det 几何诊断，
+     *  判断是否缩小棋盘被误读为提子。 */
+    const val LIFT_STALL_FRAMES = 2
+
+    /** 提子卡死诊断门节流：det 诊断至少间隔此时长（缩小棋盘持续期间避免高频重复推理）。 */
+    const val LIFT_STALL_CHECK_INTERVAL_MS = 10_000L
 
     /** 提子身份识别：从 lift 格中心向上扫描的 dy 范围与步长（px；一格高 100px）。
      *  原理：提子 3D 悬浮特效投影 2D 后棋子位于格子上半部（部分覆盖正上方格子），
@@ -113,17 +126,70 @@ object Const {
 
     // ---------- 引擎 ----------
     const val ENGINE_MOVETIME_MS = 500
-    const val ENGINE_DEPTH = 40 // 引擎搜索最大层数（优先于 movetime 触发的限制之一）
 
     // 手机 SoC 核心数少于 PC：有意低于 python 的 12（勿在未确认目标机型核心数时调回）
     const val ENGINE_THREADS = 6
     const val ENGINE_HASH_MB = 1024
     const val ENGINE_MATE_PROBE_MS = 200 // 绝杀判断用的短时限探测（仅终局附近才触发）
     const val ENGINE_RULE60_MAX_PLY = 60 // 自然限招
+    // F2-A（2026-09-08）：裸 go ponder 无限预搜的唯一时间闸门——敌方思考超此值仍未走子，
+    // 提前 ponderhit 按质量门控收割预搜结果（走 Y 直接消费、走 Z 作废）。故意 > MOVETIME：
+    // 给快敌手留「命中即瞬时取结果」的机会，同时封顶慢敌手下的 CPU 占用
+    const val ENGINE_PONDER_CAP_MS = 3_000
+
+    // ---------- 引擎质量门控（go infinite + 持续监听方案，2026-09-08） ----------
+    // 伪影 time 阈值基线；实际取 max(此值, TARGET×10%)，避免快棋场景把合法行全滤掉
+    const val ENGINE_MIN_VALID_INFO_MS = 100
+
+    // 质量门控/伪影 A2 的节点下限（硬计算量指标，抗 CPU 波动）。
+    // 注：单线程基准值；nodes 为全局累计计数，当前 Threads=6 下阈值仍适用，
+    // 未来若改变线程/搜索架构需按实际 nps 重估。
+    const val ENGINE_MIN_VALID_NODES = 10_000L
+
+    // 质量门控 depth 下限（基础覆盖度；单看 seldepth 会被短线杀棋延伸骗过）
+    const val ENGINE_DEPTH_MIN = 8
+
+    // 超快棋兜底：TARGET < ENGINE_FAST_TARGET_MS 时 depth 门槛下调至此
+    //（复杂中局可能到硬顶都搜不到 8 层，避免短时限全部以质量未达标收尾）
+    const val ENGINE_DEPTH_MIN_FAST = 6
+    const val ENGINE_FAST_TARGET_MS = 500
+
+    // 质量门控 seldepth 下限（真实思考层次；D6-A：先固定 10，EngineResult 全量采样后再调）
+    const val ENGINE_SELDEPTH_MIN = 10
+
+    // 伪影 A2 规则：depth−seldepth 差距阈值 + 前置 depth 下限
+    //（depth 低于前置值时深度差参考价值低，跳过判定）
+    const val ENGINE_ARTIFACT_DEPTH_GAP = 15
+    const val ENGINE_ARTIFACT_MIN_DEPTH = 20
+
+    // D6 数据采样开关（临时）：开启时 drain 线程对每条可解析 info 行打「INFO样本」DEBUG 日志，
+    // 供离线分析动态伪影阈值。2026-09-08 采样结论（14911 行 / 128 段）：现行 A1/A2 零误杀
+    // （KEEP 行 nodes 最小 40935 ≫ 10000 门槛），阈值不动；采样代码保留备查，默认关闭。
+    const val ENGINE_INFO_SAMPLE = false
+
+    // 盲区提前止损（D6 数据实证）：TT 饱和时引擎 <100ms 内冲到伪深度（depth≥100 且
+    // seldepth≤12）后整个搜索期沉默——盲区段 200ms 后 0 新 info（55 段实证）。
+    // 止损条件 = elapsed≥此值 + 无有效 info + 已观测伪深度洪泛（指纹）：
+    // 命中 91% 盲区段，晚 KEEP 正常段 0/14 误伤；无指纹的盲区段退回 TARGET 原时点止损。
+    const val ENGINE_BLIND_EARLY_MS = 200
+    const val ENGINE_BLIND_PSEUDO_DEPTH = 100
+    const val ENGINE_BLIND_PSEUDO_SELDEPTH = 12
+
+    // mate 步数 ≤ 此值提前停（仅精确 mate，bound 态 mate 不触发提前终止）
+    const val ENGINE_MATE_STOP_PLY = 3
+
+    // 硬顶追加式绝对上限：任意分段档位再 clamp 到 TARGET + 此值
+    const val ENGINE_HARD_CAP_APPEND_MS = 5000
+
+    // 发 stop 后等 bestmove 的上限（超时走现有 restart 兜底）
+    const val ENGINE_STOP_BESTMOVE_TIMEOUT = 2000L
+
+    // F4 info 停更超时：currentInfo 距上次更新超过此值且已过 TARGET → 判「先有评估后沉默」，止损停。
+    // 防御性（2026-09-08 真机日志未见该形态），覆盖 TT 饱和的中间态（先输出部分有效行后引擎沉默）
+    const val ENGINE_INFO_STALE_MS = 1000L
 
     // ---------- 开局库 ----------
-    const val ENGINE_BOOK_ENABLED = true // 是否启用开局库
-    const val ENGINE_BOOK_MAX_MOVES = 14 // 开局库最大着法数（超过则进入引擎计算）
+    const val ENGINE_BOOK_ENABLED = true // 是否启用开局库（启用即全程生效：命中走书、未命中回落引擎）
 
     // 绝杀残差探测门槛：盘面棋子数超过此值视为中局，主搜已能覆盖将死，不再二次调用引擎验证（Option A）
     const val ENDGAME_PROBE_PIECE_MAX = 14

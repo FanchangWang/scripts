@@ -145,7 +145,7 @@ fun Step1Screen(onGoScreenshot: () -> Unit, onCancel: () -> Unit) {
     }
 }
 
-/** 主界面「对弈」卡片：展示当前引擎/开局库/节奏配置摘要 + 内联「设置」入口；授权并启动。 */
+/** 主界面「对弈」卡片：展示当前引擎思考时间/开局库配置摘要 + 内联「设置」入口；授权并启动。 */
 @Composable
 fun PlayCard(
     permsOk: Boolean,
@@ -175,10 +175,8 @@ fun PlayCard(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text("对弈", style = MaterialTheme.typography.titleMedium)
-            // 配置摘要（引擎仅模式名、开局库仅启用状态）
-            ValueRow("引擎", cfgState.thinkMode.cn)
-            // 思考摘要：跟随思考模式显示对应参数（时长→思考时间 / 层数→思考层数 / 先到为准→两者）
-            ValueRow("思考", thinkSummary(cfgState))
+            // 配置摘要（开局库仅启用状态）
+            ValueRow("引擎思考时间", thinkSummary(cfgState))
             ValueRow("开局库", if (cfgState.bookEnabled) "已启用" else "已关闭")
             // 主界面快捷开关：与设置页一致，BotConfig.save → DataStore，开局时读取（不实时驱动运行中的 BotRuntime）
             SwitchRow("自动下一局", cfgState.autoNext) { v -> update { it.copy(autoNext = v) } }
@@ -212,13 +210,9 @@ fun PlayCard(
     }
 }
 
-/** 首页「思考」行摘要：跟随思考模式显示生效参数（值前不加「思考时间/思考层数」前缀）。 */
+/** 首页「引擎思考时间」行摘要：显示思考时长（质量门控下「思考时间」= 最短思考时长）。 */
 private fun thinkSummary(cfg: com.chess.bot.data.BotConfigData): String {
-    return when (cfg.thinkMode) {
-        com.chess.bot.data.ThinkMode.TIME -> "${cfg.movetimeMs} ms"
-        com.chess.bot.data.ThinkMode.DEPTH -> "${cfg.depth} 层"
-        com.chess.bot.data.ThinkMode.BOTH -> "${cfg.movetimeMs} ms · ${cfg.depth} 层"
-    }
+    return "${cfg.movetimeMs} ms"
 }
 
 /** 步骤 2/2 截图后：回 App 立即显示「识别中」，后台识别完成后自动切 RESULT。 */

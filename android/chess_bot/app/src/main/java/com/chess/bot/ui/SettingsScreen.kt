@@ -44,7 +44,6 @@ import androidx.core.content.FileProvider
 import com.chess.bot.data.BotConfig
 import com.chess.bot.data.BotConfigData
 import com.chess.bot.data.BotSettings
-import com.chess.bot.data.ThinkMode
 import com.chess.bot.log.FileLogger
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogLevel
@@ -95,23 +94,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             GroupLabel("引擎")
             GroupCard {
                 DropdownRow(
-                    title = "思考模式",
-                    options = ThinkMode.entries.toList(),
-                    selected = cfg.thinkMode,
-                    label = { it.cn },
-                ) { v -> update { it.copy(thinkMode = v) } }
-                DropdownRow(
                     title = "思考时间",
                     options = MOVETIME_OPTIONS,
                     selected = cfg.movetimeMs,
                     label = { "$it ms" },
+                    hint = "最短思考时长，到点后按质量择机停",
                 ) { v -> update { it.copy(movetimeMs = v) } }
-                DropdownRow(
-                    title = "思考层数",
-                    options = DEPTH_OPTIONS,
-                    selected = cfg.depth,
-                    label = { "$it 层" },
-                ) { v -> update { it.copy(depth = v) } }
                 DropdownRow(
                     title = "线程数",
                     options = THREADS_OPTIONS,
@@ -132,16 +120,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                     title = "启用开局库",
                     checked = cfg.bookEnabled,
                 ) { v -> update { it.copy(bookEnabled = v) } }
-                DropdownRow(
-                    title = "最大使用步数",
-                    options = BOOK_MOVES_OPTIONS,
-                    selected = cfg.bookMaxMoves,
-                    label = { "$it" },
-                    hint = "下拉选择 6~20",
-                ) { v -> update { it.copy(bookMaxMoves = v) } }
             }
 
-            GroupLabel("对弈")
+            GroupLabel("我方走棋")
             GroupCard {
                 DropdownRow(
                     title = "落子间隔",
@@ -161,6 +142,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                     selected = cfg.verifyNextFrameMs,
                     label = { "$it ms" },
                 ) { v -> update { it.copy(verifyNextFrameMs = v) } }
+            }
+
+            GroupLabel("敌方走棋")
+            GroupCard {
+                DropdownRow(
+                    title = "敌方轮询间隔",
+                    options = ENEMY_POLL_OPTIONS,
+                    selected = cfg.enemyPollMs,
+                    label = { "$it ms" },
+                    hint = "越小检出越快，越大越省电省GC",
+                ) { v -> update { it.copy(enemyPollMs = v) } }
             }
 
             GroupLabel("悬浮窗")
@@ -263,13 +255,12 @@ private fun GroupCard(content: @Composable () -> Unit) {
 
 /** 下拉选择行（单行左右结构：左侧文字、右侧下拉框，min-width 128dp 对齐 HTML .dd-box）。 */
 private val MOVETIME_OPTIONS = listOf(300, 500, 800, 1000, 1500, 2000, 3000, 5000)
-private val DEPTH_OPTIONS = listOf(10, 15, 20, 25, 30, 35, 40)
 private val TAP_HOLD_OPTIONS = listOf(50, 80, 100, 150, 200)
 private val VERIFY_ANIM_OPTIONS = listOf(300, 350, 400, 450, 500)
 private val VERIFY_NEXT_FRAME_OPTIONS = listOf(30, 50, 80, 100, 150)
+private val ENEMY_POLL_OPTIONS = listOf(30, 50, 80, 100)
 private val THREADS_OPTIONS = listOf(4, 6, 8)
 private val HASH_OPTIONS = listOf(128, 256, 512, 1024, 1536, 2048, 4096)
-private val BOOK_MOVES_OPTIONS = listOf(8, 10, 12, 14, 16, 18, 20)
 
 @Composable
 private fun <T> DropdownRow(

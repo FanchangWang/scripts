@@ -143,7 +143,7 @@ class GameState {
     var lastMoveSource: MoveSource = MoveSource.ENGINE
     var lastMoveDepth = 0
 
-    /** 本会话已走的半回合数（开局库「最大使用步数」判断用）。 */
+    /** 本会话已走的半回合数（日志/开局形态判断用）。 */
     var moveCount = 0
     var resignStreak = 0
     var noisyCount = 0

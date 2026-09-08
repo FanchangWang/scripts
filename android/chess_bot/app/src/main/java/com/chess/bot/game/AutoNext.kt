@@ -5,6 +5,7 @@ import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.service.Capture
+import com.chess.bot.vision.BoardGeometryGuard
 import com.chess.bot.vision.PieceClsModel
 import com.chess.bot.vision.Recognizer
 import com.chess.bot.vision.TextMatcher
@@ -158,8 +159,14 @@ class AutoNext(
                     retryCount = 0
                     when (val f = waiter.feed(board)) {
                         is SettleWaiter.Feed.Ready -> {
-                            handOffToCaller = true
-                            return ScanResult.Settled(corrected)
+                            // 几何守卫（2026-09-08）：稳定≠完整尺寸棋盘。结束动画末期棋盘缩至
+                            // ~80% 且静止，内容级校验全过但校准四角采样全错位。det 重定位四角
+                            // 比对通过才接受；拒绝则重新计稳定（拉开两次 det 校验间隔）
+                            if (geometryOk()) {
+                                handOffToCaller = true
+                                return ScanResult.Settled(corrected)
+                            }
+                            waiter.resetStable()
                         }
 
                         is SettleWaiter.Feed.OwnLift -> {
@@ -170,6 +177,29 @@ class AutoNext(
                                 LiftRecovery.ADOPTED -> return ScanResult.Adopted
                                 LiftRecovery.ABORT -> return null
                                 LiftRecovery.RETRY -> {} // 继续等待，提子仍在会再次触发
+                            }
+                        }
+
+                        is SettleWaiter.Feed.OwnLiftStalled -> {
+                            // 提子卡死诊断门（G1=A，N=2）：确认超 N 帧仍未恢复 → det 几何诊断。
+                            // MISMATCH（缩小棋盘被误读为提子）→ 封锁该提子格回摆棋等待——
+                            // 静止缩小棋盘重置确认计数无效（log2.txt 复审：重置后 2 帧又复原），
+                            // 同位置不再走恢复流程，等棋盘变化/「下一关」交互自动解除；
+                            // PASS/NO_DETECT → ack 放行，真提子恢复流程继续；
+                            // 节流期内不 ack（10s 到点重检），诊断事件每帧重发期间不跑恢复
+                            if (!stallCheckThrottled()) {
+                                when (geometryVerify().verdict) {
+                                    BoardGeometryGuard.Verdict.MISMATCH -> {
+                                        warnThrottled(
+                                            "提子卡死诊断：棋盘几何与校准不符（疑似结束动画缩小棋盘），" +
+                                                    "封锁提子格，回摆棋等待棋盘变化"
+                                        )
+                                        waiter.resetStable()
+                                        waiter.blockLift(f.liftPos)
+                                    }
+
+                                    else -> waiter.ackStall()
+                                }
                             }
                         }
 
@@ -184,6 +214,61 @@ class AutoNext(
 
     private fun elapsedSeconds(startNanos: Long): Long =
         (System.nanoTime() - startNanos) / 1_000_000_000L
+
+    /** 几何守卫拒绝日志节流（避免长时间停留在缩小棋盘时刷屏）。 */
+    private var lastGeomWarnAt = 0L
+
+    /** 提子卡死诊断节流：det 推理较重（首局实测 ~500ms），缩小棋盘持续期间限频。 */
+    private var lastStallCheckAt = 0L
+
+    private fun stallCheckThrottled(): Boolean {
+        val now = System.nanoTime()
+        if (now - lastStallCheckAt < Const.LIFT_STALL_CHECK_INTERVAL_MS * 1_000_000) return true
+        lastStallCheckAt = now
+        return false
+    }
+
+    /** det 四角重定位校验（截屏→verify→回收），返回完整结论供分支判断。 */
+    private fun geometryVerify(): BoardGeometryGuard.Result {
+        val raw = capture.screenshot()
+        if (raw == null) {
+            warnThrottled("几何校验截屏不可用，按未通过处理，继续等待")
+            return BoardGeometryGuard.Result(BoardGeometryGuard.Verdict.NO_DETECT)
+        }
+        return try {
+            BoardGeometryGuard.verify(context, raw)
+        } finally {
+            raw.recycle()
+        }
+    }
+
+    /**
+     * 摆棋接受前的几何一致性校验（det 重定位四角 vs 校准四角，容差 Const.BOARD_GEOMETRY_TOL_PX）。
+     * 未通过打节流 WARN 并返回 false（调用方继续等待；「下一关」等结算交互不受影响）。
+     */
+    private fun geometryOk(): Boolean {
+        val result = geometryVerify()
+        return when (result.verdict) {
+            BoardGeometryGuard.Verdict.PASS -> true
+            BoardGeometryGuard.Verdict.MISMATCH ->
+                warnThrottled(
+                    "棋盘几何与校准不符（最大偏差 %.0fpx > ${Const.BOARD_GEOMETRY_TOL_PX}px，" +
+                            "疑似结束动画/缩放棋盘），拒绝接受，继续等待".format(result.maxDevPx ?: -1.0)
+                )
+
+            BoardGeometryGuard.Verdict.NO_DETECT ->
+                warnThrottled("det 四角未检出（过渡帧/遮挡），拒绝接受，继续等待")
+        }
+    }
+
+    private fun warnThrottled(msg: String): Boolean {
+        val now = System.nanoTime()
+        if (now - lastGeomWarnAt > 3_000_000_000L) {
+            lastGeomWarnAt = now
+            LogBus.log(LogLevel.WARN, LogTag.NEXT, msg)
+        }
+        return false
+    }
 
     companion object {
         fun isBackWord(word: String): Boolean = word in Const.GAMEOVER_BACK_WORDS
