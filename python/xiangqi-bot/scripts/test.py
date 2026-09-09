@@ -7,32 +7,26 @@
 #     "numpy",
 # ]
 # ///
-
 """
 PP-OCRv6 文本检测 + 识别（高精度版，基于 PaddleOCR onnxruntime 后端）。
-
 适用场景：识别棋盘之外的 UI 文字（按钮、对话框等字体渲染的文字）。
 棋子上的字是图片而非字体，识别率低属于正常，本脚本不针对棋子优化。
-
 相比旧版（PP-OCRv2 ncnn + 手写 DB 后处理 + 手写 CTC 解码）：
   * 直接采用官方 PP-OCRv6 模型（small/medium 等档位），检测/识别精度大幅跃升；
   * 检测、多边形后处理、CTC/字典解码全部由 PaddleOCR 内部完成，无需手写；
   * 仍保留原有对外输出：每个文字「矩形两点坐标 (x1,y1)-(x2,y2) + 文字 + 置信度」，
+    **新增输出：像素坐标 + 图片归一化百分比坐标**
     并写 test_result.json、画 test_result.png 供核对；
   * 阅读顺序按行 y 聚类再按 x 排序，输出稳定易读。
-
 运行：uv run test.py [图片路径] [--model small] [--min-conf 0.0] [--no-viz]
 首次运行会自动下载对应档位的 ONNX 模型（medium 约 70+MB，仅此一次，之后走缓存）。
 """
-
 import argparse
 import json
 import os
-
 import cv2
 import numpy as np
 from paddleocr import PaddleOCR
-
 # 可选档位：tiny(1.5M) / small(7.7M) / medium(34.5M，精度最高)
 # 用户要求「尽量精准、不计速度」，但 medium 检测头会把相邻按钮合并，故默认 small。
 MODEL_TIERS = ("tiny", "small", "medium")
@@ -98,31 +92,24 @@ def main():
                     help="仅输出置信度不低于该值的识别（默认 0.0=全部）")
     ap.add_argument("--no-viz", action="store_true", help="不生成可视化图")
     args = ap.parse_args()
-
     img_path = args.image
     if not os.path.exists(img_path):
         print(f"找不到图像文件: {img_path}")
         return
-
     print(f"加载 PP-OCRv6_{args.model}（engine={args.engine}）...")
     ocr = build_ocr(args.model, args.engine)
-
     img = imread_unicode(img_path)
     if img is None:
         print(f"图像读取失败: {img_path}")
         return
     img_h, img_w = img.shape[:2]
-
     result = ocr.predict(img)
     res = result[0]
-
     polys = res["rec_polys"]      # list[np.ndarray(4,2)]
     texts = res["rec_texts"]      # list[str]
     scores = res["rec_scores"]    # list[float]
-
     boxes = [poly_to_box(p) for p in polys]
     boxes = sort_boxes(boxes)
-
     print(f"==== 共检测到 {len(boxes)} 个区域 ====")
     results = []
     viz = img.copy()
@@ -130,21 +117,29 @@ def main():
     for (x1, y1, x2, y2), text, conf in zip(boxes, texts, scores):
         if not text.strip() or conf < args.min_conf:
             continue
+        # 计算归一化百分比坐标 0~1
+        x1_pct = round(x1 / img_w, 4)
+        y1_pct = round(y1 / img_h, 4)
+        x2_pct = round(x2 / img_w, 4)
+        y2_pct = round(y2 / img_h, 4)
+
         results.append({
-            "index": idx, "text": text, "confidence": round(float(conf), 4),
+            "index": idx,
+            "text": text,
+            "confidence": round(float(conf), 4),
             "box": [x1, y1, x2, y2],
+            "box_pct": [x1_pct, y1_pct, x2_pct, y2_pct],
             "points": {"tl": [x1, y1], "br": [x2, y2]},
         })
-        print(f"[{idx:02d}] 矩形({x1:4d},{y1:4d})-({x2:4d},{y2:4d})  文字: {text}  置信度: {conf:.3f}")
+        print(f"[{idx:02d}] 像素矩形({x1:4d},{y1:4d})-({x2:4d},{y2:4d}) "
+              f"百分比矩形({x1_pct:.2f},{y1_pct:.2f})-({x2_pct:.2f},{y2_pct:.2f})  文字: {text}  置信度: {conf:.3f}")
         cv2.rectangle(viz, (x1, y1), (x2, y2), (0, 0, 255), 2)
         cv2.putText(viz, f"{idx}:{text}", (x1, max(0, y1 - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         idx += 1
-
     with open("test_result.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"\n已写入 test_result.json（共 {len(results)} 条有效识别）")
-
     if not args.no_viz:
         cv2.imwrite("test_result.png", viz)
         print("已生成可视化图 test_result.png")
