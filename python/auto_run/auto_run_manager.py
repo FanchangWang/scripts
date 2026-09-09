@@ -337,7 +337,8 @@ class AutoRunManager:
             self.clean_and_sort_path() # 清理和排序环境变量Path
             self.load_uwp_apps() # 加载UWP应用列表
             self.start_uwp('SnipDo 复制工具', r'JohannesTscholl.Pantherbar')
-            self.start_exe('Snow Shot 截图工具', r'C:\Program Files\Snow Shot\snowshot.exe', '--auto_start')
+            # self.start_exe('Snow Shot 截图工具', r'C:\Program Files\Snow Shot\snowshot.exe', '--auto_start')
+            self.start_exe('Snow Shot 截图工具', r'C:\Program Files\SnowShot\bin\snow_shot.exe', '--auto_start')
             # self.start_exe("SwitchHosts", r'C:\Users\guyue\AppData\Local\Programs\SwitchHosts\SwitchHosts.exe')
             self.start_exe("PowerToys", r'C:\Program Files\PowerToys\PowerToys.exe')
         else:
