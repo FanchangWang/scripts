@@ -5,7 +5,6 @@ import com.chess.bot.game.Const
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
-import com.chess.bot.vision.PieceClsModel.isLiftAmbiguous
 import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
@@ -47,12 +46,13 @@ object PieceClsModel {
      */
     fun classifyCell(context: Context, cell: Mat): String? = classifyCellEx(context, cell).key
 
-    /** 分类结果：key 语义同 classifyCell；附模型输出的 top1 与 lift 概率（动画帧门控/调参用）。 */
-    data class ClsResult(val key: String?, val top1Prob: Float, val liftProb: Float)
+    /** 分类结果：key 语义同 classifyCell；附模型输出的 top1 概率。 */
+    data class ClsResult(val key: String?, val top1Prob: Float)
 
     /**
-     * 带概率的分类（帧差触发格用）：返回 top1 与 lift 概率。
-     * [isLiftAmbiguous] 为 true 时调用方可把该格按提子处理（动画帧抑制）。
+     * 带概率的分类（帧差触发格用）：返回 top1 概率。
+     * （2026-09-10 D1=A 实证 16 类 softmax 互斥：top1≥0.98 时其余 15 类总和 ≤0.02，
+     * 「棋子+lift 双高」形态日志 0 条——原 isLiftAmbiguous 门控与 liftProb 字段均删除。）
      */
     fun classifyCellEx(context: Context, cell: Mat): ClsResult {
         ensure(context)
@@ -94,28 +94,15 @@ object PieceClsModel {
                     "lift" -> Const.LIFT
                     else -> k
                 }
-                ClsResult(key, probs[best], probs[LIFT_INDEX])
+                ClsResult(key, probs[best])
             } finally {
                 output.close()
             }
         } catch (e: Exception) {
             LogBus.log(LogLevel.WARN, LogTag.VISION, "cls 分类异常：${e.message}")
-            ClsResult(null, 0f, 0f)
+            ClsResult(null, 0f)
         } finally {
             input.close()
         }
     }
-
-    /** lift 类在 CLASS_KEYS 中的索引（概率直接取用）。 */
-    private val LIFT_INDEX = CLASS_KEYS.indexOf("lift")
-
-    /**
-     * 纯函数：动画帧判定。top1 是真实棋子但 lift 概率显著（≥ [Const.CLS_LIFT_GATE]），
-     * 说明该格处于提起/选中/滑动动画中，棋子外观不可信 → 按提子处理。
-     * empty 与 lift 本身不需要门控。
-     * 注：2026-09-07 修复双重 softmax 前该门控从未触发过（liftProb 天花板 0.1534 < 0.30 死代码），
-     * 修复后门控恢复设计语义，阈值是否合适应按真实尺度实测再定。
-     */
-    fun isLiftAmbiguous(key: String?, liftProb: Float): Boolean =
-        key != null && key != Const.LIFT && liftProb >= Const.CLS_LIFT_GATE
 }

@@ -37,7 +37,6 @@ object Const {
     // det 四角：letterbox 1280（推理 imgsz 必须严格等于训练 imgsz），极低 conf 阈值下每类 argmax
     const val DET_IMGSZ = 1280
     const val DET_CONF = 0.001
-    const val CLS_LIFT_GATE = 0.30
 
     // 摆棋接受门几何容差（2026-09-08 缩小棋盘误开局防护）：摆棋稳定后用 det 重定位四角，
     // 与校准四角最大逐点偏差 ≤ 此值才接受，否则视为结束动画/缩放棋盘，继续等待。
@@ -51,13 +50,14 @@ object Const {
     // 守卫兜底暂停，日志可见。
     const val CLS_TRUST_MIN = 0.98f
 
+    // empty 类分档（2026-09-10 D2=A）：empty 训练采样中动画帧截图少，被动画遮挡格的 empty
+    // 置信度系统性偏低（真机 log.txt：未确认格中 new=empty 105 格、[0.95,0.98) 区间 18 格，
+    // 为清盘动画渐进遮盖主力；棋子类同区间仅 3 格）→ empty 阈值放宽至 0.95。
+    // lift 误确认直接触发 LIFTED 状态，代价不对称，与棋子同档保持 0.98（D3=A）。
+    const val CLS_TRUST_MIN_EMPTY = 0.95f
+
     /** Board 格值的「提子」语义（cls lift 类）：帧分类瞬时态，提交点归一化为 null。 */
     const val LIFT = "lift"
-    // lift 混淆门控（仅帧差触发格）：top1 为棋子但 lift 概率 ≥ 此值 → 判动画帧，按提子返回。
-    // 真机日志显示走子动画/选中高亮会把提起中的棋子误判成其他棋子（如 黑象->黑車）；
-    // 模型概率校准好（静止棋子 top1≈1.0、lift≈0），0.30 余量充足。
-    // 注：2026-09-07 修复双重 softmax 前此门控是死代码（liftProb 被压到天花板 0.1534 < 0.30
-    // 永不触发），修复后按模型真实概率工作，0.30 待真机实测确认。
 
     // ---------- 提子恢复（2026-09-08 game_start_lift_recovery_plan） ----------
     /** 我方半区起始行（屏幕网格约定：我方恒在 rows 5..9，与执红执黑无关）。 */
@@ -68,9 +68,6 @@ object Const {
 
     /** grabBoard 耗时拆解慢帧阈值（D1 门控，2026-09-09）：grab 超此值必打日志（性能异常帧不丢）。 */
     const val GRAB_LOG_SLOW_MS = 80L
-
-    /** grabBoard 变化行 lift 概率附注阈值（2026-09-09 D2=A）：仅 lift 概率显著(>此值)时附注，常态不添乱。 */
-    const val GRAB_LOG_LIFT_NOTE_MIN = 0.10
 
     /** grabBoard 异常行漂移限频（2026-09-09 R7）：静止棋盘 UI 光效逐帧像素漂移高频自愈，同因限频打点。 */
     const val GRAB_LOG_DRIFT_INTERVAL_MS = 3_000L
@@ -210,8 +207,13 @@ object Const {
     const val DRAW_DIALOG_SETTLE_MS = 300L // 点击和棋按钮后等待弹窗消失
 
     // ---------- 敌方走棋检测 ----------
-    const val ENEMY_RECHECK_WAIT_MS = 300L // 噪声帧延时复检
-    const val ENEMY_NOISY_MAX = 3 // 连续噪声帧上限，超过则暂停自动对弈
+    // 2026-09-10 waitForEnemyMove 重构（参考 verifyForSelfMove v3）：废除「连续噪声帧暂停」体系
+    //（原 ENEMY_NOISY_MAX/ENEMY_RECHECK_WAIT_MS 及 GameState.noisyCount），改为 n 分流 +
+    // 稳定未知兜底 + 总超时三层收敛（结算动画等长噪声序列不再误暂停）。
+    const val ENEMY_WAIT_TOTAL_TIMEOUT_MS =
+        180_000L // 等待对方走棋总超时（对方单步限时 ≤120s + 动画余量）；超时先 OCR 强扫（force）再暂停
+    const val ENEMY_STABLE_SCAN_THROTTLE_MS =
+        2000L // 稳定未知模式触发「终局检查+OCR 强扫」的外层节流（confirmEndByOcr(force=true) 绕内层 1s 节流）
 
     // 敌着两帧一致确认（T-D，2026-09-06）：首帧 MOVED 可能是动画中途帧（如車 C0→C9 途经 C5，
     // 几何合法、伪合法校验拦截不了），复抓复判、两帧同着法才提交。原显式延时 ENEMY_MOVE_SETTLE_MS

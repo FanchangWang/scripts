@@ -330,12 +330,10 @@ class BotSession(internal val context: Context) {
                 )
             }
         }
-        // 行2：变化项「格 红X->黑Y[top1]」（D5 中文化；lift 概率仅显著时附注，D2=A）
+        // 行2：变化项「格 红X->黑Y[top1]」（D5 中文化；lift 概率附注已随 liftProb 删除）
         val items = scan.changes.mapTo(mutableListOf()) { ch ->
-            val liftNote =
-                if (ch.liftProb > Const.GRAB_LOG_LIFT_NOTE_MIN) ",lift${"%.2f".format(ch.liftProb)}" else ""
             "${gridToSquare(ch.r, ch.c, state.mySide)} ${ch.old?.let(::pieceLabel) ?: "空"}->" +
-                    "${ch.new?.let(::pieceLabel) ?: "空"}[${"%.2f".format(ch.top1Prob)}$liftNote]"
+                    "${ch.new?.let(::pieceLabel) ?: "空"}[${"%.2f".format(ch.top1Prob)}]"
         }
         scan.unconfirmedDetail?.let { items.add(it) } // 未确认格并入变化行（D4=A）
         val changeLine = items.joinToString(", ")

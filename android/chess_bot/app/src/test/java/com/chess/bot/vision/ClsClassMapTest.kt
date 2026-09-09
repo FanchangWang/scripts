@@ -64,16 +64,4 @@ class ClsClassMapTest {
         assertEquals("r_R", state.board[0][0])
         assertNull(state.board[0][1])
     }
-
-    @Test
-    fun isLiftAmbiguous_仅棋子且lift概率达阈值时触发() {
-        // 真实棋子 + lift 概率显著 → 动画帧
-        assert(PieceClsModel.isLiftAmbiguous("b_c", 0.30f))
-        assert(PieceClsModel.isLiftAmbiguous("b_c", 0.9f))
-        // lift 概率低 → 正常返回棋子
-        assert(!PieceClsModel.isLiftAmbiguous("b_c", 0.05f))
-        // empty（null）与 lift 本身不门控
-        assert(!PieceClsModel.isLiftAmbiguous(null, 0.9f))
-        assert(!PieceClsModel.isLiftAmbiguous(Const.LIFT, 0.9f))
-    }
 }

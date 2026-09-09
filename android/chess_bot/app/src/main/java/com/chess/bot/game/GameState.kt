@@ -23,8 +23,6 @@ data class Change(
     val r: Int, val c: Int, val old: String?, val new: String?,
     /** 变化格 cls top1 置信度（2026-09-09 日志拆分 D1：变化行内联显示，替代原 cls 明细段）。 */
     val top1Prob: Float = 0f,
-    /** lift 类概率（显著时变化行附注，排查飞行帧误读用）。 */
-    val liftProb: Float = 0f,
 )
 
 /** 一步棋：起子格 -> 落子格，走动棋子，被吃棋子（如有）。 */
@@ -158,7 +156,6 @@ class GameState {
     /** 本会话已走的半回合数（日志/开局形态判断用）。 */
     var moveCount = 0
     var resignStreak = 0
-    var noisyCount = 0
     var liftLogged = false
 
     fun boardAt(r: Int, c: Int): String? = board[r][c]
@@ -196,7 +193,6 @@ class GameState {
         lastMoveDepth = 0
         moveCount = 0
         resignStreak = 0
-        noisyCount = 0
         liftLogged = false
     }
 

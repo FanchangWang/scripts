@@ -97,12 +97,11 @@ object Recognizer {
 
     /**
      * 分析矫正棋盘某格：cls 分类，空格返回 null，提子返回 Const.LIFT。
-     * @param gateLift 帧差触发格传 true：top1 为棋子但 lift 概率达门控阈值时判为动画帧，
-     *   返回 Const.LIFT（走子动画/选中高亮中的棋子外观不可信，宁判提起不判错子；
-     *   全量识别 analyzeBoard 不启用，保持 argmax 直判语义）。
+     * （2026-09-10 D1=A 删除 gateLift 参数：原 lift 混淆门控在 0.98 确认门下永不触发，
+     * 已随 isLiftAmbiguous 一并移除。）
      */
-    fun analyzeCell(corrected: Mat, r: Int, c: Int, gateLift: Boolean = false): String? =
-        analyzeCellEx(corrected, r, c, gateLift).first
+    fun analyzeCell(corrected: Mat, r: Int, c: Int): String? =
+        analyzeCellEx(corrected, r, c).first
 
     /**
      * [analyzeCell] 的带概率版本：同时返回 cls 原始分类结果（top1 类别/top1 概率/lift 概率），
@@ -112,24 +111,12 @@ object Recognizer {
     fun analyzeCellEx(
         corrected: Mat,
         r: Int,
-        c: Int,
-        gateLift: Boolean = false
+        c: Int
     ): Pair<String?, PieceClsModel.ClsResult> {
         val cell = cropCell64(corrected, r, c)
         return try {
             val res = PieceClsModel.classifyCellEx(VisionInit.requireContext(), cell)
-            val key = if (gateLift && PieceClsModel.isLiftAmbiguous(res.key, res.liftProb)) {
-                LogBus.log(
-                    com.chess.bot.log.LogLevel.DEBUG, com.chess.bot.log.LogTag.VISION,
-                    "动画帧抑制 r$r c$c：top1=${res.key}(%.2f) lift=%.2f -> 判提起".format(
-                        res.top1Prob, res.liftProb
-                    )
-                )
-                Const.LIFT
-            } else {
-                res.key
-            }
-            key to res
+            res.key to res
         } finally {
             cell.release()
         }

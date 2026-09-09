@@ -15,6 +15,10 @@ import org.opencv.core.Mat
  * 敌着提交公共路径（ponder 命中取预搜/未命中丢弃 + cellImgs 局部更新）+ 敌方局面应用。
  * 纯移动不改逻辑：函数体逐字搬运，类成员 private 已在 B1 放宽为 internal 后经扩展函数访问
  * （字段 lastLiftArtifactWarnAt 留守类内：顶层 var 会改变多实例语义）。
+ *
+ * waitForEnemyMove 重构（2026-09-10，参考 verifyForSelfMove v3）：n 分流（0 静默 / ≤2 classify /
+ * 3..30 灰区）+ (d) diffCells>30 大面积遮挡 verifyEndgameCheck + (e) 稳定未知 2s 兜底（OCR 强扫）+
+ * 180s 总超时；废除旧「连续噪声帧暂停」体系（noisyCount/ENEMY_NOISY_MAX，见 Const.kt 注释）。
  */
 
 // ---------- 我方提子恢复（2026-09-08 game_start_lift_recovery_plan） ----------
@@ -114,177 +118,152 @@ internal suspend fun BotSession.recoverOwnLift(
 internal suspend fun BotSession.waitForEnemyMove() {
     setStatus(BotStatus.WAIT_ENEMY)
     state.resignStreak = 0
-    state.noisyCount = 0
     state.liftLogged = false
     var silentStreak = 0 // Q4-3：连续静默帧计数（单帧 SILENT 常为误读，防「对方提子」双打）
     // 节奏信息降 DEBUG（2026-09-09 D3）：敌着事件本身有 INFO（对方提子 / X方走炮），避免每步重复
     LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "等待对方走棋")
     val cap = capture
+    val startMs = System.nanoTime() / 1_000_000
+    var prevChanges: List<Change>? = null // 帧间一致性（参考 verifyForSelfMove v3）：上一帧变化格子集合（null=首帧视为不稳定）
+    var stableUnknownSinceMs = -1L // 稳定未知模式起始时刻（仅 NOISY/灰区等不可行动帧累计，已知进度帧重置）
+    var lastStableScanMs = -1L // (e) 兜底外层节流时间戳：稳定未知触发终局检查+OCR 强扫的最小间隔
     while (running && !interrupted && !state.gameOver) {
+        // D1=A 总超时（2026-09-10）：对方单步限时 ≤120s + 动画余量；超时先 OCR 强扫
+        //（对方超时判负的结算页可能已渲染而格子信号未达标），命中直接终局，未命中再暂停
+        if (System.nanoTime() / 1_000_000 - startMs > Const.ENEMY_WAIT_TOTAL_TIMEOUT_MS) {
+            if (confirmEndByOcr(force = true)) return
+            LogBus.log(
+                LogLevel.WARN,
+                LogTag.PLAY,
+                "等待对方走棋超 ${Const.ENEMY_WAIT_TOTAL_TIMEOUT_MS / 1000}s，暂停自动对弈",
+            )
+            running = false
+            setStatus(BotStatus.ABNORMAL_PAUSED)
+            return
+        }
         // F2-A：敌方思考超 CAP 仍未走子 → 提前 ponderhit 按质量门控收割预搜（裸 go ponder 唯一闸门）。
         // 收割阻塞通常 <200ms（elapsed 已 ≥ TARGET，质量多半已达标），期间不取帧——敌方尚未走子无信息损失
         maybeHarvestPonderCap()
         val grabbed = grabBoard(cap) ?: continue
         try {
-            val newBoard = grabbed.scan.board
             val changes = grabbed.scan.changes
+            val n = changes.size
             if (!running || interrupted || state.gameOver) break
-            val frame = classifyEnemyFrame(changes, state.mySide, state.board)
-            when (frame.result) {
-                EnemyFrameResult.MOVED -> {
-                    frame.enemyMove?.let { move ->
-                        // T-D 两帧一致确认（2026-09-06）：首帧 MOVED 可能是动画中途帧
-                        //（如車 C0→C9 途经 C5，几何合法、伪合法校验拦截不了），复抓复判
-                        //（不加显式延时，单次 grabBoard 已够），敌着两帧一致才提交。
-                        val confirmGrab = reconfirmEnemyMoved(move)
-                        if (confirmGrab == null) {
-                            if (running && !interrupted && !state.gameOver) {
-                                LogBus.log(
-                                    LogLevel.DEBUG,
-                                    LogTag.ENEMY,
-                                    "两帧确认未通过（敌着未复现，疑似动画中途帧），丢弃本帧继续等待",
-                                )
-                            }
-                            // 丢弃本帧：不计噪声，回循环重新识别（落定后会再次 MOVED 并通过确认）
-                        } else {
-                            try {
-                                setStatus(BotStatus.ENEMY_CONFIRM)
-                                commitEnemyMove(move, confirmGrab)
-                                return
-                            } finally {
-                                confirmGrab.corrected.release()
+            val nowMs = System.nanoTime() / 1_000_000
+            // 帧间一致性（参考 verifyForSelfMove v3）：变化格子集合逐格相同（同格同 old/new；两帧皆空也算稳定）
+            val stable = prevChanges != null && changes == prevChanges
+            prevChanges = changes
+
+            // ── n==0：静默帧（伪代码 changes==0 continue；S1：真静默重置稳定未知计数，防误入 (e) 兜底）──
+            if (n == 0) {
+                silentStreak++
+                if (silentStreak >= 2) state.liftLogged = false
+                stableUnknownSinceMs = -1L
+                delay(BotConfig.data.enemyPollMs.toLong())
+                continue
+            }
+
+            // ── n ≤ 2：classifyEnemyFrame 明确归类（伪代码主分流）──
+            if (n <= 2) {
+                val frame = classifyEnemyFrame(changes, state.mySide, state.board)
+                when (frame.result) {
+                    EnemyFrameResult.MOVED -> {
+                        frame.enemyMove?.let { move ->
+                            // T-D 两帧一致确认（2026-09-06）：首帧 MOVED 可能是动画中途帧
+                            //（如車 C0→C9 途经 C5，几何合法、伪合法校验拦截不了），复抓复判
+                            //（不加显式延时，单次 grabBoard 已够），敌着两帧一致才提交。
+                            val confirmGrab = reconfirmEnemyMoved(move)
+                            if (confirmGrab == null) {
+                                if (running && !interrupted && !state.gameOver) {
+                                    LogBus.log(
+                                        LogLevel.DEBUG,
+                                        LogTag.ENEMY,
+                                        "两帧确认未通过（敌着未复现，疑似动画中途帧），丢弃本帧继续等待",
+                                    )
+                                }
+                                // S5：敌方在动=已知进度（动画中途帧），重置稳定未知计数
+                                stableUnknownSinceMs = -1L
+                            } else {
+                                try {
+                                    setStatus(BotStatus.ENEMY_CONFIRM)
+                                    commitEnemyMove(move, confirmGrab)
+                                    return
+                                } finally {
+                                    confirmGrab.corrected.release()
+                                }
                             }
                         }
                     }
-                }
 
-                EnemyFrameResult.LIFTED -> {
-                    silentStreak = 0
-                    if (!state.liftLogged) {
-                        state.liftLogged = true
-                        setStatus(BotStatus.ENEMY_LIFTED)
-                        LogBus.log(LogLevel.INFO, LogTag.ENEMY, "对方提子")
+                    EnemyFrameResult.LIFTED -> {
+                        silentStreak = 0
+                        if (!state.liftLogged) {
+                            state.liftLogged = true
+                            setStatus(BotStatus.ENEMY_LIFTED)
+                            LogBus.log(LogLevel.INFO, LogTag.ENEMY, "对方提子")
+                        }
+                        // S5：提子=已知进度（真人提子思考可 >2s），不参与稳定未知兜底
+                        stableUnknownSinceMs = -1L
                     }
-                    state.noisyCount = 0
-                }
 
-                EnemyFrameResult.SILENT -> {
-                    // Q4-3（log 1432-1433 双打实证）：提子悬停期 LIFTED/SILENT 交替，
-                    // 单帧 SILENT 是 cls 误读——连续 2 帧静默才视为提子结束并重置日志门
-                    silentStreak++
-                    if (silentStreak >= 2) state.liftLogged = false
-                    state.noisyCount = 0
-                }
+                    EnemyFrameResult.SILENT -> {
+                        // 不可达（n==0 已在上方 continue，classify 的 SILENT 仅 n==0 产生）；防御性保留静默语义
+                        silentStreak++
+                        if (silentStreak >= 2) state.liftLogged = false
+                        stableUnknownSinceMs = -1L
+                    }
 
-                EnemyFrameResult.NOISY -> {
-                    // 异常帧：可能是和棋弹窗盖盘（T1），先查一次；处理过则重置噪声计数
-                    if (cap.dismissDrawDialog()) {
+                    EnemyFrameResult.NOISY -> {
+                        // D4=A：保留「识别变动」DEBUG 日志（诊断可见性）；旧「连续噪声帧暂停」体系废除（S2/D3），
+                        // 不再累计暂停计数——终局/遮挡交 (d)(e) 兜底，总时长由循环顶部 180s 总超时封顶
+                        formatChanges(changes, state.mySide).forEach {
+                            LogBus.log(
+                                LogLevel.DEBUG,
+                                LogTag.VISION,
+                                "识别变动 $it"
+                            )
+                        }
                         state.liftLogged = false
-                        state.noisyCount = 0
-                        continue
+                        silentStreak = 0
+                        // NOISY=未知模式：不重置稳定未知计数，交 (e) 稳定兜底
                     }
-                    when (updateResign(newBoard, changes)) {
-                        ResignResult.CONFIRMED -> {
-                            finishGame("检测到对局结束画面")
-                            return
-                        }
-
-                        ResignResult.SUSPECT -> {
-                            delay(Const.RESIGN_SUSPECT_WAIT_MS)
-                            // T-OCR：疑似即扫一次结算文字，命中立即终局
-                            if (confirmEndByOcr()) return
-                            continue
-                        }
-
-                        ResignResult.NONE -> {}
-                    }
-                    state.liftLogged = false
-                    silentStreak = 0
-                    state.noisyCount++
-                    formatChanges(changes, state.mySide).forEach {
-                        LogBus.log(
-                            LogLevel.DEBUG,
-                            LogTag.VISION,
-                            "识别变动 $it"
-                        )
-                    }
-                    if (state.noisyCount >= Const.ENEMY_NOISY_MAX) {
-                        // 连续噪声帧上限命中：先给动画落定时间，再复判一次。
-                        delay(Const.RESIGN_SUSPECT_WAIT_MS)
-                        // 复判优先级 1：可能只是「敌方一步慢落子」被前几帧噪声拖垮，
-                        // 延时后应能识别为 MOVED —— 走正常敌方走子流程，避免误暂停。
-                        val reMove = grabBoard(cap)
-                        if (reMove != null) {
-                            try {
-                                val rf = classifyEnemyFrame(
-                                    reMove.scan.changes,
-                                    state.mySide,
-                                    state.board
-                                )
-                                if (rf.result == EnemyFrameResult.MOVED && rf.enemyMove != null) {
-                                    val move = rf.enemyMove
-                                    // T-D：复判帧同样过两帧一致确认（与首个 MOVED 路径对称共用提交链路）
-                                    val confirmGrab = reconfirmEnemyMoved(move)
-                                    if (confirmGrab == null) {
-                                        LogBus.log(
-                                            LogLevel.DEBUG,
-                                            LogTag.ENEMY,
-                                            "噪声复判帧两帧确认未通过，按噪声流程继续",
-                                        )
-                                    } else {
-                                        try {
-                                            setStatus(BotStatus.ENEMY_CONFIRM)
-                                            commitEnemyMove(move, confirmGrab)
-                                            return
-                                        } finally {
-                                            confirmGrab.corrected.release()
-                                        }
-                                    }
-                                }
-                            } finally {
-                                reMove.corrected.release()
-                            }
-                        }
-                        // 复判优先级 2：仍非敌方走棋 → 走认输连续校验（清盘动画落定后），
-                        // 避免「清盘动画未稳、将帅仍可见」的窗口被误判为无法推断而暂停。
-                        var ended = false
-                        repeat(Const.RESIGN_CONFIRM_COUNT) {
-                            if (!running || interrupted || state.gameOver) {
-                                ended = state.gameOver
-                                return@repeat
-                            }
-                            val re = grabBoard(cap) ?: return@repeat
-                            try {
-                                when (updateResign(re.scan.board, re.scan.changes)) {
-                                    ResignResult.CONFIRMED -> {
-                                        finishGame("检测到对局结束画面")
-                                        ended = true
-                                    }
-
-                                    ResignResult.SUSPECT -> {
-                                        // T-OCR：疑似即扫一次结算文字，命中立即终局
-                                        if (confirmEndByOcr()) ended = true
-                                    }
-
-                                    else -> {}
-                                }
-                            } finally {
-                                re.corrected.release()
-                            }
-                            if (ended) return@repeat
-                        }
-                        if (ended) return
-                        LogBus.log(
-                            LogLevel.WARN,
-                            LogTag.PLAY,
-                            "连续 ${Const.ENEMY_NOISY_MAX} 帧无法推断对方完整走法，暂停自动对弈",
-                        )
-                        running = false
-                        setStatus(BotStatus.ABNORMAL_PAUSED)
-                        return
-                    }
-                    delay(Const.ENEMY_RECHECK_WAIT_MS)
                 }
+            }
+            // n ∈ 3..VERIFY_OCR_DIFF_CELLS：动画/噪声灰区，静默继续（参考 verifyForSelfMove (c)），交 (e) 稳定兜底
+
+            // ── (d) diffCells > VERIFY_OCR_DIFF_CELLS：大面积遮挡（弹窗/遮罩/结算画面）→
+            //     OCR/终局检查（updateResign / confirmEndByOcr 节流 / dismissDrawDialog 内聚于 verifyEndgameCheck）──
+            if (grabbed.scan.diffCells > Const.VERIFY_OCR_DIFF_CELLS) {
+                verifyEndgameCheck(grabbed)?.let {
+                    if (it == VerifyOutcome.DONE_END) return
+                    // RETRY_BOTH（和棋弹窗已关闭）：继续等待
+                }
+                // S5：大动画帧=已知进度，重置稳定未知计数
+                stableUnknownSinceMs = -1L
+                silentStreak = 0
+                state.liftLogged = false
+            }
+
+            // ── (e) 稳定未知模式兜底：变化格子集合与上帧逐格相同且不可行动（NOISY/灰区卡死），
+            //     持续超 VERIFY_UNKNOWN_STABLE_MS → 终局/和棋检查 + OCR 强扫（外层节流 S3）──
+            if (stable) {
+                if (stableUnknownSinceMs < 0) stableUnknownSinceMs = nowMs
+                if (nowMs - stableUnknownSinceMs > Const.VERIFY_UNKNOWN_STABLE_MS &&
+                    nowMs - lastStableScanMs > Const.ENEMY_STABLE_SCAN_THROTTLE_MS
+                ) {
+                    LogBus.log(
+                        LogLevel.DEBUG,
+                        LogTag.PLAY,
+                        "稳定未知模式持续超 ${Const.VERIFY_UNKNOWN_STABLE_MS}ms，执行终局/和棋检查",
+                    )
+                    lastStableScanMs = nowMs
+                    verifyEndgameCheck(grabbed)?.let {
+                        if (it == VerifyOutcome.DONE_END) return
+                    }
+                    if (confirmEndByOcr(force = true)) return // S4b：绕内层 1s 节流的 OCR 强扫
+                }
+            } else {
+                stableUnknownSinceMs = -1L // 模式切换即重置
             }
             // 每轮全量识别后短暂让步，避免单工作线程被识别独占（识别本身已 ~250ms，此延迟仅节流）；
             // 间隔可调（设置页「敌方走棋」分组，默认 Const.ENEMY_IDLE_POLL_MS=50）

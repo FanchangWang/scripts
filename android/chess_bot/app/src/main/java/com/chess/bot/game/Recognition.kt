@@ -44,8 +44,7 @@ fun recognizeBoardChanged(
                 val base = baseline[r][c]
                 if (base == null || Recognizer.cellChanged(patch, base)) {
                     diffCells++
-                    // gateLift=true：变化格启用 lift 混淆门控（走子动画/选中高亮的棋子判提起，不判错子）
-                    val (new, res) = Recognizer.analyzeCellEx(corrected, r, c, gateLift = true)
+                    val (new, res) = Recognizer.analyzeCellEx(corrected, r, c)
                     val old = committed[r][c]
                     if (old == null && new == Const.LIFT) {
                         // 空格不可能被提起（2026-09-06 语义约定）：这是飞行棋子途经相邻格的动画
@@ -57,10 +56,14 @@ fun recognizeBoardChanged(
                     } else {
                         board[r][c] = new
                         if (old != new) {
-                            if (res.top1Prob < Const.CLS_TRUST_MIN) {
-                                // 置信度确认门（2026-09-07 真机实测 0.98）：低置信读数多为飞行中
-                                // 动画帧（实测 0.96 且错判），不进 changes（不参与敌着两帧确认/
-                                // 提交）、board 写回 committed、基线不刷新——下帧 diff 自动复检。
+                            // 置信度确认门（2026-09-07 真机实测 0.98；2026-09-10 D2=A 分类别）：
+                            // 低置信读数多为动画帧（实测 0.96 且错判），不进 changes（不参与敌着
+                            // 两帧确认/提交）、board 写回 committed、基线不刷新——下帧 diff 自动复检。
+                            // empty 分档 0.95：empty 训练采样动画遮挡图少 → 概率摊薄（log.txt 实测
+                            // 未确认格 new=empty 105 格、[0.95,0.98) 18 格，为清盘动画渐进遮盖主力）。
+                            val trustMin =
+                                if (new == null) Const.CLS_TRUST_MIN_EMPTY else Const.CLS_TRUST_MIN
+                            if (res.top1Prob < trustMin) {
                                 board[r][c] = old
                                 unconfirmed++
                                 // 未确认明细（2026-09-09 D5 中文化；Q3 修正 18:13）：old 显示已提交
@@ -76,7 +79,7 @@ fun recognizeBoardChanged(
                                             "${new?.let(::pieceLabel) ?: "空"}(${("%.2f".format(res.top1Prob))})未确认"
                                 )
                             } else {
-                                changes.add(Change(r, c, old, new, res.top1Prob, res.liftProb))
+                                changes.add(Change(r, c, old, new, res.top1Prob))
                                 // 变化格 cls 置信度改由 Change 结构化携带（2026-09-09 日志拆分 D1=A），
                                 // grabBoard 变化行内联显示——消除「变化段 + cls 段」一格打两遍的冗余
                             }
@@ -111,6 +114,6 @@ data class BoardScan(
     /** 低置信未确认格明细（2026-09-09 D1=A/D5：「格 红兵->黑X(置信)未确认」逗号拼接，无则 null）。
      *  已确认变化格的置信度改由 [Change] 结构化携带，grabBoard 变化行统一拼装。 */
     val unconfirmedDetail: String? = null,
-    /** 低置信未确认格数（< CLS_TRUST_MIN，不进 changes 待下帧复检，2026-09-07）。 */
+    /** 低置信未确认格数（< 分档阈值 CLS_TRUST_MIN / CLS_TRUST_MIN_EMPTY，不进 changes 待下帧复检）。 */
     val unconfirmedCells: Int = 0,
 )

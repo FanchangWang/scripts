@@ -19,10 +19,13 @@ import com.chess.bot.vision.TextMatcher
  * （≥OCR_SUSPECT_SCAN_THROTTLE_MS 节流），命中结算词表（按钮/遮罩任一词）→ 立即 finishGame
  * 返回 true，省掉连续 RESIGN_CONFIRM_COUNT 帧确认等待；未命中返回 false，回落原兜底逻辑
  * （结算动画尚无文字时 OCR 命中不了，仍靠连续棋盘信号确认，二者互补）。
+ *
+ * force=true（2026-09-10 waitForEnemyMove 重构 D2=A）：绕内层节流强扫一次——供稳定未知兜底
+ * （外层已按 ENEMY_STABLE_SCAN_THROTTLE_MS 节流）与总超时中止前使用；时间戳仍更新保持全局一致。
  */
-internal suspend fun BotSession.confirmEndByOcr(): Boolean {
+internal suspend fun BotSession.confirmEndByOcr(force: Boolean = false): Boolean {
     val now = System.nanoTime()
-    if (now - lastOcrEndScanAt < Const.OCR_SUSPECT_SCAN_THROTTLE_MS * 1_000_000) return false
+    if (!force && now - lastOcrEndScanAt < Const.OCR_SUSPECT_SCAN_THROTTLE_MS * 1_000_000) return false
     lastOcrEndScanAt = now
     val cap = capture ?: return false
     val img = cap.screenshot() ?: return false
