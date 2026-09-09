@@ -1665,13 +1665,21 @@ class BotSession(private val context: Context) {
     private fun commitEnemyMove(move: Move, grab: Grabbed) {
         val enemyIccs = gridToSquare(move.src.first, move.src.second, state.mySide) +
                 gridToSquare(move.dst.first, move.dst.second, state.mySide)
-        if (pendingPonderMove != null) {
-            if (enemyIccs == pendingPonderMove) {
+        val predicted = pendingPonderMove
+        if (predicted != null) {
+            // 着法中文化（2026-09-09 D3=A）：commit 时 board 尚未更新（updateCellImgs 在后），
+            // 起点格仍是实际/预测的敌方棋子，取棋名拼「黑車 e7 -> g7」与 ponder 行风格统一
+            val actualCn = (state.boardAt(move.src.first, move.src.second)?.let(::pieceLabel) ?: "未知子") +
+                    " ${enemyIccs.take(2)} -> ${enemyIccs.drop(2)}"
+            val (pr, pc) = squareToGrid(predicted.take(2), state.mySide)
+            val predictedCn = (state.boardAt(pr, pc)?.let(::pieceLabel) ?: "未知子") +
+                    " ${predicted.take(2)} -> ${predicted.drop(2)}"
+            if (enemyIccs == predicted) {
                 if (prematurePonderHarvested) {
                     LogBus.log(
                         LogLevel.DEBUG,
                         LogTag.ENGINE,
-                        "敌方走子命中预测（$enemyIccs），直接消费 CAP 提前收割的预搜结果"
+                        "敌方走子命中预测（$actualCn），直接消费 CAP 提前收割的预搜结果"
                     )
                 } else {
                     // F1-A：ponderHit 内部走主搜同款质量门控（elapsed<target 等满、质量达标才 stop）
@@ -1679,7 +1687,7 @@ class BotSession(private val context: Context) {
                     LogBus.log(
                         LogLevel.DEBUG,
                         LogTag.ENGINE,
-                        "敌方走子命中预测（$enemyIccs），ponderHit 按质量门控取回预搜结果"
+                        "敌方走子命中预测（$actualCn），ponderHit 按质量门控取回预搜结果"
                     )
                 }
             } else {
@@ -1691,7 +1699,7 @@ class BotSession(private val context: Context) {
                 LogBus.log(
                     LogLevel.DEBUG,
                     LogTag.ENGINE,
-                    "敌方走子未命中预测（$enemyIccs≠${pendingPonderMove}），丢弃 ponder"
+                    "敌方走子未命中预测（$actualCn ≠ $predictedCn），丢弃 ponder"
                 )
             }
             pendingPonderMove = null

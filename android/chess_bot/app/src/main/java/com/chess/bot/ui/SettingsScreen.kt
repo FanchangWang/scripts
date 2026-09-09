@@ -98,7 +98,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                     options = MOVETIME_OPTIONS,
                     selected = cfg.movetimeMs,
                     label = { "$it ms" },
-                    hint = "最短思考时长，到点后按质量择机停",
                 ) { v -> update { it.copy(movetimeMs = v) } }
                 DropdownRow(
                     title = "线程数",
@@ -147,11 +146,10 @@ fun SettingsScreen(onBack: () -> Unit) {
             GroupLabel("敌方走棋")
             GroupCard {
                 DropdownRow(
-                    title = "敌方轮询间隔",
+                    title = "走棋检测间隔",
                     options = ENEMY_POLL_OPTIONS,
                     selected = cfg.enemyPollMs,
                     label = { "$it ms" },
-                    hint = "越小检出越快，越大越省电省GC",
                 ) { v -> update { it.copy(enemyPollMs = v) } }
             }
 
@@ -254,7 +252,7 @@ private fun GroupCard(content: @Composable () -> Unit) {
 }
 
 /** 下拉选择行（单行左右结构：左侧文字、右侧下拉框，min-width 128dp 对齐 HTML .dd-box）。 */
-private val MOVETIME_OPTIONS = listOf(300, 500, 800, 1000, 1500, 2000, 3000, 5000)
+private val MOVETIME_OPTIONS = listOf(400, 500, 600, 800, 1000, 1500, 2000, 3000)
 private val TAP_HOLD_OPTIONS = listOf(50, 80, 100, 150, 200)
 private val VERIFY_ANIM_OPTIONS = listOf(300, 350, 400, 450, 500)
 private val VERIFY_NEXT_FRAME_OPTIONS = listOf(30, 50, 80, 100, 150)
@@ -325,7 +323,7 @@ private fun <T> DropdownRow(
 private fun ResetRow(onClick: () -> Unit) {
     SettingRow(
         title = "恢复默认设置",
-        subtitle = "清除配置与悬浮窗位置记忆，保留四角校准",
+        subtitle = "清除配置与悬浮窗位置记忆",
     ) {
         OutlinedButton(
             onClick = onClick,
