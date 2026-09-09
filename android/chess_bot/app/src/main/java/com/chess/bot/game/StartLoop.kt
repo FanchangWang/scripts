@@ -199,7 +199,7 @@ class StartLoop(
                     }
                     LogBus.log(
                         LogLevel.INFO, expectation.tag,
-                        "识别到结算按钮「$word」，点击进入下一局（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
+                        "识别到结算按钮「$word」，点击按钮（第 $retryCount/${Const.GAMEOVER_RETRY_MAX} 次）",
                     )
                     capture.tapXy(x, y)
                 }

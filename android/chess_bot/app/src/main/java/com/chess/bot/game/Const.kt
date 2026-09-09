@@ -255,8 +255,8 @@ object Const {
     const val OCR_INTERACTION_SETTLE_MS = 800L
     val GAMEOVER_BUTTON_WORDS =
         listOf("下一关", "晋级赛", "重新挑战", "再来一局") // 按钮类（点击），按优先级
-    val GAMEOVER_BACK_WORDS = listOf("段位提升", "铜钱", "领取") // 遮罩类（发返回键）
-    val GAMEOVER_INTERRUPT_WORDS = listOf("体力x2") // 终止类（自动中断对弈），优先级高于遮罩/按钮
+    val GAMEOVER_BACK_WORDS = listOf("段位提升", "结算奖励", "快速升级") // 遮罩类（发返回键）
+    val GAMEOVER_INTERRUPT_WORDS = listOf("体力获取") // 终止类（自动中断对弈），优先级高于遮罩/按钮
 
     // ---------- OCR（PP-OCRv6 官方 ppocr-sdk，2026-09-06 替代 draw/text 模板） ----------
     // rec 置信度过滤线：实证关键词命中 0.95+，遮罩/动画中的字 0.85~0.92；有「包含匹配」强过滤兜底，0.75 足够保守
@@ -280,11 +280,14 @@ object Const {
         "重新挑战" to OcrRoi(0.2f, 0.85f, 0.8f, 1f),
         "再来一局" to OcrRoi(0.2f, 0.85f, 0.8f, 1f),
         // 结算遮罩（中部提示区）
-        "段位提升" to OcrRoi(0.20f, 0f, 0.80f, 0.10f),
-        "铜钱" to OcrRoi(0.30f, 0.40f, 0.70f, 0.60f),
-        "领取" to OcrRoi(0.30f, 0.50f, 0.70f, 0.65f),
+        "段位提升" to OcrRoi(0.2f, 0f, 0.8f, 0.1f),
+        // "铜钱" to OcrRoi(0.3f, 0.4f, 0.7f, 0.6f),  (0.29,0.33)-(0.64,0.37)
+        "结算奖励" to OcrRoi(0.2f, 0.3f, 0.7f, 0.4f),
+        // "领取" to OcrRoi(0.3f, 0.5f, 0.7f, 0.65f), (0.33,0.34)-(0.66,0.38)
+        "快速升级" to OcrRoi(0.3f, 0.3f, 0.7f, 0.4f),
         // 终止遮罩
-        "体力x2" to OcrRoi(0.40f, 0.50f, 0.60f, 0.6f),
+        // "体力x2" to OcrRoi(0.4f, 0.5f, 0.6f, 0.6f),
+        "体力获取" to OcrRoi(0.3f, 0.3f, 0.7f, 0.4f),
     )
 }
 
