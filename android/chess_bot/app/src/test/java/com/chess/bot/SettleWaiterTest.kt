@@ -155,6 +155,19 @@ class SettleWaiterTest {
     }
 
     @Test
+    fun `我方提子无将帅佐证不确认_过渡帧门控`() {
+        // 2026-09-09 21:53 真机误判（R2 对称门控）：遮罩消除过渡帧黑将默认位(r8c4)
+        // 被误读为 lift，该帧将帅必然缺一（lift 源即将位）→ 门控应拦截：
+        // 任意多帧均 Waiting，不确认、不进入恢复流程。
+        val b = TB.fullBoard(Side.RED)
+        b[6][4] = Const.LIFT // 我方半区 lift
+        b[0][4] = null       // 黑將缺（模拟过渡帧将帅读数不全）
+        repeat(5) {
+            assertTrue(waiter.feed(b) is SettleWaiter.Feed.Waiting)
+        }
+    }
+
+    @Test
     fun `我方提子位置变化重置确认计数`() {
         val a = TB.fullBoard(Side.RED).also { it[6][4] = Const.LIFT }
         val b = TB.fullBoard(Side.RED).also { it[6][3] = Const.LIFT }

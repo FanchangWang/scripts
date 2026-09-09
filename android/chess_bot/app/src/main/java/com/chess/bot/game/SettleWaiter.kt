@@ -8,7 +8,9 @@ import com.chess.bot.log.LogTag
  * 摆棋稳定等待器（开始棋局与自动下一局共用）。
  *
  * 2026-09-08 lift 感知改造（方案 game_start_lift_recovery_plan.md）：
- * - 我方半区 lift（此前走棋失败棋子在手）→ 连续同位置 [Const.LIFT_CONFIRM_FRAMES] 帧确认
+ * - 我方半区 lift（此前走棋失败棋子在手）→ **将帅同现门控**（2026-09-09 21:53 真机误判修复，
+ *   对称 R2=A：遮罩消除过渡帧黑将默认位被误读为 lift，无佐证直接确认 2 帧触发无意义恢复流程；
+ *   真实提子必发生在对局中）→ 连续同位置 [Const.LIFT_CONFIRM_FRAMES] 帧确认
  *   （过滤飞行途经瞬态伪影）后返回 [Feed.OwnLift]，交 BotSession 恢复流程；
  * - 敌方半区 lift（敌方提子未落）→ 等待落子，不计数不就绪
  *   （D3=A 无超时：走棋超时后游戏播放超时动画，自然触发 OCR 结束扫描）；
@@ -106,7 +108,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 Feed.Waiting
             }
 
-            ownLift != null -> {
+            ownLift != null && bothGeneralsPresent(board) -> {
                 // 我方提子未落（此前我方走棋失败，棋子被提起悬停原格上半部）：
                 // 连续同位置确认 K 帧后交恢复流程，不参与普通稳定计数
                 if (prevOwnLift == ownLift) {
@@ -150,6 +152,19 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 }
             }
 
+            ownLift != null -> {
+                // R2 对称门控（2026-09-09 21:53 真机误判修复）：遮罩消除/大厅等过渡画面
+                // cls 误读 lift（无将帅佐证）→ episode 复位按过渡帧处理，不确认不恢复。
+                // 真实我方提子必发生在对局中（将帅同现）；本例 lift 源恰为黑将默认位被读空，
+                // 该帧将帅必然缺一 → 门控零成本拦截。G1=A 卡死诊断链不受影响：
+                // 缩小棋盘帧读出将帅同现仍走原链，读不出则被此处忽略（本就该忽略）。
+                // 日志不打（对齐 2026-09-09 精简，等待态由悬浮窗 waitDetail 呈现）。
+                resetOwnLift()
+                prevBoard = board
+                stableCount = 0
+                Feed.Waiting
+            }
+
             enemyLift != null && bothGeneralsPresent(board) -> {
                 // 敌方提子未落（敌方走棋中途）：等待落子（无超时，D3=A）
                 // B：日志每 episode 一次（首局启动等待期曾连刷 20 秒）
@@ -170,8 +185,8 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 // R2=A（2026-09-09）：真实提子必然发生在对局中（将帅同现，count=31/32）；
                 // 大厅/过渡画面 cls 误读 lift（无将帅佐证）时 episode 复位，按普通过渡帧
                 // 处理并落入下方将帅门控分支——不再打「敌方提子未落」误导日志。
-                // 我方 lift 分支不受此门控（OwnLiftStalled→det 诊断链依赖缩小棋盘帧，
-                // 该帧将帅读数本身不可靠，见 G1=A 设计）。
+                // （我方 lift 分支 2026-09-09 21:53 起加对称门控，见上方 ownLift 分支；
+                // G1=A 的 OwnLiftStalled→det 诊断链保留在将帅同现的确认分支内。）
                 enemyLiftLogged = false
                 resetOwnLift()
                 prevBoard = board
