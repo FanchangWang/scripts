@@ -15,6 +15,9 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.chess.bot.log.LogBus
+import com.chess.bot.log.LogLevel
+import com.chess.bot.log.LogTag
 
 /**
  * 悬浮窗内 Compose 的手工生命周期桥：
@@ -49,6 +52,8 @@ class OverlayLifecycleOwner : LifecycleOwner, SavedStateRegistryOwner, ViewModel
     fun moveToDestroyed() {
         if (destroyed) return
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        // 清空 ViewModelStore：窗口销毁即释放 ViewModel，防复用/重建时残留引用泄漏
+        store.clear()
         destroyed = true
     }
 }
@@ -99,8 +104,12 @@ class OverlayHost(private val context: Context) {
             // 非 immediate：removeView 把 DIE 调度到下一轮消息循环，
             // 避免在窗口自身输入事件派发途中移除窗口而抛异常（如信息框长按中断）
             windowManager.removeView(v)
-        } catch (_: Exception) {
-            // 窗口已被系统移除
+        } catch (e: Exception) {
+            // 窗口已被系统移除等场景：记录后忽略，不中断 dismiss 流程
+            LogBus.log(
+                LogLevel.DEBUG, LogTag.SYSTEM,
+                "悬浮窗 removeView 失败（可能已被系统移除）: ${e.message}",
+            )
         }
     }
 

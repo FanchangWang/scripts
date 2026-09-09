@@ -160,25 +160,25 @@ object OverlayManager {
         val ctx = context.applicationContext
         if (appContext == null) {
             appContext = ctx
-            settings = BotSettings(ctx)
-            ctrlX = settings!!.overlayControlX.first().let { if (it < 0) 8 else it }
-            val rawCtrlY = settings!!.overlayControlY.first()
+            val s = BotSettings(ctx).also { settings = it }
+            ctrlX = s.overlayControlX.first().let { if (it < 0) 8 else it }
+            val rawCtrlY = s.overlayControlY.first()
             ctrlY = if (rawCtrlY < 0) 180 else rawCtrlY
             ctrlYAuto = rawCtrlY < 0
             // 信息框位置（TOP|END：x=右缘边距、y=顶缘边距）；默认贴右缘、顶边与棋盘小窗一致。
             // 2026-09-07 锚点从 BOTTOM|START 改为 TOP|END，旧键 overlay_info_x/y 语义不兼容已弃用。
-            infoX = settings!!.overlayInfo2X.first().let { if (it < 0) 0 else it }
-            val rawInfoY = settings!!.overlayInfo2Y.first()
+            infoX = s.overlayInfo2X.first().let { if (it < 0) 0 else it }
+            val rawInfoY = s.overlayInfo2Y.first()
             infoY = if (rawInfoY < 0) statusBarHeightPx() + 5 else rawInfoY
-            boardX = settings!!.overlayBoardX.first()
-            boardY = settings!!.overlayBoardY.first()
+            boardX = s.overlayBoardX.first()
+            boardY = s.overlayBoardY.first()
             // 棋盘右下角 y（四角中 x+y 最大者）作初始悬浮窗定位基准；未校准→null→退回固定默认
             val dm = ctx.resources.displayMetrics
             boardCornerY = BoardCornersStore.get(dm.widthPixels, dm.heightPixels, ctx)
                 ?.maxByOrNull { it.first + it.second }?.second
             // 棋盘绘制总开关默认值
-            BotRuntime.boardWindowShown.value = settings!!.boardDrawEnabled.first()
-            uiScope.launch { BotRuntime.autoNext.value = settings!!.autoNextEnabled.first() }
+            BotRuntime.boardWindowShown.value = s.boardDrawEnabled.first()
+            uiScope.launch { BotRuntime.autoNext.value = s.autoNextEnabled.first() }
             uiScope.launch {
                 BotRuntime.boardWindowShown.collect { shown ->
                     if (shown) showBoardWindow() else dismissBoardWindow()
@@ -257,9 +257,11 @@ object OverlayManager {
             },
         ) { controlContent() }
         // 初始未移动且有校准：首帧布局后按「棋盘右下角 y + 100px」自定位，避免遮挡棋子
-        if (ctrlYAuto && boardCornerY != null) {
+        // （postLayout 回调异步执行，前置捕获快照值，回调期不依赖可变成员）
+        val cornerY = boardCornerY
+        if (ctrlYAuto && cornerY != null) {
             controlHost?.postLayout { _, h ->
-                ctrlY = belowBoardTopMargin(boardCornerY!! + 100.0, h)
+                ctrlY = belowBoardTopMargin(cornerY + 100.0, h)
                 controlHost?.updateLayout { y = ctrlY }
             }
         }

@@ -99,8 +99,9 @@ class MainActivity : ComponentActivity() {
     /** 屏幕捕获授权（对弈）：成功即启动前台服务 + 截屏管线 + 对弈控制条悬浮窗。 */
     private val projectionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK && result.data != null) {
-                BotForegroundService.start(this, result.resultCode, result.data!!)
+            val data = result.data
+            if (result.resultCode == RESULT_OK && data != null) {
+                BotForegroundService.start(this, result.resultCode, data)
                 LogBus.log(LogLevel.INFO, LogTag.SYSTEM, "屏幕捕获已授权，服务已启动")
             } else {
                 LogBus.log(LogLevel.WARN, LogTag.SYSTEM, "屏幕捕获授权被拒绝")
@@ -110,11 +111,12 @@ class MainActivity : ComponentActivity() {
     /** 屏幕捕获授权（校准）：成功即启动前台服务持管线（不弹控制条），随后弹出悬浮截图条。 */
     private val calibrationProjectionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK && result.data != null) {
+            val data = result.data
+            if (result.resultCode == RESULT_OK && data != null) {
                 BotForegroundService.start(
                     this,
                     result.resultCode,
-                    result.data!!,
+                    data,
                     calibration = true
                 )
                 CalibrationSession.onProjectionGranted(this)
@@ -144,6 +146,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshStates()
+    }
+
+    override fun onDestroy() {
+        // 清理单例持有的授权回调，避免 CalibrationSession 泄漏已销毁的 Activity
+        CalibrationSession.projectionRequest = null
+        super.onDestroy()
     }
 
     private fun refreshStates() {

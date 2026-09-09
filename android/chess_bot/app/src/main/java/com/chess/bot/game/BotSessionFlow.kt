@@ -248,8 +248,10 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     pendingPonderMove = null
     if (pre != null) {
         pendingPonderResult = null
+        // 局部捕获快照：判空后跨多语句访问属性无法智能转换，快照值也消除中途变化风险
+        val preMove = pre.move
         // 无评估佐证（ponder 停止取回时尚未输出任何 info 行 → depth=0/eval=0）→ 丢弃预搜，退回常规搜索
-        if (pre.move != null && !(pre.depth == 0 && pre.scoreCp == 0)) {
+        if (preMove != null && !(pre.depth == 0 && pre.scoreCp == 0)) {
             state.lastMoveSource = MoveSource.ENGINE
             state.lastMoveDepth = pre.depth
             state.lastEvalScore = pre.scoreCp
@@ -260,14 +262,14 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
             emit()
             LogBus.log(
                 LogLevel.DEBUG, LogTag.ENGINE,
-                "命中预判：直接使用 ponder 预搜着法 ${pre.move}（${evalDetail(pre)}）",
+                "命中预判：直接使用 ponder 预搜着法 $preMove（${evalDetail(pre)}）",
             )
-            return PendingMove(pre.move!!)
+            return PendingMove(preMove)
         }
-        if (pre.move != null) {
+        if (preMove != null) {
             LogBus.log(
                 LogLevel.DEBUG, LogTag.ENGINE,
-                "预搜着法 ${pre.move} 无评估佐证（depth=0, eval=0），丢弃预搜，常规搜索",
+                "预搜着法 $preMove 无评估佐证（depth=0, eval=0），丢弃预搜，常规搜索",
             )
         }
         // 预搜无着法（极罕见）→ 丢弃，退回常规搜索
