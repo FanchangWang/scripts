@@ -77,9 +77,13 @@
 - 方法一一对应：best_move / is_mate / newgame / close；ucinewgame→go movetime→bestmove 解析、(none) 重试短时限、EngineError 异常类型全部对齐
 
 ### 5. 状态机（对应 session.py GameSession）
-方法级对照（BotSession.kt）：start / startFlow / flowLoop / doMove / computeMove / unpackMove /
-attemptMove / verify / waitForEnemyMove / applySelfMove / applySelfThenEnemy / applyEnemyMove /
-updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirmStart / finishGame / emit
+方法级对照（2026-09-09 方案 6 拆分后，internal 扩展函数路线——类成员 private 放宽 internal，调用点零改动）：
+- **BotSession.kt**（核心粘合）：start / interrupt / close / visionWarmup / initialize / finishGame / setStatus / emit / grabBoard + 全部字段
+- **BotSessionFlow.kt**（主循环+我方走子）：decideStartTurn / startFlow / flowLoop / doMove / maybeStartPonder / computeMove / unpackMove / attemptMove / evalDetail / evalOverlayText / recordMateInfo / autoNextGame（嵌套类 PendingMove/Unpacked 顶层化于此）
+- **BotSessionVerify.kt**（verify v3）：verifyForSelfMove / commitSelfSettled / commitSelfThenEnemy / tryCommitSelfThenEnemy / refreshBaselineCells / verifyEndgameCheck / tryRecoverSwallowedTap
+- **BotSessionEnemy.kt**（敌方链）：recoverOwnLift / waitForEnemyMove / reconfirmEnemyMoved / maybeHarvestPonderCap / commitEnemyMove / applyEnemyMove
+- **BotSessionEndgame.kt**（终局判定）：confirmEndByOcr / updateResign / checkmateProbe / logProbeSkipChange / decideDraw
+python 对照：start / verify / waitForEnemyMove / applySelfMove / applySelfThenEnemy / applyEnemyMove / updateResign / checkmateProbe / decideDraw / autoNextGame / initialize / confirmStart / finishGame / emit
 
 - GameState 字段照搬（board/prevBoard/mySide/turn/phase/initialized/halfmoveClock/gameOver/
   highlight/lastMove/lastEvalScore/resignStreak/noisyCount/liftLogged/lastMoveDepth）
@@ -269,7 +273,11 @@ android/chess_bot/
 │           │   ├── state.kt opening.kt moves.kt classifier.kt draw.kt GameState.kt Board.kt
 │           │   ├── Recognition.kt          # recognizeBoard 全量识别（帧差由 BotSession 负责）
 │           │   ├── Const.kt                # 全量常量（与 python config 一致）
-│           │   ├── BotSession.kt           # 状态机总控
+│           │   ├── BotSession.kt           # 状态机核心粘合：字段+生命周期+悬浮窗推送 emit（2026-09-09 拆分后）
+│           │   ├── BotSessionFlow.kt       # 主循环+我方走子：flowLoop/doMove/computeMove/unpackMove/attemptMove/ponder/evalDetail/autoNextGame（BotSession 扩展函数）
+│           │   ├── BotSessionVerify.kt     # verify v3 校验链：verifyForSelfMove/提交/基线白名单/吞点击恢复（扩展函数）
+│           │   ├── BotSessionEnemy.kt      # 敌方链：recoverOwnLift/waitForEnemyMove/reconfirmEnemyMoved/commitEnemyMove（扩展函数）
+│           │   ├── BotSessionEndgame.kt    # 终局判定：confirmEndByOcr/updateResign/checkmateProbe/decideDraw（扩展函数）
 │           │   ├── StartLoop.kt            # 统一启动循环：OCR 结算交互 + 摆棋稳定（原 AutoNext）
 │           │   └── SettleWaiter.kt         # 摆棋等待共享（31/32/将帅门控/稳定四分支）
 │           ├── book/
