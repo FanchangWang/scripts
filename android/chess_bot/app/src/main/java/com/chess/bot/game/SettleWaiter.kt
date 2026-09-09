@@ -29,7 +29,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
 
     sealed interface Feed {
         data object Waiting : Feed
-        data class Ready(val count: Int) : Feed
+        data class Ready(val count: Int, val openingForm: Boolean = false) : Feed
 
         /** 我方提子未落已确认（liftPos 为提子格）：调用方执行恢复流程。 */
         data class OwnLift(val liftPos: Pair<Int, Int>) : Feed
@@ -150,7 +150,7 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 }
             }
 
-            enemyLift != null -> {
+            enemyLift != null && bothGeneralsPresent(board) -> {
                 // 敌方提子未落（敌方走棋中途）：等待落子（无超时，D3=A）
                 // B：日志每 episode 一次（首局启动等待期曾连刷 20 秒）
                 resetOwnLift()
@@ -166,16 +166,27 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 Feed.Waiting
             }
 
+            enemyLift != null -> {
+                // R2=A（2026-09-09）：真实提子必然发生在对局中（将帅同现，count=31/32）；
+                // 大厅/过渡画面 cls 误读 lift（无将帅佐证）时 episode 复位，按普通过渡帧
+                // 处理并落入下方将帅门控分支——不再打「敌方提子未落」误导日志。
+                // 我方 lift 分支不受此门控（OwnLiftStalled→det 诊断链依赖缩小棋盘帧，
+                // 该帧将帅读数本身不可靠，见 G1=A 设计）。
+                enemyLiftLogged = false
+                resetOwnLift()
+                prevBoard = board
+                stableCount = 0
+                Feed.Waiting
+            }
+
             count == 31 -> {
                 // 区分提子过渡态（全在初始位置 → 继续等 32 子）与残局（有子离初始
                 // 位置 → 按稳定计数等待后返回，避免残局开局卡在等待摆棋）
                 resetOwnLift()
                 val side = detectSide(board)
                 if (side != null && allOnInitialSquares(board, side)) {
-                    LogBus.log(
-                        LogLevel.DEBUG, tag,
-                        "识别到 31 子且全在初始位置（提子过渡态），继续等待 32 子",
-                    )
+                    // 提子过渡态（31 子全初始位）：语义已由「敌方提子未落，等待落子」episode
+                    // 日志覆盖，此处不再逐帧打日志（2026-09-09 日志精简：只留关键点）
                     prevBoard = board
                     stableCount = 0
                     Feed.Waiting
@@ -207,7 +218,9 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                         LogLevel.INFO, tag,
                         "识别到 32 子开局形态（默认位或红方走一子），直接就绪",
                     )
-                    Feed.Ready(count)
+                    // openingForm=true：32 子完整开局形态是上局残盘不可能伪造的强信号，
+                    // 统一 StartLoop 证据门（endgameNeedsResetEvidence）对此直通
+                    Feed.Ready(count, openingForm = true)
                 } else {
                     // 非开局形态（偏差超 1 子：重摆动画瞬态/上局残留）→ 3 帧稳定（Q1 修复）
                     stabilityFeed(board, count, "32 子非开局形态（偏差>1子）")
@@ -218,13 +231,11 @@ class SettleWaiter(private val tag: LogTag = LogTag.NEXT) {
                 // 将帅同现门控（2026-09-06 真机日志 bug）：大厅/过渡/清盘残留可能只识别出
                 // 2 个「棋子」却进入稳定计数。将/帥缺任一格一律视为过渡帧：不计数、不返回
                 // Ready。（31 子残局分支在上文已处理，不受此门控约束。）
+                // 状态维护保留、日志已删（2026-09-09 精简：大厅等待期此分支曾 1.2s 一条刷屏
+                // 且语义误导，等待态由悬浮窗 waitDetail 实时呈现）
                 resetOwnLift()
                 prevBoard = board
                 stableCount = 0
-                LogBus.log(
-                    LogLevel.DEBUG, tag,
-                    "等待摆棋：识别到 $count 个棋子但将帅未同时存在，继续等待",
-                )
                 Feed.Waiting
             }
 

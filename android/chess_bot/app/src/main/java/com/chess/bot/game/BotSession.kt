@@ -167,7 +167,28 @@ class BotSession(private val context: Context) {
             pendingPonderMove = null
             pendingPonderResult = null
             emit()
-            val corrected = waitForBoardSettled()
+            // 统一启动等待循环（2026-09-09 U1=A）：手动开始与自动下一局共用
+            // StartLoop（OCR 结算交互先行 + det 四角几何守卫 + SettleWaiter 摆棋判定内核），
+            // 手动路径差异经 StartExpectation.MANUAL 注入（无超时/提子恢复有/残局免证据/
+            // 不检查自动下一局开关）
+            val loop = StartLoop(
+                context,
+                capture,
+                shouldContinue = { !interrupted },
+                interruptSession = { interrupt() },
+                onPhase = { setStatus(it) },
+                onOwnLift = { corrected, liftPos -> recoverOwnLift(corrected, liftPos) },
+            )
+            val ready = loop.run(StartExpectation.MANUAL)
+            val corrected = when (ready) {
+                null -> null
+                is StartLoopResult.Adopted -> {
+                    adoptedByRecovery = true
+                    null
+                }
+
+                is StartLoopResult.Ready -> ready.corrected
+            }
             if (corrected == null) {
                 if (adoptedByRecovery) {
                     // 我方提子恢复流程已接管棋局（已初始化、已走恢复着法、轮到敌方），
@@ -207,166 +228,13 @@ class BotSession(private val context: Context) {
 
     private val startGuard = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** 提子恢复流程已接管棋局（waitForBoardSettled 返回 ADOPTED 时置位，start 据此跳过重新初始化）。 */
+    /** 提子恢复流程已接管棋局（StartLoop 返回 Adopted 时置位，start 据此跳过重新初始化）。 */
     private var adoptedByRecovery = false
 
-    /**
-     * 摆棋稳定等待（2026-09-08 lift 感知改造）：
-     * - 我方半区提子（连续 2 帧确认）→ recoverOwnLift 恢复走子（ADOPTED 时 adoptedByRecovery
-     *   置位并返回 null，start 走接管路径）；
-     * - 敌方提子 → 等待落子（无超时，D3=A）；
-     * - 32 子开局形态（默认位或红方走一子，D2=A）→ 快速返回；非开局形态 → 3 帧稳定（Q1 修复）；
-     * - 31 子全初始位（提子过渡态）→ 等待；31 子残局 → 逐值稳定计数；
-     * - 其余子数 → SettleWaiter 逐值稳定计数（连续 3 帧相同）+ 将帅同现门控；
-     * - 不设总超时：开始之后一直等摆棋直到手动停止（⌂ 返回 / 长按中断）。
-     *
-     * 返回摆棋完毕的矫正帧（所有权归调用方）；中断/恢复接管返回 null。
-     */
-    private suspend fun waitForBoardSettled(): Mat? {
-        val waiter = SettleWaiter(LogTag.PLAY)
-        val startAt = System.nanoTime()
-        var lastLogAt = startAt
-        setStatus(BotStatus.WAIT_PLACEMENT)
-        LogBus.log(LogLevel.INFO, LogTag.PLAY, "等待棋盘就绪（开始棋局，无超时，手动停止为止）")
-        while (true) {
-            if (interrupted) return null
-            val corrected = capture.grab()
-            if (corrected == null) {
-                delay(Const.GAMEOVER_SCAN_INTERVAL_MS)
-                continue
-            }
-            var handOff = false
-            try {
-                val board = Recognizer.analyzeBoard(corrected)
-                val count = pieceCount(board)
-                // 外抛等待态信息到悬浮窗（已等待秒数 + 子数/稳定摘要）
-                BotRuntime.waitElapsedS.value =
-                    ((System.nanoTime() - startAt) / 1_000_000_000L).toInt()
-                BotRuntime.waitDetail.value = when {
-                    count == 31 -> "子数 31（判定提子/残局）"
-                    count == 0 -> "未识别到棋盘"
-                    else -> "子数 $count · 稳定 ${waiter.stableProgress}/${waiter.threshold}"
-                }
-                if (count > 0) {
-                    when (val f = waiter.feed(board)) {
-                        is SettleWaiter.Feed.Ready -> {
-                            // 几何守卫（2026-09-08）：稳定≠完整尺寸棋盘（缩小棋盘内容级校验全过）。
-                            // det 重定位四角通过才接受；拒绝则重新计稳定继续等待
-                            if (geometryOk()) {
-                                handOff = true
-                                LogBus.log(LogLevel.INFO, LogTag.PLAY, "棋盘已就绪（$count 子）")
-                                return corrected
-                            }
-                            waiter.resetStable()
-                        }
+    // waitForBoardSettled 与几何守卫助手已于 2026-09-09 U1=A 迁入统一启动循环 StartLoop.kt
 
-                        is SettleWaiter.Feed.OwnLift -> {
-                            // 我方提子确认：Mat 所有权移交恢复流程（内部释放）；
-                            // ADOPTED → 恢复走子完成、状态已接管，返回 null 让 start 走接管路径；
-                            // ABORT → 恢复走子失败中止启动；RETRY → 继续等待下帧重试
-                            handOff = true
-                            when (recoverOwnLift(corrected, f.liftPos)) {
-                                LiftRecovery.ADOPTED -> {
-                                    adoptedByRecovery = true
-                                    return null
-                                }
-
-                                LiftRecovery.ABORT -> return null
-                                LiftRecovery.RETRY -> {}
-                            }
-                        }
-
-                        is SettleWaiter.Feed.OwnLiftStalled -> {
-                            // 提子卡死诊断门（G1=A，N=2）：同 AutoNext——缩小棋盘被误读为
-                            // 提子时确认计数永远到不了 Ready，几何守卫挂 Ready 分支形同虚设，
-                            // 这里在卡死时主动诊断；MISMATCH → 封锁提子格回摆棋等待
-                            //（log2.txt 复审：静止棋盘重置确认计数无效，同位置不再恢复）；
-                            // PASS/NO_DETECT → ack 放行真提子；节流期内不 ack，10s 到点重检
-                            if (!stallCheckThrottled()) {
-                                when (geometryVerify().verdict) {
-                                    BoardGeometryGuard.Verdict.MISMATCH -> {
-                                        warnGeomThrottled(
-                                            "提子卡死诊断：棋盘几何与校准不符（疑似结束动画缩小棋盘），" +
-                                                    "封锁提子格，回摆棋等待棋盘变化"
-                                        )
-                                        waiter.resetStable()
-                                        waiter.blockLift(f.liftPos)
-                                    }
-
-                                    else -> waiter.ackStall()
-                                }
-                            }
-                        }
-
-                        SettleWaiter.Feed.Waiting -> {}
-                    }
-                }
-                val now = System.nanoTime()
-                if ((now - lastLogAt) / 1_000_000_000L >= Const.WAIT_BOARD_LOG_INTERVAL_S) {
-                    lastLogAt = now
-                    LogBus.log(LogLevel.INFO, LogTag.PLAY, "等待摆棋：当前识别到 $count 个棋子")
-                }
-            } finally {
-                if (!handOff) corrected.release()
-            }
-            delay(Const.GAMEOVER_SCAN_INTERVAL_MS)
-        }
-    }
-
-    /** 几何守卫拒绝日志节流（waitForBoardSettled 专用）。 */
-    private var lastGeomWarnAt = 0L
-
-    /** 提子卡死诊断节流（det 推理 ~500ms，缩小棋盘持续期间限频）。 */
-    private var lastStallCheckAt = 0L
-
-    /** recoverOwnLift「将帅不在上半区」伪影告警节流。 */
+    /** recoverOwnLift「将帅不在上半区」伪影告警节流（保留在 BotSession，恢复流程专用）。 */
     private var lastLiftArtifactWarnAt = 0L
-
-    private fun stallCheckThrottled(): Boolean {
-        val now = System.nanoTime()
-        if (now - lastStallCheckAt < Const.LIFT_STALL_CHECK_INTERVAL_MS * 1_000_000) return true
-        lastStallCheckAt = now
-        return false
-    }
-
-    /** det 四角重定位校验（截屏→verify→回收），返回完整结论供分支判断。 */
-    private fun geometryVerify(): BoardGeometryGuard.Result {
-        val raw = capture.screenshot()
-        if (raw == null) {
-            warnGeomThrottled("几何校验截屏不可用，按未通过处理，继续等待")
-            return BoardGeometryGuard.Result(BoardGeometryGuard.Verdict.NO_DETECT)
-        }
-        return try {
-            BoardGeometryGuard.verify(context, raw)
-        } finally {
-            raw.recycle()
-        }
-    }
-
-    /** 摆棋接受前几何校验（det 四角 vs 校准四角）；未通过打节流 WARN 并返回 false。 */
-    private fun geometryOk(): Boolean {
-        val result = geometryVerify()
-        return when (result.verdict) {
-            BoardGeometryGuard.Verdict.PASS -> true
-            BoardGeometryGuard.Verdict.MISMATCH ->
-                warnGeomThrottled(
-                    "棋盘几何与校准不符（最大偏差 %.0fpx > ${Const.BOARD_GEOMETRY_TOL_PX}px，" +
-                            "疑似结束动画/缩放棋盘），拒绝接受，继续等待".format(result.maxDevPx ?: -1.0)
-                )
-
-            BoardGeometryGuard.Verdict.NO_DETECT ->
-                warnGeomThrottled("det 四角未检出（过渡帧/遮挡），拒绝接受，继续等待")
-        }
-    }
-
-    private fun warnGeomThrottled(msg: String): Boolean {
-        val now = System.nanoTime()
-        if (now - lastGeomWarnAt > 3_000_000_000L) {
-            lastGeomWarnAt = now
-            LogBus.log(LogLevel.WARN, LogTag.PLAY, msg)
-        }
-        return false
-    }
 
     /** 首局轮次判定（审计 §二.E 三路径；轮次确认弹窗已删除）。 */
     private fun decideStartTurn() {
@@ -400,10 +268,11 @@ class BotSession(private val context: Context) {
 
     /**
      * 摆棋等待中检测到我方半区 lift（此前我方走棋失败，棋子被提起未落）时的恢复流程。
-     * 两条入口共用（开始对弈 waitForBoardSettled / 自动下一局 AutoNext.onOwnLift）。
+     * 仅手动开始路径触发（StartLoop 手动策略 allowOwnLiftRecovery=true；自动下一局新局
+     * 理论上不存在我方提子，下半区提子帧按过渡等待，见 StartLoop）。
      *
      * 步骤：
-     * 1. 重新接管会话语义（state.reset；AutoNext 入口此前的旧局状态一并清除）；
+     * 1. 重新接管会话语义（state.reset；StartLoop 入口此前的旧局状态一并清除）；
      * 2. 向上逐 px cls 扫描识别提起子身份（悬浮棋子位于格子上半部，无需先验猜测，D1）；
      * 3. 恢复棋盘（提起子落回原格）并按 initialize 语义接管状态（resetCellImgs 基线、
      *    turn=我方；恢复着法计入 moveCount，D4=A）；
@@ -1577,25 +1446,35 @@ class BotSession(private val context: Context) {
         setStatus(BotStatus.AUTO_NEXT)
         emit()
         try {
-            val autoNext = AutoNext(
+            // 统一启动等待循环（2026-09-09 U1=A）：自动策略注入——需准入证据/有超时/
+            // 检查开关/下半区提子不触发恢复（敌方红方提子帧按过渡等待）
+            val loop = StartLoop(
                 context,
                 capture,
                 shouldContinue = { running && !interrupted },
-                autoNextEnabled = autoNextEnabled,
-                onPhase = { setStatus(it) },
                 interruptSession = { interrupt() },
+                onPhase = { setStatus(it) },
                 onOwnLift = { corrected, liftPos -> recoverOwnLift(corrected, liftPos) },
             )
-            val settledCorrected = when (val result = autoNext.scanAndWait()) {
+            val expectation = StartExpectation(
+                tag = LogTag.NEXT,
+                entryStatus = null, // 调用方已设 AUTO_NEXT
+                allowOwnLiftRecovery = false,
+                endgameNeedsResetEvidence = true,
+                timeoutS = Const.AUTO_NEXT_TIMEOUT_S,
+                autoNextEnabled = autoNextEnabled,
+                waitingStatus = BotStatus.AUTO_NEXT, // OCR 交互态退出后回切
+            )
+            val settledCorrected = when (val result = loop.run(expectation)) {
                 null -> return false
-                is ScanResult.Adopted -> {
+                is StartLoopResult.Adopted -> {
                     // 我方提子恢复走子已完成并接管状态（已初始化、轮到敌方）：
                     // 跳过 state.reset/initialize/轮次判定，直接回主循环等敌方走子
                     LogBus.log(LogLevel.INFO, LogTag.NEXT, "提子恢复已接管棋局，跳过重新初始化")
                     return true
                 }
 
-                is ScanResult.Settled -> result.corrected
+                is StartLoopResult.Ready -> result.corrected
             }
             try {
                 // state.reset() 不触碰 running（对齐最终版 python：无 keepRunning 过渡）

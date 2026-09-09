@@ -3,9 +3,6 @@ package com.chess.bot.game
 /** 常量：与 python config.py 严格一致，禁止随手调参。 */
 object Const {
 
-    // ---------- 摆棋等待（开始棋局与自动下一局共用） ----------
-    const val WAIT_BOARD_LOG_INTERVAL_S = 30 // 等待摆棋期间的周期性日志间隔（秒）
-
     // ---------- 透视矫正 ----------
     // 四角格中心坐标按分辨率查表（矫正棋盘固定 900x1000，格边长 100）
     val BOARD_CORNERS: Map<Pair<Int, Int>, List<Pair<Double, Double>>> = mapOf(
@@ -249,6 +246,9 @@ object Const {
     const val GAMEOVER_SCAN_INTERVAL_MS = 300L // 扫描间隔
     const val BOARD_STABLE_THRESHOLD = 3 // 结算文字消失后连续相同棋盘帧数
     const val GAMEOVER_RETRY_MAX = 3 // 同一按钮/遮罩操作上限
+    // OCR 结算交互（按钮点击/遮罩返回键）成功后的延时（2026-09-09 V2 D1=A 用户要求）：
+    // 页面切换动画帧需要时间，延时结束后再恢复棋盘检测（原 300ms 扫描间隔不够）
+    const val OCR_INTERACTION_SETTLE_MS = 800L
     val GAMEOVER_BUTTON_WORDS =
         listOf("下一关", "晋级赛", "重新挑战", "再来一局") // 按钮类（点击），按优先级
     val GAMEOVER_BACK_WORDS = listOf("段位提升", "铜钱", "领取") // 遮罩类（发返回键）

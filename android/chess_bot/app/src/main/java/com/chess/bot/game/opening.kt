@@ -48,7 +48,7 @@ fun plausibleNewGame(board: Board, mySide: Side): Boolean =
 
 /**
  * 31 子是否全部位于开局默认格（即「标准开局缺 1 子」）。
- * 用于在 waitForBoardSettled 区分两种 31 子局面：
+ * 用于在 SettleWaiter（统一 StartLoop 摆棋判定内核）区分两种 31 子局面：
  * - 全在初始位置 → 提子过渡态（对方刚提子，棋盘暂时少 1 子），应继续等待 32 子；
  * - 有子已离初始位置 → 残局（已开下），应走稳定计数后返回、轮到我方走，不应无限等待。
  * lift 格按「棋子仍在原格（提起中）」处理（2026-09-08 Q2 修复：此前 lift 非空且 ≠ 初始位
