@@ -204,7 +204,11 @@ class StartLoop(
                     capture.tapXy(x, y)
                 }
                 if (!ok) {
-                    LogBus.log(LogLevel.ERROR, expectation.tag, "启动等待循环交互失败，中止，请手动处理")
+                    LogBus.log(
+                        LogLevel.ERROR,
+                        expectation.tag,
+                        "启动等待循环交互失败，中止，请手动处理"
+                    )
                     return null
                 }
                 allowSettle = true // 唯一证据：结算交互已发生（V2：模式③残局准入仅认此项）
@@ -249,8 +253,9 @@ class StartLoop(
                             // 证据门（V2 三模式建模 D1=A）：非 32 子开局形态的 Ready 在自动路径
                             // 仅认「结算交互成功」——残局/排局只可能来自模式③按钮点击后；
                             // 清盘帧证据已废弃（缩小棋盘读 0 子会伪造清盘）
-                            val evidenceOk = f.openingForm || !expectation.endgameNeedsResetEvidence ||
-                                    allowSettle
+                            val evidenceOk =
+                                f.openingForm || !expectation.endgameNeedsResetEvidence ||
+                                        allowSettle
                             if (evidenceOk) {
                                 // 几何守卫（2026-09-08）：稳定≠完整尺寸棋盘（缩小棋盘内容级校验全过）。
                                 // det 重定位四角通过才接受；拒绝则重新计稳定继续等待
@@ -378,7 +383,9 @@ class StartLoop(
                 warnThrottled(
                     tag,
                     "棋盘几何与校准不符（最大偏差 %.0fpx > ${Const.BOARD_GEOMETRY_TOL_PX}px，" +
-                            "疑似结束动画/缩放棋盘），拒绝接受，继续等待".format(result.maxDevPx ?: -1.0)
+                            "疑似结束动画/缩放棋盘），拒绝接受，继续等待".format(
+                                result.maxDevPx ?: -1.0
+                            )
                 )
 
             BoardGeometryGuard.Verdict.NO_DETECT ->

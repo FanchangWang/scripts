@@ -145,6 +145,12 @@ class GameState {
     /** 最近一次引擎评估分（我方视角，正=我方占优）；0 = 均势（含开局未跑引擎）。 */
     var lastEvalScore = 0
 
+    /** 评估分不可靠（2026-09-09 Q2：盲区止损等无有效 info 场景，scoreCp 为占位 0 非引擎评分）。 */
+    var lastEvalScoreUnreliable = false
+
+    /** 将死步数（2026-09-09：正=我方 N 步内绝杀对方 / 负=被绝杀 / null=非将死局面；与引擎 matePly 同源）。 */
+    var lastMatePly: Int? = null
+
     /** 最近一步着法来源与引擎思考层数（开局库命中时 depth 无意义）。 */
     var lastMoveSource: MoveSource = MoveSource.ENGINE
     var lastMoveDepth = 0
@@ -184,6 +190,8 @@ class GameState {
         selfPlanned = false
         lastMove = null
         lastEvalScore = 0
+        lastEvalScoreUnreliable = false
+        lastMatePly = null
         lastMoveSource = MoveSource.ENGINE
         lastMoveDepth = 0
         moveCount = 0

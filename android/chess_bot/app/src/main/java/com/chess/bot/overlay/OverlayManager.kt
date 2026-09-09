@@ -46,6 +46,9 @@ object BotRuntime {
     /** 最近一次引擎评估分（我方视角，正=我方占优）；悬浮窗据此给「评估」段着色。 */
     val evalScore = MutableStateFlow(0)
 
+    /** 信息框第四行评估文本（2026-09-09：mate 优先「绝杀 N/被绝杀 N」，否则「+N/N」，盲区「评估 -」）；着色仍用 evalScore。 */
+    val evalText = MutableStateFlow("-")
+
     /** 状态机阶段（12 态互斥单值，2026-08-28 审计 §一.5~7）。 */
     val status = MutableStateFlow(BotStatus.PAUSED)
 
@@ -323,6 +326,7 @@ object OverlayManager {
             val running by BotRuntime.running.collectAsState()
             val status by BotRuntime.status.collectAsState()
             val evalScore by BotRuntime.evalScore.collectAsState()
+            val evalText by BotRuntime.evalText.collectAsState()
             val moveSource by BotRuntime.moveSource.collectAsState()
             val moveDepth by BotRuntime.moveDepth.collectAsState()
             val lastMoveIccs by BotRuntime.lastMoveIccs.collectAsState()
@@ -331,6 +335,7 @@ object OverlayManager {
                 running = running,
                 status = status,
                 evalScore = evalScore,
+                evalText = evalText,
                 moveSource = moveSource,
                 moveDepth = moveDepth,
                 lastMoveIccs = lastMoveIccs,

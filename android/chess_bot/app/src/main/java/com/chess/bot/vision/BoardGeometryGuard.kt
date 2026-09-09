@@ -37,7 +37,10 @@ object BoardGeometryGuard {
         require(detected.size == 4 && calibrated.size == 4) { "四角需恰好 4 个点" }
         var max = 0.0
         for (i in 0 until 4) {
-            val d = hypot(detected[i].first - calibrated[i].first, detected[i].second - calibrated[i].second)
+            val d = hypot(
+                detected[i].first - calibrated[i].first,
+                detected[i].second - calibrated[i].second
+            )
             if (d > max) max = d
         }
         return max

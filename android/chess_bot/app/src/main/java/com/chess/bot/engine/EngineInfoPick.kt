@@ -86,6 +86,7 @@ object EngineInfoPick {
                         }
                     }
                 }
+
                 "pv" -> pvFirst = tokens.getOrNull(i + 1)
             }
             i++
@@ -93,7 +94,17 @@ object EngineInfoPick {
         if (depth < 0 || seldepth < 0 || nodes < 0 || timeMs < 0) return null
         if (multipv != 1) return null
         if (!hasScore && pvFirst == null) return null // currmove 进度行
-        return EngineInfo(depth, seldepth, scoreCp, matePly, nodes, timeMs, hasBound, pvFirst, tbHits)
+        return EngineInfo(
+            depth,
+            seldepth,
+            scoreCp,
+            matePly,
+            nodes,
+            timeMs,
+            hasBound,
+            pvFirst,
+            tbHits
+        )
     }
 
     // ---------- 伪影判定（方案 §3.3：命中任一条即整行丢弃，不更新 currentInfo） ----------

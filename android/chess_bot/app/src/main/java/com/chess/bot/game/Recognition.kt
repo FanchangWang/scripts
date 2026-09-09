@@ -63,9 +63,16 @@ fun recognizeBoardChanged(
                                 // 提交）、board 写回 committed、基线不刷新——下帧 diff 自动复检。
                                 board[r][c] = old
                                 unconfirmed++
-                                // 未确认明细（2026-09-09 D5）：中文化「格 ?->黑X(置信)未确认」，grabBoard 变化行并入
+                                // 未确认明细（2026-09-09 D5 中文化；Q3 修正 18:13）：old 显示已提交
+                                // 棋盘的实际棋子（原「?」占位误导——board 里明明有值），grabBoard 变化行并入
                                 clsDetails.add(
-                                    "${gridToSquare(r, c, mySide)} ?->" +
+                                    "${
+                                        gridToSquare(
+                                            r,
+                                            c,
+                                            mySide
+                                        )
+                                    } ${old?.let(::pieceLabel) ?: "空"}->" +
                                             "${new?.let(::pieceLabel) ?: "空"}(${("%.2f".format(res.top1Prob))})未确认"
                                 )
                             } else {
@@ -101,7 +108,7 @@ data class BoardScan(
     val diffCells: Int,
     val driftCells: List<Pair<Int, Int>>,
     val transitLifts: Int = 0,
-    /** 低置信未确认格明细（2026-09-09 D1=A/D5：「格 ?->黑X(置信)未确认」逗号拼接，无则 null）。
+    /** 低置信未确认格明细（2026-09-09 D1=A/D5：「格 红兵->黑X(置信)未确认」逗号拼接，无则 null）。
      *  已确认变化格的置信度改由 [Change] 结构化携带，grabBoard 变化行统一拼装。 */
     val unconfirmedDetail: String? = null,
     /** 低置信未确认格数（< CLS_TRUST_MIN，不进 changes 待下帧复检，2026-09-07）。 */

@@ -138,6 +138,7 @@ object Const {
     const val ENGINE_HASH_MB = 1024
     const val ENGINE_MATE_PROBE_MS = 200 // 绝杀判断用的短时限探测（仅终局附近才触发）
     const val ENGINE_RULE60_MAX_PLY = 60 // 自然限招
+
     // F2-A（2026-09-08）：裸 go ponder 无限预搜的唯一时间闸门——敌方思考超此值仍未走子，
     // 提前 ponderhit 按质量门控收割预搜结果（走 Y 直接消费、走 Z 作废）。故意 > MOVETIME：
     // 给快敌手留「命中即瞬时取结果」的机会，同时封顶慢敌手下的 CPU 占用
@@ -246,6 +247,7 @@ object Const {
     const val GAMEOVER_SCAN_INTERVAL_MS = 300L // 扫描间隔
     const val BOARD_STABLE_THRESHOLD = 3 // 结算文字消失后连续相同棋盘帧数
     const val GAMEOVER_RETRY_MAX = 3 // 同一按钮/遮罩操作上限
+
     // OCR 结算交互（按钮点击/遮罩返回键）成功后的延时（2026-09-09 V2 D1=A 用户要求）：
     // 页面切换动画帧需要时间，延时结束后再恢复棋盘检测（原 300ms 扫描间隔不够）
     const val OCR_INTERACTION_SETTLE_MS = 800L

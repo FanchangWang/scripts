@@ -189,7 +189,11 @@ class PikafishEngine private constructor() {
      * qualityReached 全字段透传——ponder 路径旧实现缺失此字段，Y 方案 mateInfoSolid 的
      * 「质量达标」判定在 ponder 路径形同虚设，本次修复。
      */
-    private fun buildResult(snapshot: List<String>, targetMs: Int, qualityReached: Boolean): EngineResult {
+    private fun buildResult(
+        snapshot: List<String>,
+        targetMs: Int,
+        qualityReached: Boolean
+    ): EngineResult {
         val picked = EngineInfoPick.pickFinalInfo(snapshot, targetMs)
         val info = picked?.info
         val score = info?.scoreCp ?: 0
@@ -268,8 +272,13 @@ class PikafishEngine private constructor() {
             searchPhase = "HIT" // D6 采样：ponderhit 后的 info 行按正式搜索段标注
             ponderStartNs
         }
-        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "ponderhit 转正式搜索，按质量门控收割（target=$targetMs）")
-        val outcome = monitorSearch(GoInfiniteMode(targetMs, null), startNs, capStartNs = System.nanoTime())
+        LogBus.log(
+            LogLevel.DEBUG,
+            LogTag.ENGINE,
+            "ponderhit 转正式搜索，按质量门控收割（target=$targetMs）"
+        )
+        val outcome =
+            monitorSearch(GoInfiniteMode(targetMs, null), startNs, capStartNs = System.nanoTime())
         pondering = false
         return buildResult(outcome.snapshot, outcome.targetMs, outcome.qualityReached)
     }
@@ -374,7 +383,11 @@ class PikafishEngine private constructor() {
         searchPhase = phase
         pseudoFloodSeen = false
         if (Const.ENGINE_INFO_SAMPLE) {
-            LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "INFO样本 ph=$phase tgt=${mode.targetMs} event=START")
+            LogBus.log(
+                LogLevel.DEBUG,
+                LogTag.ENGINE,
+                "INFO样本 ph=$phase tgt=${mode.targetMs} event=START"
+            )
         }
         writeLine("go infinite")
         return monitorSearch(mode, startNs = System.nanoTime())
@@ -389,7 +402,11 @@ class PikafishEngine private constructor() {
      *                  发出时刻，F3-A 最短总思考时长含 ponder 段）
      * @param capStartNs 硬顶计时起点（主搜=startNs；ponder=ponderhit 时刻，收割等待本身有界）
      */
-    private fun monitorSearch(mode: GoInfiniteMode, startNs: Long, capStartNs: Long = startNs): GoOutcome {
+    private fun monitorSearch(
+        mode: GoInfiniteMode,
+        startNs: Long,
+        capStartNs: Long = startNs
+    ): GoOutcome {
         val target = mode.targetMs
         var qualityReached = false
         var stopReason = ""

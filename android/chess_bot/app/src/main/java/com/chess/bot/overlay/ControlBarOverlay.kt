@@ -227,7 +227,7 @@ fun ControlBarContent(
  * 第1行 总状态（圆点 + 文字）
  * 第2行 子状态（Timeline 小图标 + BotStatus.cn）
  * 第3行 棋谱（📖/🐟 + 最近着法 + 思考层数）
- * 第4行 分数（Insights 小图标 + 评估分，按正负着色）
+ * 第4行 分数（Insights 小图标 + 评估文本：mate 优先「绝杀 N/被绝杀 N」，否则「+N/N」，盲区「评估 -」；按正负着色）
  * 四行统一 12sp（labelMedium）、行距 4dp、图标槽统一 14dp 宽。
  * 自由拖动（dx/dy 双向，2026-09-07 由仅上下拖改为一律允许），整窗拖动。
  */
@@ -237,6 +237,7 @@ fun InfoBoxMini(
     running: Boolean,
     status: BotStatus,
     evalScore: Int,
+    evalText: String,
     moveSource: MoveSource,
     moveDepth: Int,
     lastMoveIccs: String?,
@@ -351,8 +352,7 @@ fun InfoBoxMini(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            // 第4行：分数（Insights 小图标 + 文字）
-            val scoreText = if (evalScore > 0) "+$evalScore" else "$evalScore"
+            // 第4行：分数（Insights 小图标 + 文本；文本由 BotSession 推送，着色按 evalScore 正负——mate 正分绿 / 被绝杀负分红）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -364,10 +364,11 @@ fun InfoBoxMini(
                     modifier = Modifier.size(14.dp),
                 )
                 Text(
-                    scoreText,
+                    evalText,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                     color = scoreColor,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

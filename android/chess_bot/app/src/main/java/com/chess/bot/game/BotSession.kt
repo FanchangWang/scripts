@@ -11,7 +11,6 @@ import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.overlay.BotRuntime
 import com.chess.bot.service.Capture
-import com.chess.bot.vision.BoardGeometryGuard
 import com.chess.bot.vision.CornerDetModel
 import com.chess.bot.vision.PieceClsModel
 import com.chess.bot.vision.Recognizer
@@ -590,12 +589,14 @@ class BotSession(private val context: Context) {
                 state.lastMoveSource = MoveSource.ENGINE
                 state.lastMoveDepth = pre.depth
                 state.lastEvalScore = pre.scoreCp
+                state.lastEvalScoreUnreliable = pre.scoreUnreliable
+                state.lastMatePly = pre.matePly
                 recordMateInfo(pre)
                 BotRuntime.bookWinRate.value = 0f
                 emit()
                 LogBus.log(
                     LogLevel.DEBUG, LogTag.ENGINE,
-                    "命中预判：直接使用 ponder 预搜着法 ${pre.move}（评估 ${"%+d".format(pre.scoreCp)}，depth ${pre.depth}）",
+                    "命中预判：直接使用 ponder 预搜着法 ${pre.move}（${evalDetail(pre)}）",
                 )
                 return PendingMove(pre.move!!)
             }
@@ -631,6 +632,8 @@ class BotSession(private val context: Context) {
                 selfMatePending = false
                 mateInfoSolid = false // 开局库着法无引擎 info，探测按子数门控照常
                 state.lastEvalScore = hit.vscore
+                state.lastEvalScoreUnreliable = false // 开局库分是真实统计值，非占位
+                state.lastMatePly = null
                 BotRuntime.bookWinRate.value = hit.winRate
                 emit()
                 LogBus.log(
@@ -674,6 +677,8 @@ class BotSession(private val context: Context) {
         state.lastMoveSource = MoveSource.ENGINE
         state.lastMoveDepth = result.depth
         state.lastEvalScore = result.scoreCp
+        state.lastEvalScoreUnreliable = result.scoreUnreliable
+        state.lastMatePly = result.matePly
         // 主搜已声明 mate+1 = 本步着法即杀着；标记后 verify 直接终局，省去二次引擎调用
         recordMateInfo(result)
         if (selfMatePending) {
@@ -689,7 +694,7 @@ class BotSession(private val context: Context) {
         LogBus.log(
             LogLevel.DEBUG,
             LogTag.ENGINE,
-            "引擎着法：${result.move}（评估 ${"%+d".format(result.scoreCp)}，depth ${result.depth}）",
+            "引擎着法：${result.move}（${evalDetail(result)}）",
         )
         return PendingMove(result.move)
     }
@@ -717,7 +722,13 @@ class BotSession(private val context: Context) {
         // 棋盘动画先行（#6）：开局库/引擎出着法后立即推悬浮棋盘箭头，再执行点击走子
         emit()
         val capturedNote = state.boardAt(to.first, to.second)?.let { "（吃${pieceLabel(it)}）" } ?: ""
-        val evalNote = state.lastEvalScore.let { if (it > 0) "（评估 +$it）" else "（评估 $it）" }
+        val matePly = state.lastMatePly
+        val evalNote = when {
+            state.lastEvalScoreUnreliable -> "（评估 -）"
+            matePly != null && matePly > 0 -> "（绝杀 $matePly）"
+            matePly != null -> "（被绝杀 ${-matePly}）"
+            else -> state.lastEvalScore.let { if (it > 0) "（评估 +$it）" else "（评估 $it）" }
+        }
         LogBus.log(
             LogLevel.INFO,
             LogTag.SELF,
@@ -1372,6 +1383,32 @@ class BotSession(private val context: Context) {
         return ResignResult.NONE
     }
 
+    /** 引擎结果评估详情（2026-09-09 Q2/Q3）：无有效 info（盲区止损时引擎全程沉默）时 depth/score
+     *  是占位值 0 非引擎评分，显示「评估 -，depth -」避免误导；matePly 正=我方 N 步内绝杀 /
+     *  负=被绝杀（EngineInfoPick 视角：行棋方），显示「绝杀 N」更直观（用户要求）；
+     *  mate 时评估分（100000-N）与绝杀并列显示（2026-09-09 用户要求三字段齐显，scoreCp 与 matePly 同源皆真实）。 */
+    private fun evalDetail(r: EngineResult): String = when {
+        r.scoreUnreliable -> "评估 -，depth -"
+        r.matePly != null && r.matePly > 0 -> "绝杀 ${r.matePly}，评估 ${"%+d".format(r.scoreCp)}，depth ${r.depth}"
+        r.matePly != null -> "被绝杀 ${-r.matePly}，评估 ${"%+d".format(r.scoreCp)}，depth ${r.depth}"
+        else -> "评估 ${"%+d".format(r.scoreCp)}，depth ${r.depth}"
+    }
+
+    /** 信息框第四行评估文本（2026-09-09 Q2）：mate 优先「绝杀 N/被绝杀 N」（与 evalDetail 同语义），
+     *  盲区步「评估 -」（占位 0 不再显示为评分），普通局面「+N/N」；着色由 evalScore 正负决定，无需额外传色。 */
+    private fun evalOverlayText(): String = when {
+        state.lastEvalScoreUnreliable -> "评估 -"
+        else -> {
+            val matePly = state.lastMatePly
+            when {
+                matePly != null && matePly > 0 -> "绝杀 $matePly"
+                matePly != null -> "被绝杀 ${-matePly}"
+                state.lastEvalScore > 0 -> "+${state.lastEvalScore}"
+                else -> "${state.lastEvalScore}"
+            }
+        }
+    }
+
     /** Y 方案记账入口（主搜 / ponderHit 两条引擎路径共用）：写 selfMatePending 与 mateInfoSolid。 */
     private fun recordMateInfo(result: EngineResult) {
         selfMatePending = result.matePly == 1
@@ -1706,6 +1743,7 @@ class BotSession(private val context: Context) {
             BotRuntime.statusLine.value = "等待摆棋 · ${BotRuntime.waitDetail.value}"
         }
         BotRuntime.evalScore.value = state.lastEvalScore
+        BotRuntime.evalText.value = evalOverlayText()
         BotRuntime.moveSource.value = state.lastMoveSource
         BotRuntime.moveDepth.value = state.lastMoveDepth
         BotRuntime.lastMoveIccs.value = state.lastMove
