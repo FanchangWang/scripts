@@ -74,8 +74,8 @@ class Capture(
         return dst
     }
 
-    /** 点击网格格心（逆透视映射 + 无障碍手势）。 */
-    fun tap(r: Int, c: Int): Boolean {
+    /** 点击网格格心（逆透视映射 + 无障碍手势）。挂起等待手势回调，不阻塞 worker 线程。 */
+    suspend fun tap(r: Int, c: Int): Boolean {
         val h = homography ?: run {
             LogBus.log(LogLevel.ERROR, LogTag.INPUT, "尚无棋盘坐标信息，请先启动截屏")
             return false
@@ -85,8 +85,8 @@ class Capture(
         return tapXy(x, y)
     }
 
-    fun tapXy(x: Int, y: Int): Boolean =
-        BotAccessibilityServiceHolder.instance?.tapSync(x, y) ?: false
+    suspend fun tapXy(x: Int, y: Int): Boolean =
+        BotAccessibilityServiceHolder.instance?.tapAwait(x, y) ?: false
 
     /** 发送返回键（遮罩消除用）。 */
     fun back(): Boolean =
