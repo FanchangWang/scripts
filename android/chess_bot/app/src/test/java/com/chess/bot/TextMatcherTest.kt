@@ -42,12 +42,12 @@ class TextMatcherTest {
 
     @Test
     fun `中断词表优先于遮罩与按钮词表`() {
-        // 终止类词（如「体力x2」弹窗）命中即自动中断对弈，优先级最高
-        val lines = listOf(hit("再来一局"), hit("领取奖励"), hit("·体力x2·"))
+        // 终止类词（如「体力获取」弹窗）命中即自动中断对弈，优先级最高
+        val lines = listOf(hit("再来一局"), hit("·结算奖励·"), hit("·体力获取·"))
         val r = TextMatcher.matchScanWords(
             lines, Const.GAMEOVER_BACK_WORDS, Const.GAMEOVER_BUTTON_WORDS, Const.GAMEOVER_INTERRUPT_WORDS
         )
-        assertEquals("体力x2", r?.word)
+        assertEquals("体力获取", r?.word)
     }
 
     @Test

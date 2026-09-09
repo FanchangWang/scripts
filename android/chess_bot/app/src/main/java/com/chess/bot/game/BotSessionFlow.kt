@@ -84,7 +84,7 @@ internal suspend fun BotSession.flowLoop() {
                 if (state.gameOver) {
                     LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "我方走棋阶段检测到对局结束")
                 } else if (running) {
-                    // 走棋失败但未结束：doMove 内部已按守卫/中断处理并落日志
+                    // 走棋失败但未结束：doMove 内部已按总超时/中断处理并落日志
                     LogBus.log(
                         LogLevel.WARN,
                         LogTag.PLAY,
@@ -110,10 +110,10 @@ internal suspend fun BotSession.flowLoop() {
     emit()
 }
 
-// ---------- 我方走棋（无限重试 + 守卫） ----------
+// ---------- 我方走棋（无限重试 + 总超时） ----------
 
 /**
- * 我方走棋（无限重试 + 守卫）。
+ * 我方走棋（无限重试 + 总超时）。
  * @param dstOnlySrc 提子恢复场景（2026-09-08）传提子格坐标：着法源格==该格时棋子已在手，
  * 首击直接补落目标格（跳过点源格——对提着中的棋子再点源格行为不可控）。
  */
@@ -122,15 +122,30 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
     val unpacked = unpackMove(pending.move) ?: return false
     val (r1, c1, r2, c2, piece) = unpacked
     state.resignStreak = 0
-    var zeroChange = 0
     // 提子恢复：源格==提子格 → 棋子已在手，首轮直接只点目标格
     var dstOnly = dstOnlySrc != null && r1 == dstOnlySrc.first && c1 == dstOnlySrc.second
     var attempt = 0
+    val startMs = System.nanoTime() / 1_000_000
     while (true) {
         attempt++
         if (!running || interrupted) return false
         if (state.gameOver) {
             LogBus.log(LogLevel.DEBUG, LogTag.SELF, "对局已结束，停止走棋重试")
+            return false
+        }
+        // D1=A 总超时（2026-09-10）：无限重试由总时长封顶。设备卡顿（点击排队延迟）场景
+        // 数秒内自行恢复后下一次补点即成功；真遮挡/着法被拒场景 60s 后暂停交用户处理。
+        if (System.nanoTime() / 1_000_000 - startMs > Const.SELF_MOVE_TOTAL_TIMEOUT_MS) {
+            LogBus.log(
+                LogLevel.ERROR,
+                LogTag.SELF,
+                "走棋总超时 ${Const.SELF_MOVE_TOTAL_TIMEOUT_MS / 1000}s（共尝试 $attempt 次），" +
+                        "疑似设备卡顿或弹窗遮挡，自动对弈已暂停（处理后点「开始」续弈）",
+            )
+            Recognizer.formatLayout(state.board)
+                .forEach { LogBus.log(LogLevel.WARN, LogTag.VISION, "守卫触发布局 $it") }
+            running = false
+            setStatus(BotStatus.ABNORMAL_PAUSED)
             return false
         }
         // v3：attemptMove 纯点击（稳判职责已移入 verify）；仅 RETRY_DST（提起未落）时只点目标格补落
@@ -169,45 +184,29 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
             }
 
             VerifyOutcome.RETRY_DST -> {
-                // 我方提子未落：补点目标格。首轮为进度态清零守卫；连续两轮补点仍未落
-                // = 无进展，计入零变化守卫（防「点目标格始终无效」死循环）
-                if (dstOnly) zeroChange++ else zeroChange = 0
+                // 我方提子未落：补点目标格（无限重试，总超时兜底；2026-09-10 D1=A 删零变化守卫）
                 dstOnly = true
             }
 
             VerifyOutcome.RETRY_AFTER_ENEMY -> {
                 // 点击被吞、敌方已先走（敌着已在 verify 恢复分支提交，轮到我方）：
-                // 立即重试本步走子，不计零变化守卫（2026-09-06 T-B）。
+                // 立即重试本步走子（2026-09-06 T-B；D2=A 不走重试冷却）
                 dstOnly = false
-                zeroChange = 0
                 attempt = 0
                 continue
             }
 
-            // 两次点击均未生效（RETRY_BOTH，含稳定未知兜底）：累计守卫计数
-            //（不 continue，落到下方守卫判定）。
+            // 两次点击均未生效（RETRY_BOTH，含稳定未知兜底）：落循环末尾冷却后重试
             VerifyOutcome.RETRY_BOTH -> {
                 dstOnly = false
-                zeroChange++
             }
-        }
-        if (zeroChange >= Const.SELF_MOVE_ZERO_CHANGE_MAX) {
-            LogBus.log(
-                LogLevel.ERROR,
-                LogTag.SELF,
-                "连续 ${Const.SELF_MOVE_ZERO_CHANGE_MAX} 轮走棋重试无进展（RETRY），疑似弹窗遮挡或着法被拒，自动对弈已暂停（处理后点「开始」续弈）",
-            )
-            Recognizer.formatLayout(state.board)
-                .forEach { LogBus.log(LogLevel.WARN, LogTag.VISION, "守卫触发布局 $it") }
-            running = false
-            setStatus(BotStatus.ABNORMAL_PAUSED)
-            return false
         }
         LogBus.log(
             LogLevel.DEBUG,
             LogTag.SELF,
-            "走棋未确认（第 $attempt 次，$outcome，zeroChange=$zeroChange）",
+            "走棋未确认（第 $attempt 次，$outcome）",
         )
+        delay(Const.SELF_RETRY_COOLDOWN_MS) // D2=A：重试点击冷却，防卡顿设备点击事件堆积
     }
 }
 

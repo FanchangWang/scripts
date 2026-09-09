@@ -18,7 +18,8 @@ import org.opencv.core.Mat
  *
  * waitForEnemyMove 重构（2026-09-10，参考 verifyForSelfMove v3）：n 分流（0 静默 / ≤2 classify /
  * 3..30 灰区）+ (d) diffCells>30 大面积遮挡 verifyEndgameCheck + (e) 稳定未知 2s 兜底（OCR 强扫）+
- * 180s 总超时；废除旧「连续噪声帧暂停」体系（noisyCount/ENEMY_NOISY_MAX，见 Const.kt 注释）。
+ * (f) 32 子新局摆棋检测（终局漏检兜底，2026-09-10 D3=A）+ 180s 总超时；
+ * 废除旧「连续噪声帧暂停」体系（noisyCount/ENEMY_NOISY_MAX，见 Const.kt 注释）。
  */
 
 // ---------- 我方提子恢复（2026-09-08 game_start_lift_recovery_plan） ----------
@@ -230,6 +231,21 @@ internal suspend fun BotSession.waitForEnemyMove() {
                 }
             }
             // n ∈ 3..VERIFY_OCR_DIFF_CELLS：动画/噪声灰区，静默继续（参考 verifyForSelfMove (c)），交 (e) 稳定兜底
+
+            // ── (f) 新局摆棋检测（2026-09-10 D3=A 简化版）：已提交棋盘 <32 子而扫描板恢复
+            //     32 子 → 上一局终局信号漏检后游戏已自动摆好下一局（32 子连读模式），
+            //     此时 n 落灰区、(d) 的 OCR 已错过结算页，原逻辑只能空等到 180s 总超时。
+            //     对局中棋子只减不增，32 子不可能在局中出现；开局等敌手时 committed==32
+            //     不满足 <32，零误触发。标记本局结束交 flowLoop 走 autoNextGame——
+            //     StartLoop 对 32 子开局形态免准入证据（openingForm 直通），摆棋若仍在
+            //     动画中由其稳定判定 + det 几何守卫兜底。
+            if (pieceCount(grabbed.scan.board) == 32 && pieceCount(state.board) < 32) {
+                finishGame(
+                    "检测到棋盘恢复 32 子（原 ${pieceCount(state.board)} 子），" +
+                            "判定本局已结束，进入自动下一局"
+                )
+                return
+            }
 
             // ── (d) diffCells > VERIFY_OCR_DIFF_CELLS：大面积遮挡（弹窗/遮罩/结算画面）→
             //     OCR/终局检查（updateResign / confirmEndByOcr 节流 / dismissDrawDialog 内聚于 verifyEndgameCheck）──

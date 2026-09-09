@@ -120,10 +120,14 @@ object Const {
     const val VERIFY_HARD_CAP_MS =
         15_000L // 兜底硬顶：单次 verify 总时长超此值 → RETRY_BOTH（防非稳定的持续动画模式永久悬挂，liveness 保护）
 
-    // ---------- 我方走棋重试（无限重试 + 守卫） ----------
-    // 不设次数上限；退出条件 = 对弈结束判断（终局/认输/将帅缺失）
-    const val SELF_MOVE_ZERO_CHANGE_MAX =
-        5 // 内置守卫：连续 N 个整步「零变化(SILENT)或无法归类(NOISY)」即走棋持续未确认 → 判异常暂停；LIFTED 为进度态重置计数
+    // ---------- 我方走棋重试（无限重试 + 总超时） ----------
+    // 不设次数上限；退出条件 = 走棋成功 / 对弈结束 / 总超时。2026-09-10 D1=A 删除原
+    // 「连续 5 轮零变化」守卫（SELF_MOVE_ZERO_CHANGE_MAX）：设备发烫卡顿时点击事件排队延迟，
+    // log.txt 段一实证 5 次补点全部被吞、守卫暂停后数秒棋子自行走出——无限重试 + 总超时更稳。
+    const val SELF_MOVE_TOTAL_TIMEOUT_MS =
+        60_000L // 单步走棋总超时（D1=A）：超时直接异常暂停（点「开始」续弈），并打守卫布局供诊断
+    const val SELF_RETRY_COOLDOWN_MS =
+        1_000L // 重试点击后的冷却（D2=A：RETRY_DST/RETRY_BOTH 生效；RETRY_AFTER_ENEMY 立即重试不冷却），给卡顿设备排空输入队列
     const val RETRY_BACKOFF_START_MS =
         1000L // 点按注入失败时的重试延迟兜底（仅此一处）；正常走子路径由 verifyForSelfMove 约 700ms+ 节流，已废除指数退避
 
