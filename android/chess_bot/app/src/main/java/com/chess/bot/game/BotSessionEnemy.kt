@@ -12,7 +12,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * BotSession 敌方链（B2 拆分自 BotSession.kt，2026-09-09 方案 6 / D1=A）。
  *
- * 职责：我方提子恢复 + 敌方走棋检测（T-D 两帧一致确认）+ ponder CAP 收割（F2-A/F3-A）+
+ * 职责：我方提子恢复 + 敌方走棋检测（T-D 两帧一致确认）+ ponder 收发守卫（A 项）+
  * 敌着提交公共路径（ponder 命中取预搜/未命中丢弃 + cellImgs 局部更新）+ 敌方局面应用。
  * 纯移动不改逻辑：函数体逐字搬运，类成员 private 已在 B1 放宽为 internal 后经扩展函数访问
  * （字段 lastLiftArtifactWarnAt 留守类内：顶层 var 会改变多实例语义）。
@@ -143,9 +143,9 @@ internal suspend fun BotSession.waitForEnemyMove() {
             setStatus(BotStatus.ABNORMAL_PAUSED)
             return
         }
-        // F2-A：敌方思考超 CAP 仍未走子 → 提前 ponderhit 按质量门控收割预搜（裸 go ponder 唯一闸门）。
-        // 收割阻塞通常 <200ms（elapsed 已 ≥ TARGET，质量多半已达标），期间不取帧——敌方尚未走子无信息损失
-        maybeHarvestPonderCap()
+        // ponder 收发守卫（A 项，每轮轻量）：① 命令送达自检超时 → 复位重搜；
+        // ② 对局已结束 / 中断 → 立刻收割，避免结果随会话作废丢失
+        checkPonderHealth()
         val grabbed = grabBoard(cap) ?: continue
         try {
             val changes = grabbed.scan.changes
@@ -310,21 +310,37 @@ internal suspend fun BotSession.reconfirmEnemyMoved(move: Move): Grabbed? {
 }
 
 /**
- * F2-A/F3-A（2026-09-08）：敌方思考超 Const.ENGINE_PONDER_CAP_MS 仍未走子 → 提前 ponderhit
- * 收割 ponder 预搜（裸 go ponder 无限预搜的唯一时间闸门，防慢敌手无限占 CPU）。
- * 结果缓存进 [pendingPonderResult]：Q 局面的我方应手——敌随后走 Y 直接消费，走 Z 作废重搜。
- * 非 ponder 态（ponderElapsedMs=-1 < CAP）自然跳过。
+ * PONDER_GUARD_MS：ponder 命令送达自检时限（A 项）。
+ * `go ponder movetime T` 的 T 在引擎 ponder 期不检查（check_time 里 `if (ponder) return`），
+ * 正常由「敌走 Y 命中 → ponderhit」或敌走 Z → stop 收尾，不需要本守卫。
+ * 但若 go 命令被丢弃（引擎重启 / 管道异常），App 侧 pondering=true 而引擎并未开搜 →
+ * 后续 ponderhit 被忽略 → 收割白等 T+余量、stop 也等不到 bestmove → 重建引擎，连锁阻塞本步。
+ * 取值须显著大于 `go ponder` 的端到端送达延迟（进程内写管道，实测 <1ms），
+ * 且远小于敌方思考时间（人手最快也秒级），保证正常局永不误触。
  */
-internal fun BotSession.maybeHarvestPonderCap() {
-    if (pendingPonderMove == null || prematurePonderHarvested) return
-    if (engine.ponderElapsedMs() < Const.ENGINE_PONDER_CAP_MS) return
+internal const val PONDER_GUARD_MS = 1_500L
+
+/**
+ * ponder 收发守卫（A 项，替代原 F2-A「思考超 3s 提前收割」，每轮调用，轻量）：
+ * ① 命令送达自检：超 PONDER_GUARD_MS 仍处 ponder 态且引擎无任何 info 行 → 命令丢失，
+ *    stop 复位（期间未消耗思考时间，后续常规搜索 movetime 完全可用——故不收割、不作废）。
+ * ② 会话终止：对局已结束 / 用户中断 → 立刻 ponderhit 收割（原实现要等 3s CAP，
+ *    会白丢一个已达 T 的高质量结果）。
+ */
+internal fun BotSession.checkPonderHealth() {
+    if (pendingPonderMove == null) return
+    if (engine.abortPonderIfUnacknowledged(context, PONDER_GUARD_MS)) {
+        pendingPonderMove = null
+        return
+    }
+    if (!state.gameOver && !interrupted) return
+    if (prematurePonderHarvested || !engine.isPondering()) return
     prematurePonderHarvested = true
     pendingPonderResult = engine.ponderHit()
     LogBus.log(
-        LogLevel.DEBUG,
-        LogTag.ENGINE,
-        "敌方思考超 ${Const.ENGINE_PONDER_CAP_MS}ms，提前 ponderHit 收割预搜结果" +
-                "（${pendingPonderResult?.move ?: "无"}，depth ${pendingPonderResult?.depth ?: 0}）"
+        LogLevel.DEBUG, LogTag.ENGINE,
+        "对局结束/中断，提前收割 ponder 预搜结果（${pendingPonderResult?.move ?: "无"}，" +
+                "depth ${pendingPonderResult?.depth ?: 0}）"
     )
 }
 
@@ -336,6 +352,8 @@ internal fun BotSession.commitEnemyMove(move: Move, grab: Grabbed) {
     val enemyIccs = gridToSquare(move.src.first, move.src.second, state.mySide) +
             gridToSquare(move.dst.first, move.dst.second, state.mySide)
     val predicted = pendingPonderMove
+    // 期间可能已被 checkPonderHealth 收割（对局结束/中断），此时引擎已非 ponder 态
+    val ponderLive = engine.isPondering()
     if (predicted != null) {
         // 着法中文化（2026-09-09 D3=A）：commit 时 board 尚未更新（updateCellImgs 在后），
         // 起点格仍是实际/预测的敌方棋子，取棋名拼「黑車 e7 -> g7」与 ponder 行风格统一
@@ -350,21 +368,22 @@ internal fun BotSession.commitEnemyMove(move: Move, grab: Grabbed) {
                 LogBus.log(
                     LogLevel.DEBUG,
                     LogTag.ENGINE,
-                    "敌方走子命中预测（$actualCn），直接消费 CAP 提前收割的预搜结果"
+                    "敌方走子命中预测（$actualCn），直接消费已收割的预搜结果"
                 )
-            } else {
-                // F1-A：ponderHit 内部走主搜同款质量门控（elapsed<target 等满、质量达标才 stop）
+            } else if (ponderLive) {
+                // go ponder 带 movetime T，ponderhit 后引擎即时交手，monitorSearch 的 hasBestmove 几乎立即退出
                 pendingPonderResult = engine.ponderHit()
                 LogBus.log(
                     LogLevel.DEBUG,
                     LogTag.ENGINE,
-                    "敌方走子命中预测（$actualCn），ponderHit 按质量门控取回预搜结果"
+                    "敌方走子命中预测（$actualCn），ponderHit 取回预搜结果"
                 )
             }
+            // else：引擎已非 ponder 态（本步已收割或命令丢失兜底）且无缓存 → 保持 null，交常规搜索
         } else {
             engine.stopPonder()
             if (prematurePonderHarvested) {
-                // CAP 提前收割的结果属「Q=我方走子+预测敌着」局面，敌走了别的 → 作废
+                // 提前收割的结果属「Q=我方走子+预测敌着」局面，敌走了别的 → 作废
                 pendingPonderResult = null
             }
             LogBus.log(

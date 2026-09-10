@@ -46,7 +46,7 @@ import org.opencv.core.Mat
  * - BotSessionFlow.kt    主循环+我方走子+ponder+评估显示+自动下一局
  * - BotSessionVerify.kt  verify v3 校验链（多帧校验/提交/吞点击恢复）
  * - BotSessionEnemy.kt   敌方链（提子恢复/敌方检测/ponder 收割/敌着提交）
- * - BotSessionEndgame.kt 终局判定（认输/OCR 结算/绝杀探测/和棋决策）
+ * - BotSessionEndgame.kt 终局判定（认输/OCR 结算/和棋决策；绝杀二次探测已取消）
  */
 class BotSession(internal val context: Context) {
 
@@ -63,28 +63,13 @@ class BotSession(internal val context: Context) {
     internal var autoNextFlag = false
 
     /**
-     * 绝杀探测（Option A）：主搜 go 已返回 mate+1 时，本步着法即杀着，
-     * 应用 + 截屏验证后直接终局、跳过二次引擎调用。computeMove 引擎路径写入，verify 消费后清零。
+     * 绝杀提前终局（二次引擎探测已取消）：主搜 / ponder 收割的 info 判定 mate+1 时，
+     * 本步着法即杀着，应用 + 截屏验证后直接终局。computeMove 写入，verify 消费后清零。
      * verify 中有两条终局信号会消费它：① SELF_DONE（走棋成功且棋盘已落定）② RESIGN_SUSPECT
      * （检测到对局结束画面，双方将/帥缺失）——只要命中其一即判「我方绝杀」并终局，
      * 阻断 doMove 重复点击（见 2026-08-29 走子后卡在重试的修复）。
      */
     internal var selfMatePending = false
-
-    /**
-     * Y 方案 mate 记账（2026-09-08）：本轮着法来自引擎且其 info 质量达标、matePly 非空且非 1
-     * （≥2 = 我方尚需 N 步杀；负值 = 我方被将死序列中）→ 引擎确证对方必有应手、对局必续，
-     * endgameHook 跳过 200ms 绝杀二次探测。matePly==1 走 selfMatePending；
-     * 无 mate / TT 盲区（picked==null）/ 开局库着法 → false，探测照常（保困毙 + 盲区漏判兜底）。
-     * 每轮 computeMove 重置；由 [recordMateInfo] 在主搜与 ponderHit 两条引擎路径写入。
-     */
-    internal var mateInfoSolid = false
-
-    /**
-     * 绝杀探测上次「跳过原因」（日志降噪，2026-09-09 D3）：常态每步都走同一条跳过路径，
-     * 仅当原因变化（子数跨越探测窗口阈值 / mate 记账翻转 / 探测真正执行）时打一条 DEBUG。
-     */
-    internal var lastProbeSkip: String? = null
 
     /** grabBoard「变化行」上次记录的内容（内容相同则静默，2026-09-09 日志拆分 D1=A）。 */
     internal var lastGrabLogKey: String? = null
@@ -102,9 +87,8 @@ class BotSession(internal val context: Context) {
     internal var pendingPonderResult: EngineResult? = null
 
     /**
-     * F2-A（2026-09-08）：CAP 提前收割标志——敌方思考超 Const.ENGINE_PONDER_CAP_MS 时已在
-     * waitForEnemyMove 轮询里 ponderHit 收割并缓存进 [pendingPonderResult]。敌着提交时：
-     * 命中预测 → 直接消费缓存；未命中 → 作废缓存（结果属「Q=我方走子+预测敌着」局面）。
+     * 本轮 ponder 收割出的结果是否已被采纳（A 项）：置位时机 = 命中路径的 ponderhit 收割、
+     * 或 checkPonderHealth 的终止即时收割。用途：敌着提交时命中预测 → 直接消费已收割结果，不重复收割。
      */
     internal var prematurePonderHarvested = false
 
@@ -167,6 +151,7 @@ class BotSession(internal val context: Context) {
             adoptedByRecovery = false
             pendingPonderMove = null
             pendingPonderResult = null
+            prematurePonderHarvested = false
             emit()
             // 统一启动等待循环（2026-09-09 U1=A）：手动开始与自动下一局共用
             // StartLoop（OCR 结算交互先行 + det 四角几何守卫 + SettleWaiter 摆棋判定内核），
@@ -273,13 +258,11 @@ class BotSession(internal val context: Context) {
         return true
     }
 
-    /** 走子成功后的终局联动（与原实现一致）：主搜已声明 mate+1 → 本步即杀着直接终局；否则绝杀二次探测。 */
+    /** 走子成功后的终局联动：仅 mate+1 → 本步即杀着直接终局（绝杀判断只认 info mate，R4/绝杀口径）。 */
     internal suspend fun endgameHook() {
         if (selfMatePending) {
             selfMatePending = false
             finishGame("我方绝杀，${state.mySide.opponent.cn}方无路可走")
-        } else {
-            checkmateProbe()
         }
     }
 

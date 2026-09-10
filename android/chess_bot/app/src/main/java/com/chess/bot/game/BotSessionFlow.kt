@@ -27,26 +27,28 @@ internal fun BotSession.decideStartTurn() {
     if (count == 32 && plausibleNewGame(state.board, state.mySide)) {
         state.turn = Side.RED
         LogBus.log(LogLevel.INFO, LogTag.PLAY, "完整新开局（32 子默认位），红方先走")
-        return
-    }
-    val inferred = inferTurn(state.board, state.mySide, state.phase)
-    if (inferred != null) {
-        state.turn = inferred
-        LogBus.log(
-            LogLevel.INFO, LogTag.PLAY,
-            if (inferred == state.mySide) "轮次推断：轮到${inferred.cn}方（我方）走棋"
-            else "轮次推断：轮到${inferred.cn}方走棋"
-        )
     } else {
-        // 闯关排局 / 残局：无法静态推断轮次，默认我方（玩家）先行
-        state.turn = state.mySide
-        LogBus.log(
-            LogLevel.INFO,
-            LogTag.PLAY,
-            "无法推断轮次（${state.phase.cn}），默认我方（${state.mySide.cn}）先走"
-        )
-        // 布局不在此打印：initialize 已无条件落「摆棋布局」（2026-09-08 Q1 去重）
+        val inferred = inferTurn(state.board, state.mySide, state.phase)
+        if (inferred != null) {
+            state.turn = inferred
+            LogBus.log(
+                LogLevel.INFO, LogTag.PLAY,
+                if (inferred == state.mySide) "轮次推断：轮到${inferred.cn}方（我方）走棋"
+                else "轮次推断：轮到${inferred.cn}方走棋"
+            )
+        } else {
+            // 闯关排局 / 残局：无法静态推断轮次，默认我方（玩家）先行
+            state.turn = state.mySide
+            LogBus.log(
+                LogLevel.INFO,
+                LogTag.PLAY,
+                "无法推断轮次（${state.phase.cn}），默认我方（${state.mySide.cn}）先走"
+            )
+            // 布局不在此打印：initialize 已无条件落「摆棋布局」（2026-09-08 Q1 去重）
+        }
     }
+    // R3 配套：轮次已定 → 拍引擎 position 基线（32 子局 = 初始局面，其后全部着法进 movesList）
+    state.ensureEngineBaseline()
 }
 
 // ---------- 自动对弈主循环 ----------
@@ -216,11 +218,9 @@ internal fun BotSession.maybeStartPonder() {
     // 若已 SELF_THEN_ENEMY（敌方与本方走子动画重叠、敌方已落子），轮到我方，ponder 无意义且会被紧接着的 bestMove 强制 stopPonder 浪费。
     if (state.turn != state.mySide.opponent) return
     val predicted = pendingPonderMove ?: return
-    prematurePonderHarvested = false // 新一轮预搜开始，清除上一轮 CAP 收割标志
-    // 当前 state.board 已含我方走子、轮到敌方 → 取「我方走子后」局面 FEN，叠加预测敌着 Y 作为 ponder 起点
-    val fenAfterMyMove =
-        fenOfBoard(state.board, state.mySide, state.turn, state.halfmoveClock)
-    engine.startPonder(context, fenAfterMyMove, predicted)
+    prematurePonderHarvested = false // 新一轮预搜开始，清除上一轮收割标志
+    // position = 基线 FEN + moves 全列表（movesList 已含我方刚走的这步）+ 预测敌着追加尾部
+    engine.startPonder(context, state.ensureEngineBaseline(), state.movesList, predicted)
     // 预测敌着中文化（2026-09-09 D6）：从「我方走子后」局面取起点格棋子名（黑马 b9 -> c7）
     val (pr, pc) = squareToGrid(predicted.take(2), state.mySide)
     val predictedLabel = state.board.getOrNull(pr)?.getOrNull(pc)?.let(::pieceLabel) ?: "未知子"
@@ -241,7 +241,6 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     }
     setStatus(BotStatus.THINKING)
     selfMatePending = false
-    mateInfoSolid = false
     // 敌方走子命中预判：直接消费 ponderHit 预搜结果，省去一次完整引擎搜索（仅当着法有效）
     val pre = pendingPonderResult
     pendingPonderMove = null
@@ -249,12 +248,12 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
         pendingPonderResult = null
         // 局部捕获快照：判空后跨多语句访问属性无法智能转换，快照值也消除中途变化风险
         val preMove = pre.move
-        // 无评估佐证（ponder 停止取回时尚未输出任何 info 行 → depth=0/eval=0）→ 丢弃预搜，退回常规搜索
-        if (preMove != null && !(pre.depth == 0 && pre.scoreCp == 0)) {
+        // 不再用 qualityReached 判断；只要给出有效着法（且有评估佐证）就直接用
+        if (preMove != null && !(pre.depth == null && pre.scoreCp == null)) {
             state.lastMoveSource = MoveSource.ENGINE
-            state.lastMoveDepth = pre.depth
-            state.lastEvalScore = pre.scoreCp
-            state.lastEvalScoreUnreliable = pre.scoreUnreliable
+            state.lastMoveDepth = pre.depth ?: 0
+            state.lastEvalScore = pre.scoreCp ?: 0
+            state.lastEvalScoreUnreliable = pre.scoreCp == null
             state.lastMatePly = pre.matePly
             recordMateInfo(pre)
             BotRuntime.bookWinRate.value = 0f
@@ -268,7 +267,7 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
         if (preMove != null) {
             LogBus.log(
                 LogLevel.DEBUG, LogTag.ENGINE,
-                "预搜着法 $preMove 无评估佐证（depth=0, eval=0），丢弃预搜，常规搜索",
+                "预搜着法 $preMove 无评估佐证（无有效 info），丢弃预搜，常规搜索",
             )
         }
         // 预搜无着法（极罕见）→ 丢弃，退回常规搜索
@@ -295,7 +294,6 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
             state.lastMoveSource = MoveSource.BOOK
             state.lastMoveDepth = 0
             selfMatePending = false
-            mateInfoSolid = false // 开局库着法无引擎 info，探测按子数门控照常
             state.lastEvalScore = hit.vscore
             state.lastEvalScoreUnreliable = false // 开局库分是真实统计值，非占位
             state.lastMatePly = null
@@ -313,11 +311,14 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     }
 
     // ---------- 引擎 ----------
-    val fen = fenOfBoard(state.board, state.mySide, state.turn, state.halfmoveClock)
-    LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "计算着法中：$fen")
+    val baselineFen = state.ensureEngineBaseline() // 轮次判定已拍，此处防御兜底
+    LogBus.log(
+        LogLevel.DEBUG, LogTag.ENGINE,
+        "计算着法中：基线局面 + moves ${state.movesList.size} 手（position 演进制）"
+    )
     var result: EngineResult
     try {
-        result = engine.bestMove(context, fen)
+        result = engine.bestMove(context, baselineFen, state.movesList)
     } catch (e: EngineError) {
         LogBus.log(LogLevel.ERROR, LogTag.ENGINE, "引擎错误：${e.message}")
         return null
@@ -328,7 +329,7 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
         val shortTime = Const.ENGINE_MOVETIME_MS * 2 / 3
         LogBus.log(LogLevel.WARN, LogTag.ENGINE, "引擎无可用着法，改用 $shortTime ms 短时限重试")
         try {
-            result = engine.bestMove(context, fen, movetimeMs = shortTime)
+            result = engine.bestMove(context, baselineFen, state.movesList, movetimeMs = shortTime)
         } catch (e: EngineError) {
             LogBus.log(LogLevel.ERROR, LogTag.ENGINE, "重试引擎错误：${e.message}")
             return null
@@ -340,19 +341,14 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
         return null
     }
     state.lastMoveSource = MoveSource.ENGINE
-    state.lastMoveDepth = result.depth
-    state.lastEvalScore = result.scoreCp
-    state.lastEvalScoreUnreliable = result.scoreUnreliable
+    state.lastMoveDepth = result.depth ?: 0
+    state.lastEvalScore = result.scoreCp ?: 0
+    state.lastEvalScoreUnreliable = result.scoreCp == null
     state.lastMatePly = result.matePly
-    // 主搜已声明 mate+1 = 本步着法即杀着；标记后 verify 直接终局，省去二次引擎调用
+    // 主搜已声明 mate+1 = 本步着法即杀着；标记后 verify 直接终局
     recordMateInfo(result)
     if (selfMatePending) {
         LogBus.log(LogLevel.INFO, LogTag.ENGINE, "引擎判定本步绝杀（mate+1）：${result.move}")
-    } else if (mateInfoSolid) {
-        LogBus.log(
-            LogLevel.DEBUG, LogTag.ENGINE,
-            "info mate=${result.matePly}（质量达标）→ 对局确证仍将继续，本轮跳过绝杀探测"
-        )
     }
     BotRuntime.bookWinRate.value = 0f
     emit() // 引擎返回后立即刷新悬浮窗引擎行
@@ -421,19 +417,23 @@ internal suspend fun BotSession.attemptMove(
     return cap.tap(r2, c2)
 }
 
-/** 引擎结果评估详情（2026-09-09 Q2/Q3）：无有效 info（盲区止损时引擎全程沉默）时 depth/score
- *  是占位值 0 非引擎评分，显示「评估 -，depth -」避免误导；matePly 正=我方 N 步内绝杀 /
- *  负=被绝杀（EngineInfoPick 视角：行棋方），显示「绝杀 N」更直观（用户要求）；
- *  mate 时评估分（100000-N）与绝杀并列显示（2026-09-09 用户要求三字段齐显，scoreCp 与 matePly 同源皆真实）。 */
-internal fun BotSession.evalDetail(r: EngineResult): String = when {
-    r.scoreUnreliable -> "评估 -，depth -"
-    r.matePly != null && r.matePly > 0 -> "绝杀 ${r.matePly}，评估 ${"%+d".format(r.scoreCp)}，depth ${r.depth}"
-    r.matePly != null -> "被绝杀 ${-r.matePly}，评估 ${"%+d".format(r.scoreCp)}，depth ${r.depth}"
-    else -> "评估 ${"%+d".format(r.scoreCp)}，depth ${r.depth}"
+/** 引擎结果评估详情：无有效 info（scoreCp/depth 为 null）→ 显示「评估 -，depth -」，
+ *  不把占位 0 伪装成真实评分；matePly 正=我方 N 步内绝杀 / 负=被绝杀（EngineInfoPick 视角：行棋方），
+ *  显示「绝杀 N」更直观（用户要求）；mate 时评估分（100000-N）与绝杀并列显示
+ *（2026-09-09 用户要求三字段齐显，scoreCp 与 matePly 同源皆真实）。 */
+internal fun BotSession.evalDetail(r: EngineResult): String {
+    val score = r.scoreCp
+    val depth = r.depth
+    if (score == null || depth == null) return "评估 -，depth -"
+    return when {
+        r.matePly != null && r.matePly > 0 -> "绝杀 ${r.matePly}，评估 ${"%+d".format(score)}，depth $depth"
+        r.matePly != null -> "被绝杀 ${-r.matePly}，评估 ${"%+d".format(score)}，depth $depth"
+        else -> "评估 ${"%+d".format(score)}，depth $depth"
+    }
 }
 
 /** 信息框第四行评估文本（2026-09-09 Q2）：mate 优先「绝杀 N/被绝杀 N」（与 evalDetail 同语义），
- *  盲区步「评估 -」（占位 0 不再显示为评分），普通局面「+N/N」；着色由 evalScore 正负决定，无需额外传色。 */
+ *  无有效 info 步「评估 -」（占位 0 不再显示为评分），普通局面「+N/N」；着色由 evalScore 正负决定，无需额外传色。 */
 internal fun BotSession.evalOverlayText(): String = when {
     state.lastEvalScoreUnreliable -> "评估 -"
     else -> {
@@ -447,12 +447,9 @@ internal fun BotSession.evalOverlayText(): String = when {
     }
 }
 
-/** Y 方案记账入口（主搜 / ponderHit 两条引擎路径共用）：写 selfMatePending 与 mateInfoSolid。 */
+/** mate 记账：matePly == 1 = 本步即杀着 → 走完验证后直接终局（绝杀只认 info mate）。 */
 internal fun BotSession.recordMateInfo(result: EngineResult) {
     selfMatePending = result.matePly == 1
-    // matePly 非 null 已隐含「有效非 bound info」（bound 行的 mate 在引擎层即被滤除）；
-    // 再叠加 qualityReached 排除硬顶兜底场景，双重保险
-    mateInfoSolid = !selfMatePending && result.matePly != null && result.qualityReached
 }
 
 // ---------- 自动下一局 ----------
@@ -529,6 +526,8 @@ internal suspend fun BotSession.autoNextGame(): Boolean {
                     // 布局不在此打印：initialize 已无条件落「摆棋布局」（2026-09-08 Q1 去重）
                 }
             }
+            // R3 配套：轮次已定 → 拍引擎 position 基线
+            state.ensureEngineBaseline()
             return true
         } finally {
             settledCorrected.release()

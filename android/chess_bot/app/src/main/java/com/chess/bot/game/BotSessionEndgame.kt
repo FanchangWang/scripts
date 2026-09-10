@@ -9,8 +9,8 @@ import com.chess.bot.vision.TextMatcher
  * BotSession 终局判定（B3 拆分自 BotSession.kt，2026-09-09 方案 6 / D1=A）。
  *
  * 职责：认输/清盘信号判定（updateResign）+ T-OCR 结算扫描（confirmEndByOcr）+
- * 绝杀二次探测（checkmateProbe，Y 方案质量门控跳过）+ 跳过原因打点（logProbeSkipChange）+
- * 和棋决策（decideDraw）。被 Flow/Verify/Enemy 三侧调用，独立内聚。
+ * 和棋决策（decideDraw）。（checkmateProbe / logProbeSkipChange 已随二次探测取消删除。）
+ * 被 Flow/Verify/Enemy 三侧调用，独立内聚。
  * 字段 lastOcrEndScanAt/lastVerifyDrawScanAt 留守 BotSession 类内（纯移动约束）。
  */
 
@@ -74,51 +74,6 @@ internal fun BotSession.updateResign(newBoard: Board, changes: List<Change>): Re
     }
     state.resignStreak = 0
     return ResignResult.NONE
-}
-
-internal suspend fun BotSession.checkmateProbe(): Boolean {
-    // Y 方案：本轮着法的引擎 info 质量达标且带明确 mate 值（非杀）→ 对方必有应手，跳过二次探测
-    if (mateInfoSolid) {
-        logProbeSkipChange("mate 明确", "mate 明确（质量达标）")
-        return false
-    }
-    // Option A：仅终局附近（子少）才二次调用引擎验证，常规中局主搜已覆盖将死，跳过以减少引擎开销
-    val count = pieceCount(state.board)
-    if (count > Const.ENDGAME_PROBE_PIECE_MAX) {
-        // 常态路径：仅原因变化时打点（每步一条曾占单局日志 66 行）。
-        // 注意 key 用稳定类别「非终局」，文案才可携带实时子数——key 内嵌子数会永不去重（2026-09-09 复审 R1 修复）
-        logProbeSkipChange("非终局", "非终局（$count 子 > ${Const.ENDGAME_PROBE_PIECE_MAX}）")
-        return false
-    }
-    setStatus(BotStatus.GAMEOVER_CHECK)
-    lastProbeSkip = null // 本轮真正执行了探测，下轮跳过原因需重新打点
-    val opp = state.mySide.opponent
-    val fen = fenOfBoard(state.board, state.mySide, opp, state.halfmoveClock)
-    LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "绝杀探测 FEN（${opp.cn}方行棋）：$fen")
-    val mated = try {
-        engine.isMate(context, fen)
-    } catch (e: Exception) {
-        LogBus.log(
-            LogLevel.WARN,
-            LogTag.ENGINE,
-            "引擎绝杀探测失败，当作未绝杀继续：${e::class.java.simpleName}: ${e.message}"
-        )
-        return false
-    }
-    if (!mated) {
-        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "未绝杀，继续对局")
-        return false
-    }
-    finishGame("我方绝杀，${opp.cn}方无路可走")
-    return true
-}
-
-/** 绝杀探测「跳过原因」变化时才打 DEBUG（常态每步同因跳过不再刷屏）。key 用稳定类别，text 可携带实时数值。 */
-internal fun BotSession.logProbeSkipChange(key: String, text: String) {
-    if (lastProbeSkip != key) {
-        lastProbeSkip = key
-        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "跳过绝杀二次探测：$text")
-    }
 }
 
 internal fun BotSession.decideDraw(): Boolean {

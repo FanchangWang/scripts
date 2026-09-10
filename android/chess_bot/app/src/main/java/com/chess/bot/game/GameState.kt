@@ -1,5 +1,8 @@
 package com.chess.bot.game
 
+import com.chess.bot.log.LogBus
+import com.chess.bot.log.LogLevel
+import com.chess.bot.log.LogTag
 import com.chess.bot.vision.Recognizer
 import org.opencv.core.Mat
 
@@ -129,6 +132,18 @@ class GameState {
         private set
     var highlight: List<Pair<Int, Int>> = emptyList()
 
+    /**
+     * 引擎 position 基线（R3）：拍当前局面 FEN 快照；bestMove/startPonder 改发
+     * `position fen $基线 moves $全列表`，App 侧不再逐手拼完整 FEN
+     *（halfmove / 重复局面由引擎按 moves 自算）。null = 尚未拍。
+     */
+    var baselineFen: String? = null
+        private set
+
+    /** 基线之后的着法全列表（ICCS 标准方向，与基线 FEN 同坐标系）：
+     *  applySelfMove / applyEnemyMove / applySelfThenEnemy 三个提交点追加。 */
+    val movesList = mutableListOf<String>()
+
     /** 我方最近一步起止格（棋盘小窗「我方箭头」数据源；红/黑方各保留各自最新一步）。 */
     var selfHighlight: List<Pair<Int, Int>> = emptyList()
 
@@ -180,6 +195,8 @@ class GameState {
         phase = Phase.OPENING
         initialized = false
         halfmoveClock = 0
+        baselineFen = null
+        movesList.clear()
         gameOver = false
         highlight = emptyList()
         selfHighlight = emptyList()
@@ -233,8 +250,36 @@ class GameState {
         initialized = true
     }
 
+    /**
+     * 拍引擎 position 基线（幂等：已有则直接返回）。基线 = 当前局面 FEN；
+     * 此前累积的 movesList 清零（那些着法已体现在基线里，防回放双计）。
+     * 显式调用点：decideStartTurn / autoNextGame 轮次判定后；computeMove / maybeStartPonder 兜底。
+     */
+    fun ensureEngineBaseline(): String {
+        val existing = baselineFen
+        if (existing != null) return existing
+        val fen = fenOfBoard(board, mySide, turn, halfmoveClock)
+        baselineFen = fen
+        val absorbed = movesList.size
+        movesList.clear()
+        LogBus.log(
+            LogLevel.INFO, LogTag.ENGINE,
+            "引擎 position 基线已拍（moves 从零累计${if (absorbed > 0) "，基线前 $absorbed 手已并入基线" else ""}）：$fen"
+        )
+        return fen
+    }
+
+    /** moves 追加漏斗：网格 → ICCS（gridToSquare 与 fenOfBoard 同一套翻转规则，坐标系一致）。 */
+    private fun appendMoveIccs(move: Move) {
+        movesList.add(
+            gridToSquare(move.src.first, move.src.second, mySide) +
+                    gridToSquare(move.dst.first, move.dst.second, mySide)
+        )
+    }
+
     fun applySelfMove(move: Move) {
         halfmoveClock = applyMove(board, move, halfmoveClock)
+        appendMoveIccs(move)
         turn = mySide.opponent
         highlight = listOf(move.src, move.dst)
         selfHighlight = listOf(move.src, move.dst)
@@ -243,6 +288,7 @@ class GameState {
 
     fun applyEnemyMove(move: Move) {
         halfmoveClock = applyMove(board, move, halfmoveClock)
+        appendMoveIccs(move)
         turn = mySide
         highlight = listOf(move.src, move.dst)
         enemyHighlight = listOf(move.src, move.dst)
@@ -251,7 +297,9 @@ class GameState {
     /** 我方走棋成功 + 敌方已完成一步，轮到我方。 */
     fun applySelfThenEnemy(selfMove: Move, enemyMove: Move) {
         halfmoveClock = applyMove(board, selfMove, halfmoveClock)
+        appendMoveIccs(selfMove)
         halfmoveClock = applyMove(board, enemyMove, halfmoveClock)
+        appendMoveIccs(enemyMove)
         turn = mySide
         highlight = listOf(enemyMove.src, enemyMove.dst)
         selfHighlight = listOf(selfMove.src, selfMove.dst)
