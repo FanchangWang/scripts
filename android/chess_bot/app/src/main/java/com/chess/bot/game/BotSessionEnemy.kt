@@ -7,6 +7,7 @@ import com.chess.bot.log.LogTag
 import com.chess.bot.vision.Recognizer
 import kotlinx.coroutines.delay
 import org.opencv.core.Mat
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * BotSession 敌方链（B2 拆分自 BotSession.kt，2026-09-09 方案 6 / D1=A）。
@@ -152,7 +153,7 @@ internal suspend fun BotSession.waitForEnemyMove() {
             if (!running || interrupted || state.gameOver) break
             val nowMs = System.nanoTime() / 1_000_000
             // 帧间一致性（参考 verifyForSelfMove v3）：变化格子集合逐格相同（同格同 old/new；两帧皆空也算稳定）
-            val stable = prevChanges != null && changes == prevChanges
+            val stable = (prevChanges != null) && (changes == prevChanges)
             prevChanges = changes
 
             // ── n==0：静默帧（伪代码 changes==0 continue；S1：真静默重置稳定未知计数，防误入 (e) 兜底）──
@@ -160,7 +161,7 @@ internal suspend fun BotSession.waitForEnemyMove() {
                 silentStreak++
                 if (silentStreak >= 2) state.liftLogged = false
                 stableUnknownSinceMs = -1L
-                delay(BotConfig.data.enemyPollMs.toLong())
+                delay(BotConfig.data.enemyPollMs.toLong().milliseconds)
                 continue
             }
 
@@ -283,7 +284,7 @@ internal suspend fun BotSession.waitForEnemyMove() {
             }
             // 每轮全量识别后短暂让步，避免单工作线程被识别独占（识别本身已 ~250ms，此延迟仅节流）；
             // 间隔可调（设置页「敌方走棋」分组，默认 Const.ENEMY_IDLE_POLL_MS=50）
-            delay(BotConfig.data.enemyPollMs.toLong())
+            delay(BotConfig.data.enemyPollMs.toLong().milliseconds)
         } finally {
             grabbed.corrected.release()
         }

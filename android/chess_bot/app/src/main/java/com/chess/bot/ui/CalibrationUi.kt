@@ -178,10 +178,16 @@ fun PlayCard(
             // 配置摘要（开局库仅启用状态）
             ValueRow("引擎思考时间", thinkSummary(cfgState))
             ValueRow("开局库", if (cfgState.bookEnabled) "已启用" else "已关闭")
-            // 主界面快捷开关：与设置页一致，BotConfig.save → DataStore，开局时读取（不实时驱动运行中的 BotRuntime）
-            SwitchRow("自动下一局", cfgState.autoNext) { v -> update { it.copy(autoNext = v) } }
-            SwitchRow("棋盘绘制", cfgState.boardDraw) { v -> update { it.copy(boardDraw = v) } }
-            ChevronRow("设置", onOpenSettings)
+            // 主界面快捷开关：与设置页一致，BotConfig.save → DataStore，开局时读取（不实时驱动运行中的
+            // BotRuntime）。对弈中（captureActive）整行禁用锁定——运行态以操控条/BotRuntime 为准，
+            // 防止对弈中改动造成「显示已变、运行态未变」的不一致；停止对弈（playActive 复位）后解禁。
+            SwitchRow("自动下一局", cfgState.autoNext, enabled = !captureActive) { v ->
+                update { it.copy(autoNext = v) }
+            }
+            SwitchRow("棋盘绘制", cfgState.boardDraw, enabled = !captureActive) { v ->
+                update { it.copy(boardDraw = v) }
+            }
+            ChevronRow("设置", enabled = !captureActive, onClick = onOpenSettings)
             if (!enabled) {
                 val reason = when {
                     !permsOk -> "请先在上方完成「权限与授权」四项授权"
@@ -202,7 +208,15 @@ fun PlayCard(
                 PrimaryActionButton(
                     text = "开始对弈（悬浮窗模式）",
                     enabled = enabled,
-                    onClick = onStart,
+                    // 每次点开始先重读持久化配置（2026-09-10 优化）：内存快照可能落后于
+                    // DataStore（如上一局期间悬浮操控条直写持久层），开局前刷新保证
+                    // 本次启动与卡片摘要均以最新配置生效；随后再进 MediaProjection 授权。
+                    onClick = {
+                        scope.launch {
+                            BotConfig.load(context)
+                            onStart()
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
