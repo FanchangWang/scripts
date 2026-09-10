@@ -103,6 +103,7 @@ def main():
         print(f"图像读取失败: {img_path}")
         return
     img_h, img_w = img.shape[:2]
+    print(f"图片分辨率({img_w} x {img_h})")
     result = ocr.predict(img)
     res = result[0]
     polys = res["rec_polys"]      # list[np.ndarray(4,2)]
@@ -132,7 +133,7 @@ def main():
             "points": {"tl": [x1, y1], "br": [x2, y2]},
         })
         print(f"[{idx:02d}] 像素矩形({x1:4d},{y1:4d})-({x2:4d},{y2:4d}) "
-              f"百分比矩形({x1_pct:.2f},{y1_pct:.2f})-({x2_pct:.2f},{y2_pct:.2f})  文字: {text}  置信度: {conf:.3f}")
+              f"百分比矩形({x1_pct:.2f}f,{y1_pct:.2f}f,{x2_pct:.2f}f,{y2_pct:.2f}f)  文字: {text}  置信度: {conf:.3f}")
         cv2.rectangle(viz, (x1, y1), (x2, y2), (0, 0, 255), 2)
         cv2.putText(viz, f"{idx}:{text}", (x1, max(0, y1 - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
