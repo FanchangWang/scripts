@@ -336,7 +336,7 @@ class AutoRunManager:
             logging.info("当前以管理员权限运行")
             self.clean_and_sort_path() # 清理和排序环境变量Path
             self.load_uwp_apps() # 加载UWP应用列表
-            self.start_uwp('SnipDo 复制工具', r'JohannesTscholl.Pantherbar')
+            # self.start_uwp('SnipDo 复制工具', r'JohannesTscholl.Pantherbar')
             # self.start_exe('Snow Shot 截图工具', r'C:\Program Files\Snow Shot\snowshot.exe', '--auto_start')
             self.start_exe('Snow Shot 截图工具', r'C:\Program Files\SnowShot\bin\snow_shot.exe', '--auto_start')
             # self.start_exe("SwitchHosts", r'C:\Users\guyue\AppData\Local\Programs\SwitchHosts\SwitchHosts.exe')
