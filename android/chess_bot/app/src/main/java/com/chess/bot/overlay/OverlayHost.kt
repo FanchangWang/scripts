@@ -76,9 +76,24 @@ class OverlayHost(private val context: Context) {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            // FLAG_LAYOUT_NO_LIMITS（2026-09-11 用户批示）：解除「应用可见区域」限制——
+            // 默认悬浮窗被限制在状态栏下方的可见区内，通知栏显隐时 y=0 的基准随之变化
+            // （桌面贴状态栏底、游戏贴屏幕顶），窗口上下跳动。加上后 x/y 为屏幕绝对坐标，
+            // 恒以物理屏幕顶边为基准，不受通知栏影响。
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply(layout)
+        // 允许悬浮窗延伸进状态栏/刘海区（2026-09-11 用户批示）：定位使用屏幕绝对坐标，
+        // 不随游戏沉浸式隐藏/显示通知栏而上下移动。默认 CUTOUT_MODE_NEVER 会被系统
+        // 压到状态栏下方，通知栏显隐时窗口随之跳动——正是要消除的行为。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
 
         val composeView = ComposeView(context).apply {
             setViewTreeLifecycleOwner(owner)

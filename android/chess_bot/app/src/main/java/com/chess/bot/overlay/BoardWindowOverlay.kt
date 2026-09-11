@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -86,13 +85,11 @@ fun BoardWindowContent(
     ) {
         val w = size.width
         val h = size.height
-        val corner = CornerRadius(12.dp.toPx())
 
-        // ---------- 底板 ----------
-        drawRoundRect(color = WinBg, cornerRadius = corner, size = size)
-        drawRoundRect(
+        // ---------- 底板（2026-09-11：取消圆角，直角矩形） ----------
+        drawRect(color = WinBg, size = size)
+        drawRect(
             color = WinBorder,
-            cornerRadius = corner,
             size = size,
             style = Stroke(width = 1.dp.toPx()),
         )

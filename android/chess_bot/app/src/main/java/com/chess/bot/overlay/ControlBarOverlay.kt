@@ -7,8 +7,10 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -16,10 +18,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Timeline
@@ -38,6 +42,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
@@ -62,9 +67,9 @@ private fun topStateLabel(running: Boolean, status: BotStatus): String = when {
 
 /**
  * 悬浮窗图标按钮：M3 FilledIconButton + 矢量图标。
- * 尺寸 40dp（2026-09-07 用户实测 48dp 偏大，缩小一档；悬浮条非主触达 UI，40dp 可接受），
+ * 尺寸 28dp（2026-09-11 二次压缩：40→34→28，操控条整体高度 56→44dp），
  * 需关闭 M3 最小触控靶强制（默认会撑回 48dp）。
- * 形状固定 12dp 圆角；borderColor=null 表示无描边
+ * 形状固定 10dp 圆角；borderColor=null 表示无描边
  * （选中/彩色态用实底自明，未选中态用 outlineVariant 描边保证浅色下轮廓可见——A4）。
  */
 @Composable
@@ -77,146 +82,192 @@ private fun BarIconButton(
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     borderColor: Color? = MaterialTheme.colorScheme.outlineVariant,
 ) {
-    var m = modifier.size(40.dp)
-    if (borderColor != null) {
-        m = m.border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
+    // 关闭 M3 最小触控靶强制（默认会撑回 48dp）：收进组件内部，左(±)/右(5按钮)调用方均生效
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        var m = modifier.size(28.dp)
+        if (borderColor != null) {
+            m = m.border(1.5.dp, borderColor, RoundedCornerShape(10.dp))
+        }
+        FilledIconButton(
+            onClick = onClick,
+            modifier = m,
+            shape = RoundedCornerShape(10.dp),
+            colors = IconButtonDefaults.filledIconButtonColors(
+                containerColor = containerColor,
+                contentColor = contentColor,
+            ),
+        ) { Icon(icon, contentDescription) }
     }
-    FilledIconButton(
-        onClick = onClick,
-        modifier = m,
-        shape = RoundedCornerShape(12.dp),
-        colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = containerColor,
-            contentColor = contentColor,
-        ),
-    ) { Icon(icon, contentDescription) }
 }
 
 /**
- * 悬浮操控条（常驻右缘、仅上下拖动；2026-09-07 重构为单行 5 按钮）：
- * 开始/中断(▶/⏹) · 下一局(⏭) · 棋盘绘制(▦) · 信息框(ℹ) · 返回(⌂)
- * - 信息框按钮：显隐开关（默认开，不持久化——每次从主页开始对弈都复位为显示）。
- * - 退出确认：exitPrompt 非空时就地替换为「中断并返回 / 取消」（3s 超时还原）。
- * - 配色全部走 MaterialTheme.colorScheme（结构色）+ LocalExtendedColors（业务强调色）。
+ * 左操控条（贴左缘独立悬浮窗；2026-09-11 由满宽操控条拆分——
+ * 操控条中段原本盖住屏幕水平居中的游戏时间信息，故拆左右两条、中缝避让）：
+ * 信息框开关 · 竖分割 · −(思考) · 500/思考(显示) · +(思考)。
+ * 宽度固定 148dp（间距 4dp、内边距 6dp；含数字最大值「3000」宽度余量），
+ * 确认态提示文字同宽显示（≤2 行省略），两种状态条宽一致不跳动。
+ * ± 为矢量图标按钮；±50 步长、100..3000 钳制见 OverlayManager.onAdjustMovetime。
  */
 @Composable
-fun ControlBarContent(
-    dark: Boolean,
+fun ControlBarLeftContent(
+    infoShown: Boolean,
+    movetime: Int,
+    exitPrompt: String?,
+    onInfoToggle: () -> Unit,
+    onAdjustMovetime: (Int) -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    Surface(
+        shape = RectangleShape,
+        color = cs.surface.copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, cs.outlineVariant),
+        modifier = Modifier.width(148.dp),
+    ) {
+        if (exitPrompt != null) {
+            // 确认态：提示文字占满左条（≤2 行、省略号；条宽同正常态，恒 44dp 高）
+            Row(
+                modifier = Modifier
+                    .height(44.dp)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    exitPrompt,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = cs.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .height(44.dp)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                BarIconButton(
+                    Icons.AutoMirrored.Filled.ReceiptLong, "信息框", onInfoToggle,
+                    containerColor = if (infoShown) cs.primary else cs.surfaceContainerHigh,
+                    contentColor = if (infoShown) cs.onPrimary else cs.onSurface,
+                    borderColor = if (infoShown) null else cs.outlineVariant,
+                )
+                // 竖分割
+                Box(
+                    Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(cs.outlineVariant),
+                )
+                BarIconButton(
+                    Icons.Filled.Remove, "思考时间减 50ms",
+                    { onAdjustMovetime(-50) },
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                ) {
+                    Text(
+                        "$movetime",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = cs.onSurface,
+                    )
+                    Text(
+                        "思考",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = cs.onSurfaceVariant,
+                    )
+                }
+                BarIconButton(
+                    Icons.Filled.Add, "思考时间加 50ms",
+                    { onAdjustMovetime(50) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 右操控条（贴右缘独立悬浮窗；2026-09-11 拆分，中缝避让屏幕水平居中的时间信息）：
+ * 开始 · 下一局 · 棋盘 · 返回（内容自适应宽，右对齐向左生长）。
+ * 返回确认态：整条替换为「确认/取消」两按钮（3s 超时还原，见 OverlayManager.exitPrompt）。
+ */
+@Composable
+fun ControlBarRightContent(
     running: Boolean,
     autoNext: Boolean,
     boardShown: Boolean,
-    infoShown: Boolean,
     exitPrompt: String?,
     onStartStop: () -> Unit,
     onAutoNextChange: (Boolean) -> Unit,
     onBoardToggle: () -> Unit,
-    onInfoToggle: () -> Unit,
     onRequestClose: () -> Unit,
     onConfirmExit: () -> Unit,
     onCancelExit: () -> Unit,
-    onDragY: (Float) -> Unit,
-    onDragEnd: () -> Unit = {},
 ) {
     val ext = LocalExtendedColors.current
     val cs = MaterialTheme.colorScheme
     val (startIcon, startDesc) =
         if (running) Icons.Filled.Stop to "中断" else Icons.Filled.PlayArrow to "开始"
     Surface(
-        shape = RoundedCornerShape(28.dp),
+        shape = RectangleShape,
         color = cs.surface.copy(alpha = 0.92f),
         border = BorderStroke(1.dp, cs.outlineVariant),
-        modifier = Modifier
-            // 宽度自适应内容：图标态 = 40dp 正方按钮 ×5 + 间距 8×4 + 内边距 24 ≈ 256dp
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        onDragY(dragAmount.y)
-                    },
-                    onDragEnd = { onDragEnd() },
-                    onDragCancel = { onDragEnd() },
-                )
-            },
     ) {
-        when {
-            exitPrompt != null -> {
-                Column(
-                    modifier = Modifier
-                        .width(184.dp)
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        exitPrompt,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = cs.onSurface,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = onConfirmExit,
-                            colors = ButtonDefaults.buttonColors(containerColor = ext.danger),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 12.dp,
-                                vertical = 5.dp,
-                            ),
-                        ) { Text("中断并返回") }
-                        OutlinedButton(
-                            onClick = onCancelExit,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = cs.onSurfaceVariant),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 14.dp,
-                                vertical = 5.dp,
-                            ),
-                        ) { Text("取消") }
-                        Spacer(Modifier.weight(1f))
-                    }
+        if (exitPrompt != null) {
+            // 确认态：确认/取消两按钮（关闭 M3 最小触控靶强制，Button 有效高度 48dp > 条高 44dp）
+            Row(
+                modifier = Modifier
+                    .height(44.dp)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                    Button(
+                        onClick = onConfirmExit,
+                        colors = ButtonDefaults.buttonColors(containerColor = ext.danger),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 3.dp),
+                    ) { Text("确认") }
+                    OutlinedButton(
+                        onClick = onCancelExit,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = cs.onSurfaceVariant),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 3.dp),
+                    ) { Text("取消") }
                 }
             }
-
-            else -> {
-                // 关闭 M3 最小触控靶强制（否则 FilledIconButton 40dp 会被撑回 48dp）。
-                // LocalMinimumInteractiveComponentEnforcement 已弃用，新 API = 尺寸槽设 0.dp
-                CompositionLocalProvider(
-                    LocalMinimumInteractiveComponentSize provides 0.dp
-                ) {
-                    // 单行 5 按钮（2026-09-07 由 2×2 改为一行）：开始 · 下一局 · 棋盘绘制 · 信息框 · 返回
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        BarIconButton(
-                            startIcon, startDesc, onStartStop,
-                            containerColor = if (running) cs.error else ext.success,
-                            contentColor = if (running) cs.onError else Color.White,
-                            borderColor = null,
-                        )
-                        // 开关键选中态 = primary 实底 + onPrimary 图标，未选中 = surfaceContainerHigh + 描边
-                        BarIconButton(
-                            Icons.Filled.SkipNext, "自动下一局",
-                            { onAutoNextChange(!autoNext) },
-                            containerColor = if (autoNext) cs.primary else cs.surfaceContainerHigh,
-                            contentColor = if (autoNext) cs.onPrimary else cs.onSurface,
-                            borderColor = if (autoNext) null else cs.outlineVariant,
-                        )
-                        BarIconButton(
-                            Icons.Filled.GridOn, "棋盘绘制", onBoardToggle,
-                            containerColor = if (boardShown) cs.primary else cs.surfaceContainerHigh,
-                            contentColor = if (boardShown) cs.onPrimary else cs.onSurface,
-                            borderColor = if (boardShown) null else cs.outlineVariant,
-                        )
-                        // 信息框显隐（同款选中态样式；状态不持久化，每次弹出悬浮窗默认开）
-                        BarIconButton(
-                            Icons.AutoMirrored.Filled.ReceiptLong, "信息框", onInfoToggle,
-                            containerColor = if (infoShown) cs.primary else cs.surfaceContainerHigh,
-                            contentColor = if (infoShown) cs.onPrimary else cs.onSurface,
-                            borderColor = if (infoShown) null else cs.outlineVariant,
-                        )
-                        // 返回 App 用 Home 图标（2026-09-07 用户选定，比向左箭头直观）
-                        BarIconButton(
-                            Icons.Filled.Home, "返回 App", onRequestClose,
-                        )
-                    }
-                }
+        } else {
+            Row(
+                modifier = Modifier
+                    .height(44.dp)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                BarIconButton(
+                    startIcon, startDesc, onStartStop,
+                    containerColor = if (running) cs.error else ext.success,
+                    contentColor = if (running) cs.onError else Color.White,
+                    borderColor = null,
+                )
+                BarIconButton(
+                    Icons.Filled.SkipNext, "自动下一局",
+                    { onAutoNextChange(!autoNext) },
+                    containerColor = if (autoNext) cs.primary else cs.surfaceContainerHigh,
+                    contentColor = if (autoNext) cs.onPrimary else cs.onSurface,
+                    borderColor = if (autoNext) null else cs.outlineVariant,
+                )
+                BarIconButton(
+                    Icons.Filled.GridOn, "棋盘绘制", onBoardToggle,
+                    containerColor = if (boardShown) cs.primary else cs.surfaceContainerHigh,
+                    contentColor = if (boardShown) cs.onPrimary else cs.onSurface,
+                    borderColor = if (boardShown) null else cs.outlineVariant,
+                )
+                BarIconButton(
+                    Icons.Filled.Home, "返回 App", onRequestClose,
+                )
             }
         }
     }
@@ -262,11 +313,15 @@ fun InfoBoxMini(
         else -> cs.onSurfaceVariant
     }
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        // 2026-09-11：取消圆角，直角矩形
+        shape = RectangleShape,
         color = cs.surface.copy(alpha = 0.92f),
         border = BorderStroke(1.dp, cs.outlineVariant),
         modifier = Modifier
-            .width(150.dp)
+            // 宽度固定 128dp（2026-09-11 用户批示：动态宽度观感不好）。
+            // 依据四行动态文本的最长者「子状态」定宽：6 汉字（等待我方回合/对方走子确认/关闭结算遮罩）
+            // ×12sp + 字距 ≈75dp + 图标槽 20dp + 水平 padding 24dp + 描边 2dp ≈ 121dp，取 128dp 留字体缩放余量。
+            .width(128.dp)
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDrag = { change, dragAmount ->

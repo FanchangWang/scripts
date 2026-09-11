@@ -405,7 +405,9 @@ internal fun BotSession.commitEnemyMove(move: Move, grab: Grabbed) {
 
 internal fun BotSession.applyEnemyMove(move: Move) {
     state.applyEnemyMove(move)
-    state.lastMove = "${gridToSquare(move.src.first, move.src.second, state.mySide)}-" +
+    // 2026-09-11 Q1：与我方着法（BotSessionFlow 直接存 UCI）统一为无横杠格式「h2e2」，
+    // 旧「h2-e2」是本处手工拼接多加的 '-'，信息框第 3 行两种格式随机交替的原因。
+    state.lastMove = gridToSquare(move.src.first, move.src.second, state.mySide) +
             gridToSquare(move.dst.first, move.dst.second, state.mySide)
     LogBus.log(LogLevel.INFO, LogTag.ENEMY, formatMove(move, state.mySide))
     emit()

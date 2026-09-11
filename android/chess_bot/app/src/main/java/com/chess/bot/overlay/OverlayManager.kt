@@ -11,9 +11,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
 import com.chess.bot.MainActivity
 import com.chess.bot.data.BoardCornersStore
+import com.chess.bot.data.BotConfig
 import com.chess.bot.data.BotSettings
 import com.chess.bot.game.Board
 import com.chess.bot.game.BotStatus
+import com.chess.bot.game.Const
 import com.chess.bot.game.MoveSource
 import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogLevel
@@ -39,6 +41,9 @@ object BotRuntime {
 
     /** 自动下一局开关（默认开，DataStore 持久化）。 */
     val autoNext = MutableStateFlow(true)
+
+    /** 当前生效思考时间(ms)：操控条 ±50 运行时调整，复位=配置文件值；引擎实时读 BotConfig.data.movetimeMs。 */
+    val movetimeMs = MutableStateFlow(Const.ENGINE_MOVETIME_MS)
 
     /** 悬浮窗状态行：阶段 / 阵营 / 运行状态。 */
     val statusLine = MutableStateFlow("未同步 · 未运行")
@@ -97,35 +102,29 @@ object BotRuntime {
 }
 
 /**
- * 悬浮窗总管：操控条 + 信息框（两个独立悬浮窗）+ 棋盘小窗。
- * - 操控条 / 信息框各自独立创建、独立拖动、互不干扰（解决 #7 抖动）。
- * - 操控条常驻右缘（BOTTOM|END，仅上下拖）；信息框默认贴右缘、顶边与棋盘小窗一致
- *   （TOP|END，2026-09-07 起自由拖动、显隐由操控条「信息框」按钮控制，不持久化）。
+ * 悬浮窗总管：操控条（左右两条独立悬浮窗）+ 信息框 + 棋盘小窗。
+ * - 操控条：拆左右两条（2026-09-11，中缝避让屏幕水平居中的时间信息）、同一 yTop、高 44dp、不可拖动；
+ *   左条贴左缘固定宽 148dp（信息框/分割/−/思考时间/+），右条贴右缘自适应宽（开始/下一局/棋盘/返回）。
+ * - 信息框：贴左缘（TOP|START），位于操控条上方（y=操控条顶边−框高，间距已去除）；可自由拖动、显隐由操控条控制。
+ * - 棋盘小窗：贴右缘（TOP|END），不可拖动；yTop=0（顶屏幕顶边/通知栏底）、yBottom=操控条顶边，
+ *   高度撑满可用区（格宽按 9:10 由高度反推）。
  * - 生命周期跟随前台服务（日志仅落文件，无悬浮窗）。
  */
 object OverlayManager {
 
     private var appContext: Context? = null
-    private var controlHost: OverlayHost? = null
+    private var controlLeftHost: OverlayHost? = null
+    private var controlRightHost: OverlayHost? = null
     private var infoHost: OverlayHost? = null
     private var boardHost: OverlayHost? = null
     private var settings: BotSettings? = null
 
-    /** 操控条记忆位置（像素，BOTTOM|END 语义：x=右缘边距，y=底缘边距）。 */
-    private var ctrlX = 8
-    private var ctrlY = 180
-
-    /** 信息框记忆位置（TOP|END 语义：x=右缘边距、y=顶缘边距；默认贴右缘、与棋盘小窗同 y）。 */
-    private var infoX = 0
+    /** 信息框记忆位置（TOP|START 语义：x=左缘边距、y=顶缘边距；默认贴左缘、位于操控条上方）。 */
+    private var infoX = 8
     private var infoY = -1
-    private var boardX = -1
-    private var boardY = -1
 
-    /** 初始（用户未手动移动）定位基准：棋盘右下角 y；null=未校准/不可用 → 退回固定默认。 */
-    private var boardCornerY: Double? = null
-
-    /** 操控条 y 是否由「未移动默认」推导（首帧按棋盘角自定位，拖动后置否）。信息框不再需要（默认位=棋盘小窗顶边）。 */
-    private var ctrlYAuto = false
+    /** 操控条顶边 y（像素）：底边固定在「棋盘顶边 − 100 物理像素」，顶边 = 底边 − 条高 44dp→px（未校准→状态栏+8 兜底）。 */
+    private var controlBarTopPx = 0
 
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val botExecutor =
@@ -155,27 +154,16 @@ object OverlayManager {
                 .also { session = it }
         }
 
-    /** 显示（或恢复显示）悬浮窗；幂等。操控条(右) + 信息框(左) 常驻同显，互不切换。 */
+    /** 显示（或恢复显示）悬浮窗；幂等。操控条（满宽固定）+ 信息框（左缘）常驻同显，互不切换。 */
     suspend fun ensureShown(context: Context) {
         val ctx = context.applicationContext
         if (appContext == null) {
             appContext = ctx
             val s = BotSettings(ctx).also { settings = it }
-            ctrlX = s.overlayControlX.first().let { if (it < 0) 8 else it }
-            val rawCtrlY = s.overlayControlY.first()
-            ctrlY = if (rawCtrlY < 0) 180 else rawCtrlY
-            ctrlYAuto = rawCtrlY < 0
-            // 信息框位置（TOP|END：x=右缘边距、y=顶缘边距）；默认贴右缘、顶边与棋盘小窗一致。
-            // 2026-09-07 锚点从 BOTTOM|START 改为 TOP|END，旧键 overlay_info_x/y 语义不兼容已弃用。
-            infoX = s.overlayInfo2X.first().let { if (it < 0) 0 else it }
+            // 信息框位置（TOP|START：x=左缘边距、y=顶缘边距）；默认贴左缘，y 由「操控条顶边−间距−框高」实时解析。
+            infoX = s.overlayInfo2X.first().let { if (it < 0) 8 else it }
             val rawInfoY = s.overlayInfo2Y.first()
             infoY = if (rawInfoY < 0) statusBarHeightPx() + 5 else rawInfoY
-            boardX = s.overlayBoardX.first()
-            boardY = s.overlayBoardY.first()
-            // 棋盘右下角 y（四角中 x+y 最大者）作初始悬浮窗定位基准；未校准→null→退回固定默认
-            val dm = ctx.resources.displayMetrics
-            boardCornerY = BoardCornersStore.get(dm.widthPixels, dm.heightPixels, ctx)
-                ?.maxByOrNull { it.first + it.second }?.second
             // 棋盘绘制总开关默认值
             BotRuntime.boardWindowShown.value = s.boardDrawEnabled.first()
             uiScope.launch { BotRuntime.autoNext.value = s.autoNextEnabled.first() }
@@ -194,10 +182,26 @@ object OverlayManager {
                 }
             }
         }
+        // 操控条底边 = 棋盘顶边 − 100 物理像素（2026-09-11 用户批示：不用 dp）；顶边 = 底边 − 条高 44dp→px。
+        // 未校准→状态栏+8 兜底；钳制仅防越过状态栏（校准正常时不触发）。每次弹出重算
+        val boardTop = boardTopEdgeY()
+        controlBarTopPx = if (boardTop != null) {
+            val barHeightPx = 44 * ctx.resources.displayMetrics.density
+            (boardTop - 100 - barHeightPx)
+                .coerceAtLeast((statusBarHeightPx() + 8).toDouble())
+                .roundToInt()
+        } else {
+            statusBarHeightPx() + 8
+        }
+        // 思考时间复位为配置文件值（不写 DataStore）；本次对弈内 ±调整仅改内存快照
+        val cfgMovetime = settings?.movetimeMs?.first() ?: BotConfig.configMovetimeMs
+        BotConfig.configMovetimeMs = cfgMovetime
+        BotConfig.setMovetimeRuntime(cfgMovetime)
+        BotRuntime.movetimeMs.value = cfgMovetime
         // 每次从主页「开始对弈」弹出悬浮窗：信息框默认打开（仅本次对弈内可临时隐藏）
         BotRuntime.infoShown.value = true
-        // 常驻双窗：操控条(右) + 信息框(右) 同时显示，互不切换（主线程创建窗）
-        uiScope.launch { ensureControlHost() }
+        // 常驻双窗：操控条左右两条 + 信息框 同时显示（主线程创建窗）
+        uiScope.launch { ensureControlHosts() }
         uiScope.launch { if (BotRuntime.infoShown.value) ensureInfoHost() }
         // 重启后同步棋盘小窗（主线程）
         uiScope.launch { if (BotRuntime.boardWindowShown.value) showBoardWindow() else dismissBoardWindow() }
@@ -209,8 +213,10 @@ object OverlayManager {
     }
 
     fun dismissAll() {
-        controlHost?.dismiss()
-        controlHost = null
+        controlLeftHost?.dismiss()
+        controlLeftHost = null
+        controlRightHost?.dismiss()
+        controlRightHost = null
         infoHost?.dismiss()
         infoHost = null
         boardHost?.dismiss()
@@ -231,39 +237,45 @@ object OverlayManager {
      * 使下次弹窗按默认位创建（信息框 infoY=-1 哨兵 → ensureInfoHost 实时解析状态栏+5）。
      */
     fun resetToDefaults() {
-        ctrlX = 8
-        ctrlY = 180
-        ctrlYAuto = true
-        infoX = 0
+        infoX = 8
         infoY = -1
-        boardX = -1
-        boardY = -1
+        controlBarTopPx = 0
         BotRuntime.autoNext.value = true
         BotRuntime.boardWindowShown.value = true
         BotRuntime.infoShown.value = true
+        BotRuntime.movetimeMs.value = BotConfig.configMovetimeMs
     }
 
     // ---------- 操控条 / 信息框 ----------
 
-    private fun ensureControlHost() {
-        if (controlHost?.isShowing == true) return
-        val ctx = appContext ?: return
-        OverlayHost(ctx).also { controlHost = it }.show(
-            layout = {
-                gravity = Gravity.BOTTOM or Gravity.END
-                width = WindowManager.LayoutParams.WRAP_CONTENT
-                x = ctrlX
-                y = ctrlY
-            },
-        ) { controlContent() }
-        // 初始未移动且有校准：首帧布局后按「棋盘右下角 y + 100px」自定位，避免遮挡棋子
-        // （postLayout 回调异步执行，前置捕获快照值，回调期不依赖可变成员）
-        val cornerY = boardCornerY
-        if (ctrlYAuto && cornerY != null) {
-            controlHost?.postLayout { _, h ->
-                ctrlY = belowBoardTopMargin(cornerY + 100.0, h)
-                controlHost?.updateLayout { y = ctrlY }
-            }
+    /**
+     * 操控条拆分为左右两条（2026-09-11：满宽条中段盖住屏幕水平居中的游戏时间信息，故中缝避让）：
+     * - 左条贴左缘（TOP|START, x=0）：信息框 · 分割 · − · 思考时间 · +，固定宽 148dp。
+     * - 右条贴右缘（TOP|END, x=0）：开始 · 下一局 · 棋盘 · 返回，内容自适应宽。
+     * - 两条同一 yTop（controlBarTopPx），高 44dp，不可拖动；确认态左条=提示文字、右条=确认/取消。
+     */
+    private fun ensureControlHosts() {
+        if (controlLeftHost?.isShowing != true) {
+            val ctx = appContext ?: return
+            OverlayHost(ctx).also { controlLeftHost = it }.show(
+                layout = {
+                    gravity = Gravity.TOP or Gravity.START
+                    width = WindowManager.LayoutParams.WRAP_CONTENT
+                    x = 0
+                    y = controlBarTopPx
+                },
+            ) { controlLeftContent() }
+        }
+        if (controlRightHost?.isShowing != true) {
+            val ctx = appContext ?: return
+            OverlayHost(ctx).also { controlRightHost = it }.show(
+                layout = {
+                    gravity = Gravity.TOP or Gravity.END
+                    width = WindowManager.LayoutParams.WRAP_CONTENT
+                    x = 0
+                    y = controlBarTopPx
+                },
+            ) { controlRightContent() }
         }
     }
 
@@ -274,49 +286,53 @@ object OverlayManager {
         if (infoY < 0) infoY = statusBarHeightPx() + 5
         OverlayHost(ctx).also { infoHost = it }.show(
             layout = {
-                // 2026-09-07：TOP|END 锚点，默认贴屏幕右缘（x=0）、顶边与棋盘小窗初始 y 一致
-                gravity = Gravity.TOP or Gravity.END
+                // TOP|START 锚点：贴屏幕左缘（x=左缘边距），位于操控条上方
+                gravity = Gravity.TOP or Gravity.START
                 width = WindowManager.LayoutParams.WRAP_CONTENT
                 x = infoX
                 y = infoY
             },
         ) { infoContent() }
-    }
-
-    /**
-     * 初始定位换算：让窗口顶边落在「棋盘右下角 y + 100px」之下。
-     * 窗口以 BOTTOM|END 锚定（y=底缘边距），故底缘边距 = 屏高 − 目标顶边 y − 窗口高。
-     * 用户未手动移动时整体位于棋盘下方，不遮挡棋子；无校准数据/窗口未布局时退回 0（沿用调用方原值）。
-     */
-    private fun belowBoardTopMargin(targetTopY: Double, windowHeightPx: Int): Int {
-        val screenH = appContext?.resources?.displayMetrics?.heightPixels ?: return 0
-        return (screenH - targetTopY - windowHeightPx).roundToInt().coerceAtLeast(0)
+        // 信息框位于操控条上方：首帧布局后按「操控条顶边 − 信息框高度」校正顶边（2026-09-11：间距去除，直接贴合）
+        infoHost?.postLayout { _, h ->
+            val targetY = (controlBarTopPx - h).coerceAtLeast(0)
+            infoY = targetY
+            infoHost?.updateLayout { y = targetY }
+        }
     }
 
     @Composable
-    private fun controlContent() {
+    private fun controlLeftContent() {
         ChessBotTheme {
-            val dark = isSystemInDarkTheme()
+            val infoShown by BotRuntime.infoShown.collectAsState()
+            val movetime by BotRuntime.movetimeMs.collectAsState()
+            ControlBarLeftContent(
+                infoShown = infoShown,
+                movetime = movetime,
+                exitPrompt = exitPrompt.value,
+                onInfoToggle = ::onInfoToggle,
+                onAdjustMovetime = ::onAdjustMovetime,
+            )
+        }
+    }
+
+    @Composable
+    private fun controlRightContent() {
+        ChessBotTheme {
             val running by BotRuntime.running.collectAsState()
             val autoNext by BotRuntime.autoNext.collectAsState()
             val boardShown by BotRuntime.boardWindowShown.collectAsState()
-            val infoShown by BotRuntime.infoShown.collectAsState()
-            ControlBarContent(
-                dark = dark,
+            ControlBarRightContent(
                 running = running,
                 autoNext = autoNext,
                 boardShown = boardShown,
-                infoShown = infoShown,
                 exitPrompt = exitPrompt.value,
                 onStartStop = ::onStartStop,
                 onAutoNextChange = ::onAutoNextChange,
                 onBoardToggle = ::onBoardToggle,
-                onInfoToggle = ::onInfoToggle,
                 onRequestClose = ::onRequestClose,
                 onConfirmExit = ::onConfirmExit,
                 onCancelExit = ::onCancelExit,
-                onDragY = { dragControl(it) },
-                onDragEnd = { persistControl() },
             )
         }
     }
@@ -349,32 +365,27 @@ object OverlayManager {
 
     // ---------- 棋盘小窗 ----------
 
-    /** 棋盘小窗：无标题栏、整窗拖动、不可隐藏（显示开关唯一出口=操控条「棋盘」）。
-     *  动态尺寸：高度 = (棋盘上方两角 y − 状态栏高) × 0.7，9:10 比例；位置 TOP|START、x=10、y=状态栏+5。 */
+    /** 棋盘小窗：无标题栏、不可拖动、显示开关唯一出口=操控条「棋盘」。
+     *  定位与高度（2026-09-11 终版批示，全部固定值）：yTop = 0 固定；yBottom = 操控条顶边（间距已去除），
+     *  撑满可用区；格宽按 9:10 比例由可用高度反推。通知栏显隐导致的整体上下移动接受（不再重建换位）。 */
     private suspend fun showBoardWindow() {
         val ctx = appContext ?: return
         if (boardHost?.isShowing == true) return
         val density = ctx.resources.displayMetrics.density
-        val topEdgeY = boardTopEdgeY()
-        val statusBar = statusBarHeightPx()
+        val topPx = 0
+        val bottomPx = controlBarTopPx
+            .coerceAtLeast(topPx + (120 * density).roundToInt())
+        val heightPx = bottomPx - topPx
         val padDp = 8f
-        val cellDp: Float = if (topEdgeY != null) {
-            val avail = (topEdgeY - statusBar).coerceAtLeast(80.0)
-            val heightPx = (avail * 0.7).coerceAtLeast(120.0)
-            val padPx = padDp * density
-            val cellPx = (heightPx - 2 * padPx) / 10.0
-            (cellPx / density).toFloat().coerceAtLeast(8f)
-        } else {
-            24f
-        }
-        // 2026-09-07：默认贴屏幕左缘 x=0（用户未手动移动过时），y 仍=状态栏+5
-        val bx = if (boardX >= 0) boardX else 0
-        val by = if (boardY >= 0) boardY else statusBar + 5
-        boardX = bx
-        boardY = by
+        val padPx = padDp * density
+        val cellPx = (heightPx - 2 * padPx) / 10.0
+        val cellDp = (cellPx / density).toFloat().coerceAtLeast(8f)
+        // 2026-09-11：与信息框左右互换 → 贴屏幕右缘（x=右缘边距 0）；y 按上述公式计算；不允许拖动
+        val bx = 0
+        val by = topPx
         OverlayHost(ctx).also { boardHost = it }.show(
             layout = {
-                gravity = Gravity.TOP or Gravity.START
+                gravity = Gravity.TOP or Gravity.END
                 x = bx
                 y = by
             },
@@ -392,14 +403,14 @@ object OverlayManager {
                 selfPlanned = selfPlanned,
                 cellDp = cellDp.dp,
                 padDp = padDp.dp,
-                onDrag = { dx, dy -> dragBoard(dx, dy) },
-                onDragEnd = { persistBoard() },
+                onDrag = { _, _ -> },
+                onDragEnd = { },
             )
         }
         LogBus.log(
             LogLevel.INFO,
             LogTag.SYSTEM,
-            "棋盘小窗已显示（cell=${cellDp.toInt()}dp, 位置 $bx,$by）"
+            "棋盘小窗已显示（cell=${cellDp.toInt()}dp, 高${heightPx.toInt()}px, yTop=$by, yBottom=$bottomPx）"
         )
     }
 
@@ -468,6 +479,17 @@ object OverlayManager {
         LogBus.log(LogLevel.INFO, LogTag.SYSTEM, "信息框已${if (next) "显示" else "隐藏"}")
     }
 
+    /**
+     * 思考时间 ±调整（操控条 ±50）：仅改内存快照，不写 DataStore（仅本次对弈有效）。
+     * 引擎每次 go 实时读 BotConfig.data.movetimeMs → 调整即刻生效；复位在 ensureShown / 退出时执行。
+     */
+    private fun onAdjustMovetime(delta: Int) {
+        val next = (BotRuntime.movetimeMs.value + delta).coerceIn(100, 3000)
+        BotRuntime.movetimeMs.value = next
+        BotConfig.setMovetimeRuntime(next)
+        LogBus.log(LogLevel.INFO, LogTag.SYSTEM, "思考时间调整为 ${next}ms（本次对弈有效）")
+    }
+
     /** ⌂ 返回 App：自动停止对弈并退出悬浮窗（操控条+信息框+棋盘），回到主界面。运行中→先确认（3s 超时还原）。 */
     private fun onRequestClose() {
         exitPromptJob?.cancel()
@@ -497,6 +519,9 @@ object OverlayManager {
     /** ⌂ 返回：停止前台服务（中断会话 + 收起全部悬浮窗）并回到主界面。 */
     private fun stopAndExitToHome() {
         val ctx = appContext ?: return
+        // 退出时复位思考时间（下次从主页开始读配置文件值）
+        BotConfig.resetMovetimeToConfig()
+        BotRuntime.movetimeMs.value = BotConfig.configMovetimeMs
         BotForegroundService.stop(ctx)
         returnToApp()
     }
@@ -512,37 +537,17 @@ object OverlayManager {
 
     // 拖动只更新窗口位置（每个 move 事件即时生效）；落盘统一在拖动结束时执行一次，
     // 避免拖动过程中每个事件都起 DataStore 写协程造成主线程抖动。
-
-    private fun dragControl(dy: Float) {
-        ctrlYAuto = false
-        ctrlY = (ctrlY - dy.roundToInt()).coerceAtLeast(0)
-        controlHost?.updateLayout { y = ctrlY }
-    }
-
-    private fun persistControl() {
-        uiScope.launch { settings?.setOverlayControl(ctrlX, ctrlY) }
-    }
+    // 操控条（满宽固定）与棋盘小窗（不允许拖动）已去除拖动；仅信息框保留自由拖动。
 
     private fun dragInfo(dx: Float, dy: Float) {
-        // TOP|END 锚定：y 向下增大（y += dy）；x 为右缘边距，手指向右（dx>0）→ 边距减小（x -= dx）。
-        // 自由拖动：仅钳制不越出屏幕（边距 ≥0），不再要求贴边。
-        infoX = (infoX - dx.roundToInt()).coerceAtLeast(0)
+        // TOP|START 锚定：手指向右/下 → x/y 增大（左缘边距/顶缘边距均随手指增大）。
+        // 自由拖动：仅钳制不越出屏幕（边距 ≥0）。
+        infoX = (infoX + dx.roundToInt()).coerceAtLeast(0)
         infoY = (infoY + dy.roundToInt()).coerceAtLeast(0)
         infoHost?.updateLayout { x = infoX; y = infoY }
     }
 
     private fun persistInfo() {
         uiScope.launch { settings?.setOverlayInfo2(infoX, infoY) }
-    }
-
-    private fun dragBoard(dx: Float, dy: Float) {
-        // TOP|START 锚定：手指向右/下 → x/y 增大（与纵向一致；此前横向符号写反）
-        boardX = (boardX + dx.roundToInt()).coerceAtLeast(0)
-        boardY = (boardY + dy.roundToInt()).coerceAtLeast(0)
-        boardHost?.updateLayout { x = boardX; y = boardY }
-    }
-
-    private fun persistBoard() {
-        uiScope.launch { settings?.setOverlayBoard(boardX, boardY) }
     }
 }

@@ -39,6 +39,10 @@ object BotConfig {
     var data: BotConfigData = BotConfigData()
         private set
 
+    /** 配置文件中的思考时间（设置页持久化值），作为运行时 ±调整 的复位基准（不随 ±调整改写）。 */
+    @Volatile
+    var configMovetimeMs: Int = Const.ENGINE_MOVETIME_MS
+
     suspend fun load(context: Context) {
         val s = BotSettings(context)
         data = BotConfigData(
@@ -55,10 +59,12 @@ object BotConfig {
             enemyPollMs = s.enemyPollMs.first(),
             debugUciTrace = s.debugUciTrace.first(),
         )
+        configMovetimeMs = data.movetimeMs
     }
 
     suspend fun save(context: Context, value: BotConfigData) {
         data = value
+        configMovetimeMs = value.movetimeMs
         BotSettings(context).apply {
             setMovetimeMs(value.movetimeMs)
             setThreads(value.threads)
@@ -73,6 +79,19 @@ object BotConfig {
             setEnemyPollMs(value.enemyPollMs)
             setDebugUciTrace(value.debugUciTrace)
         }
+    }
+
+    /**
+     * 运行时调整思考时间（仅改内存快照，不写 DataStore）。
+     * 操控条 ±50 调整与「复位到配置值」共用；引擎每次 go 实时读取 → 即刻生效。
+     */
+    fun setMovetimeRuntime(ms: Int) {
+        data = data.copy(movetimeMs = ms)
+    }
+
+    /** 运行时复位：把思考时间还原为配置文件值（仅改内存快照，不写 DataStore）。 */
+    fun resetMovetimeToConfig() {
+        setMovetimeRuntime(configMovetimeMs)
     }
 }
 
@@ -99,15 +118,10 @@ class BotSettings(private val context: Context) {
     val boardDrawEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_BOARD_DRAW] ?: DEFAULTS.boardDraw }
 
-    /** 悬浮窗位置持久化（-1 = 未记忆，用默认值）。 */
-    val overlayControlX: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_CONTROL_X] ?: -1 }
-    val overlayControlY: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_CONTROL_Y] ?: -1 }
-    val overlayBoardX: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_BOARD_X] ?: -1 }
-    val overlayBoardY: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_BOARD_Y] ?: -1 }
-
     /**
      * 信息框记忆位置 v2（2026-09-07 锚点改 TOP|END：x=右缘边距、y=顶缘边距，与旧键语义不兼容，
      * 故另开新键；-1 = 未记忆，用默认值：贴右缘 x=0、y=状态栏+5 与棋盘小窗一致）。
+     * 2026-09-11：操控条（左右两条固定定位）与棋盘小窗（位置高度全由公式计算）不再记忆位置，仅信息框保留拖动记忆。
      */
     val overlayInfo2X: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_INFO2_X] ?: -1 }
     val overlayInfo2Y: Flow<Int> = context.dataStore.data.map { it[KEY_OVERLAY_INFO2_Y] ?: -1 }
@@ -147,16 +161,6 @@ class BotSettings(private val context: Context) {
     suspend fun setDebugUciTrace(v: Boolean) =
         context.dataStore.edit { it[KEY_DEBUG_UCI_TRACE] = v }
 
-    suspend fun setOverlayControl(x: Int, y: Int) = context.dataStore.edit {
-        it[KEY_OVERLAY_CONTROL_X] = x
-        it[KEY_OVERLAY_CONTROL_Y] = y
-    }
-
-    suspend fun setOverlayBoard(x: Int, y: Int) = context.dataStore.edit {
-        it[KEY_OVERLAY_BOARD_X] = x
-        it[KEY_OVERLAY_BOARD_Y] = y
-    }
-
     suspend fun setOverlayInfo2(x: Int, y: Int) = context.dataStore.edit {
         it[KEY_OVERLAY_INFO2_X] = x
         it[KEY_OVERLAY_INFO2_Y] = y
@@ -180,10 +184,6 @@ class BotSettings(private val context: Context) {
         private val KEY_AUTO_NEXT = booleanPreferencesKey("auto_next_enabled")
         private val KEY_LOG_LEVEL = stringPreferencesKey("file_log_level")
         private val KEY_BOARD_DRAW = booleanPreferencesKey("board_draw_enabled")
-        private val KEY_OVERLAY_CONTROL_X = intPreferencesKey("overlay_control_x")
-        private val KEY_OVERLAY_CONTROL_Y = intPreferencesKey("overlay_control_y")
-        private val KEY_OVERLAY_BOARD_X = intPreferencesKey("overlay_board_x")
-        private val KEY_OVERLAY_BOARD_Y = intPreferencesKey("overlay_board_y")
         private val KEY_OVERLAY_INFO2_X = intPreferencesKey("overlay_info2_x")
         private val KEY_OVERLAY_INFO2_Y = intPreferencesKey("overlay_info2_y")
         private val KEY_TAP_HOLD = intPreferencesKey("tap_hold_ms")
