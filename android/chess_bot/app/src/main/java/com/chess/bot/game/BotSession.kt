@@ -138,17 +138,21 @@ class BotSession(internal val context: Context) {
     // ---------- 启动 ----------
 
     suspend fun start() {
-        interrupted = false
-        running = true
         // 防抖：上一次 start 未结束前忽略重复点击（单线程队列会串行执行两次全量同步）
         if (!startGuard.compareAndSet(false, true)) {
             LogBus.log(LogLevel.WARN, LogTag.PLAY, "启动流程进行中，忽略重复点击")
             return
         }
+        // E 批复（2026-09-11）：这两个标志的复位必须在**拿到守卫之后**——否则「点停止 → 立刻点开始」
+        // 会在上一会话仍在收尾时把 interrupted 清成 false，让正在退出的主循环误以为要继续而继续走棋
+        //（emit 还会把操控条按钮打回运行态）。重复点击直接丢弃；旧会话收尾后按钮回到「开始」。
+        interrupted = false
+        running = true
         try {
             visionWarmup()
             state.reset()
             adoptedByRecovery = false
+            engineAlreadyReset = false // U-1：新一轮启动，重置 ucinewgame 已发标志
             pendingPonderMove = null
             pendingPonderResult = null
             prematurePonderHarvested = false
@@ -216,6 +220,13 @@ class BotSession(internal val context: Context) {
 
     /** 提子恢复流程已接管棋局（StartLoop 返回 Adopted 时置位，start 据此跳过重新初始化）。 */
     internal var adoptedByRecovery = false
+
+    /**
+     * U-1（2026-09-11）：本次启动流程内 ucinewgame 是否已发过——提子恢复 [recoverOwnLift] 已复位 TT，
+     * 紧随其后的 [startFlow] 不再重复发（同一启动流程内 ucinewgame 只发一次）。
+     * [start] 入口复位，防跨次启动残留。
+     */
+    internal var engineAlreadyReset = false
 
     // waitForBoardSettled 与几何守卫助手已于 2026-09-09 U1=A 迁入统一启动循环 StartLoop.kt
 
@@ -343,6 +354,16 @@ class BotSession(internal val context: Context) {
             BotRuntime.waitDetail.value = ""
         }
         emit()
+    }
+
+    /**
+     * C5 批复（2026-09-11）：主循环退出时把状态收敛为「已暂停」，但**不覆盖** [BotStatus.ABNORMAL_PAUSED]。
+     * 异常暂停（走棋总超时 / 等待敌方超时 / 主循环异常）代表「需人工介入」，此前被 startFlow 的 finally
+     * 无条件打回 PAUSED，用户无法从状态行区分两种退出原因；保留后状态行/悬浮窗（均走 status.cn）可直接
+     * 显示「异常暂停」。仍保证 emit()：running=false 必须推送出去，否则 UI 会停留在运行态。
+     */
+    internal fun pauseIfNotAbnormal() {
+        if (status == BotStatus.ABNORMAL_PAUSED) emit() else setStatus(BotStatus.PAUSED)
     }
 
     internal fun emit() {

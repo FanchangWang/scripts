@@ -116,6 +116,19 @@ class BotForegroundService : Service() {
                                 "引擎预热失败（首次走棋时将重试）：${e.message}"
                             )
                         }
+                    // E1（2026-09-11 批复）：开局库（assets/start.obk，~134MB）首启拷贝由「首次查询」
+                    //（computeMove 热路径 → 第一步计算被拷贝阻塞）提前到本预处理阶段，与引擎预热并行。
+                    // 受 bookEnabled 守卫：关闭开局库时不白拷 134MB。
+                    if (BotConfig.data.bookEnabled) {
+                        runCatching { com.chess.bot.book.ObkBook.get(appCtx) }
+                            .onFailure { e ->
+                                LogBus.log(
+                                    LogLevel.WARN,
+                                    LogTag.ENGINE,
+                                    "开局库预热失败（首次查询时将重试）：${e.message}"
+                                )
+                            }
+                    }
                 }
                 com.chess.bot.overlay.BotRuntime.playActive.value = true
                 serviceScope.launch { com.chess.bot.overlay.OverlayManager.ensureShown(this@BotForegroundService) }

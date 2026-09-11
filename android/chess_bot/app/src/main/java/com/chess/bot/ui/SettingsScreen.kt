@@ -165,6 +165,15 @@ fun SettingsScreen(onBack: () -> Unit) {
                 ) { v -> update { it.copy(boardDraw = v) } }
             }
 
+            GroupLabel("调试日志")
+            GroupCard {
+                SwitchRow(
+                    title = "引擎 UCI 收发",
+                    subtitle = "记录发出的 UCI 命令与 bestmove 到达耗时（抓日志时临时打开）",
+                    checked = cfg.debugUciTrace,
+                ) { v -> update { it.copy(debugUciTrace = v) } }
+            }
+
             GroupLabel("其他")
             GroupCard {
                 DropdownRow(
@@ -256,7 +265,7 @@ private val MOVETIME_OPTIONS = listOf(400, 500, 600, 800, 1000, 1500, 2000, 3000
 private val TAP_HOLD_OPTIONS = listOf(50, 80, 100, 150, 200)
 private val VERIFY_ANIM_OPTIONS = listOf(300, 350, 400, 450, 500)
 private val VERIFY_NEXT_FRAME_OPTIONS = listOf(30, 50, 80, 100, 150)
-private val ENEMY_POLL_OPTIONS = listOf(30, 50, 80, 100)
+private val ENEMY_POLL_OPTIONS = listOf(40, 50, 60, 80)
 private val THREADS_OPTIONS = listOf(4, 6, 8)
 private val HASH_OPTIONS = listOf(128, 256, 512, 1024, 1536, 2048, 4096)
 

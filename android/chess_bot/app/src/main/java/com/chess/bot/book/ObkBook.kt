@@ -23,6 +23,8 @@ data class BookMove(
  * 库文件 assets/start.obk（SQLite，293 万局面 / 约 134 MB，经 obk_optimize.py REINDEX+VACUUM 修复
  * idxkey 索引并清空 vmemo），首启拷贝到 filesDir 后只读打开。assets 中 .obk 已在 build.gradle.kts
  * 配置 noCompress（拷贝快、可取精确字节长度用于换库检测）。
+ * E1（2026-09-11）：拷贝前移到前台服务预处理阶段预热（BotForegroundService.onCreate），
+ * 首次查询不再承担 134MB 拷贝阻塞；此处仍保留「首次调用即拷贝」的兜底语义。
  * 格式细节与查询策略均已实证（scripts/obk_check.py）：
  * - vkey 双存储：正键 INTEGER 直接存；负键按位转 Double 存 REAL——数值字面量查询两种形态都能命中
  *   （优化库中 SQLite 整数亲和性转换出的 INTEGER 负值行数值与 punned Double 精确相等）

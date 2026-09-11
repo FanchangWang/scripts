@@ -43,17 +43,18 @@ object Const {
     // det 一次推理仅在接受新局时执行（每局 1 次），不在热路径。
     const val BOARD_GEOMETRY_TOL_PX = 10
 
-    // cls 变化格确认阈值（2026-09-07 真机实测）：修复双重 softmax 后静态棋子 top1 饱和 1.0，
-    // 飞行中动画帧（棋子被提起/途经）实测 0.96 且错判、0.98+ 未发现错。低于此值的读数视为
-    // 「未确认」：不进 changes（不参与帧分类/敌着两帧确认/提交）、board 沿用已提交值、基线
-    // 不刷新——diff 循环下帧自动复检（~45ms/帧），等价免费的时序共识；持续低置信格由噪声
-    // 守卫兜底暂停，日志可见。
-    const val CLS_TRUST_MIN = 0.98f
+    // cls 变化格确认阈值（D1 批复 2026-09-11：0.98 → 0.95）。低于此值的读数视为「未确认」：
+    // 不进 changes（不参与帧分类/敌着两帧确认/提交）、board 沿用已提交值、基线不刷新——
+    // diff 循环下帧自动复检（~45ms/帧），等价免费的时序共识；持续低置信格由噪声守卫兜底暂停，日志可见。
+    // ⚠️ 与原 0.98 相比放宽：更多低置信读数被采信（识别侧收益 / 误判风险同升），
+    // 2026-09-07 实测「飞行中动画帧 0.96 且错判」的记录即落在此阈值之下 → 需真机复验后再定去留。
+    const val CLS_TRUST_MIN = 0.95f
 
     // empty 类分档（2026-09-10 D2=A）：empty 训练采样中动画帧截图少，被动画遮挡格的 empty
     // 置信度系统性偏低（真机 log.txt：未确认格中 new=empty 105 格、[0.95,0.98) 区间 18 格，
     // 为清盘动画渐进遮盖主力；棋子类同区间仅 3 格）→ empty 阈值放宽至 0.95。
-    // lift 误确认直接触发 LIFTED 状态，代价不对称，与棋子同档保持 0.98（D3=A）。
+    // lift 误确认直接触发 LIFTED 状态，代价不对称。原 D3=A 曾与棋子同档 0.98；D1 批复后棋子档
+    // 亦降至 0.95（2026-09-11），两档数值重新巧合一致，但语义仍独立（empty / 棋子各一条规则）。
     const val CLS_TRUST_MIN_EMPTY = 0.95f
 
     /** Board 格值的「提子」语义（cls lift 类）：帧分类瞬时态，提交点归一化为 null。 */
@@ -125,7 +126,7 @@ object Const {
     // 「连续 5 轮零变化」守卫（SELF_MOVE_ZERO_CHANGE_MAX）：设备发烫卡顿时点击事件排队延迟，
     // log.txt 段一实证 5 次补点全部被吞、守卫暂停后数秒棋子自行走出——无限重试 + 总超时更稳。
     const val SELF_MOVE_TOTAL_TIMEOUT_MS =
-        60_000L // 单步走棋总超时（D1=A）：超时直接异常暂停（点「开始」续弈），并打守卫布局供诊断
+        60_000L // 单步走棋总超时（D1=A）：超时直接异常暂停（点「开始」重新开始＝新一局），并打守卫布局供诊断
     const val SELF_RETRY_COOLDOWN_MS =
         1_000L // 重试点击后的冷却（D2=A：RETRY_DST/RETRY_BOTH 生效；RETRY_AFTER_ENEMY 立即重试不冷却），给卡顿设备排空输入队列
     const val RETRY_BACKOFF_START_MS =
@@ -139,16 +140,27 @@ object Const {
     const val ENGINE_HASH_MB = 1024
     const val ENGINE_RULE60_MAX_PLY = 60 // 自然限招
 
-    // 【D3 待批复：本次引擎流程改造后暂无调用方，保留备查】
-    // F2-A（2026-09-08）：裸 go ponder 无限预搜的时间闸门（已被 ponder 收发守卫取代）
-    const val ENGINE_PONDER_CAP_MS = 3_000
-
     // 硬顶追加值（R6）：硬顶 = TARGET + 此值。go movetime 由引擎自停、正常路径永不触顶；
     // 此值只为 go ponder 与引擎假死/管道堵塞兜底，仅留 1s 收尾余量。
     const val ENGINE_HARD_CAP_APPEND_MS = 1000
 
+    // 主搜「思考时间过短」闸门（2026-09-11 04:24 真机：引擎 15ms 返回 500ms 请求，
+    // depth=245/seldepth=2/nodes=8026/score=0 提示把局面判成和棋瞬时收手）：
+    // 实测耗时 < target * ENGINE_MIN_THINK_RATIO 视为异常提前返回 → go() 内重发 position+go 重搜，
+    // 最多 ENGINE_MIN_THINK_RETRIES 次。用比例而非绝对阈值，因 movetime 是「时间下限」、正常搜
+    // 永不低于 40%；唯一着法/将死等合法瞬时返回由重试封顶后接受（着法本就正确），避免死循环。
+    // ponder 收割（ponderHit）走 monitorSearch 直连、快速返回是设计预期，不触发本闸门。
+    const val ENGINE_MIN_THINK_RATIO = 0.4f
+    const val ENGINE_MIN_THINK_RETRIES = 2
+
     // 发 stop 后等 bestmove 的上限（超时走现有 restart 兜底）
     const val ENGINE_STOP_BESTMOVE_TIMEOUT = 2000L
+
+    // UCI 收发埋点（原 D4 开关 2026-09-11）：开启后每行发出的 UCI 命令与 bestmove 到达时刻
+    // 各落一条 DEBUG（bestmove 行附「自最近一次 go 起的耗时」，配对即可直接量出单步真实搜索时长）。
+    // 用途：真机观察点 1（单步耗时是否 ≈ 设定思考时间）取证 + go/ponderhit 是否真送达引擎。
+    // ⚠️ 会显著增加日志量（每步约 +3~5 行）。本开关已迁移为运行时设置 BotConfigData.debugUciTrace
+    // （默认 false＝关闭，设置页「调试日志」分组可临时打开），不再由 Const 硬编码常量控制。
 
     // ---------- 开局库 ----------
     const val ENGINE_BOOK_ENABLED = true // 是否启用开局库（启用即全程生效：命中走书、未命中回落引擎）
@@ -183,7 +195,7 @@ object Const {
     const val ENEMY_FRAME_CHANGED_MIN = 12      // 【已废弃】原 frameDiff 触发识别的最小变化像素数
     const val ENEMY_FORCE_RECOGNIZE_MS = 200L // 【已废弃】原 frameDiff 兜底强制识别间隔，现每轮均全量识别
     const val ENEMY_IDLE_POLL_MS =
-        50L // 每轮全量识别后的短暂让步间隔（2026-09-07 D1=B：30→50，降低 grab 频率/GC 压力，敌着检出延迟 +~20ms）
+        40L // 每轮全量识别后的短暂让步间隔（2026-09-07 D1=B：30→50，降低 grab 频率/GC 压力，敌着检出延迟 +~20ms）
 
     // ---------- 对局结束 / 认输检测 ----------
     const val RESIGN_CONFIRM_COUNT = 3 // 双方将帅缺失需连续几帧才确认

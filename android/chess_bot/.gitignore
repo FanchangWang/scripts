@@ -13,3 +13,4 @@ app/release/
 *.obk-shm
 *.obk-wal
 .vscode/
+log.txt

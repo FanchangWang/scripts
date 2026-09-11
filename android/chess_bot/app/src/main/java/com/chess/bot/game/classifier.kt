@@ -49,15 +49,17 @@ fun isSelfPairSettled(
  * 不再有 myMoveSettled 兜底：SELF_DONE 的判定即「起点变空 + 落点成为我方棋子」，已直接覆盖；
  * 动画中尚未 settle 的敌方中途格不影响该判定，故兜底分支不可达（已与用户确认移除）。
  *
- * @param preBoard 走子前的已提交棋盘（state.board）；提供时对推断出的敌方走子做伪合法校验
- *   （2026-09-06：动画中间帧的非法着法如「象 c9->d8」拒判，落回 NOISY 等干净帧），null=跳过校验（测试用）
+ * @param preBoard 走子前的已提交棋盘（state.board）；对推断出的敌方走子做伪合法校验
+ *   （2026-09-06：动画中间帧的非法着法如「象 c9->d8」拒判，落回 NOISY 等干净帧）。
+ *   B-1（2026-09-11）：**取消默认值，调用方必须显式声明**——生产一律传 state.board，
+ *   使「必然校验」成为编译期约束（防将来漏传静默失效）；测试可显式传 null 表示跳过校验。
  */
 fun classifySelfFrame(
     changes: List<Change>,
     newBoard: Board,
     expected: Move,
     mySide: Side,
-    preBoard: Board? = null,
+    preBoard: Board?,
 ): SelfFrame {
     val changes = stripTransitLift(changes)
     return when {
@@ -105,9 +107,11 @@ fun classifySelfFrame(
 }
 
 /** 敌方走棋检测单帧分类（返回 EnemyFrame data class，result 判断、enemyMove 取移动数据）。
- *  @param preBoard 走子前已提交棋盘；提供时对 n==2 推断的走子做伪合法校验
- *   （动画中间帧如「象 c9->d8」拒判为 NOISY，等落定帧），null=跳过校验（测试用） */
-fun classifyEnemyFrame(changes: List<Change>, mySide: Side, preBoard: Board? = null): EnemyFrame {
+ *  @param preBoard 走子前已提交棋盘；对 n==2 推断的走子做伪合法校验
+ *   （动画中间帧如「象 c9->d8」拒判为 NOISY，等落定帧）。
+ *   B-1（2026-09-11）：**取消默认值，调用方必须显式声明**——生产一律传 state.board；
+ *   测试可显式传 null 表示跳过校验。 */
+fun classifyEnemyFrame(changes: List<Change>, mySide: Side, preBoard: Board?): EnemyFrame {
     val changes = stripTransitLift(changes)
     return when (changes.size) {
         0 -> EnemyFrame(EnemyFrameResult.SILENT)

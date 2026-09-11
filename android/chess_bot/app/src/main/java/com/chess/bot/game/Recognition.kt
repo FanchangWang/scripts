@@ -56,11 +56,12 @@ fun recognizeBoardChanged(
                     } else {
                         board[r][c] = new
                         if (old != new) {
-                            // 置信度确认门（2026-09-07 真机实测 0.98；2026-09-10 D2=A 分类别）：
+                            // 置信度确认门（2026-09-07 真机实测 0.98 → 2026-09-11 D1 批复 0.95；2026-09-10 D2=A 分类别）：
                             // 低置信读数多为动画帧（实测 0.96 且错判），不进 changes（不参与敌着
                             // 两帧确认/提交）、board 写回 committed、基线不刷新——下帧 diff 自动复检。
                             // empty 分档 0.95：empty 训练采样动画遮挡图少 → 概率摊薄（log.txt 实测
                             // 未确认格 new=empty 105 格、[0.95,0.98) 18 格，为清盘动画渐进遮盖主力）。
+                            // ⚠️ lift 无独立分档，走 CLS_TRUST_MIN → D1 后阈值同为 0.95（误确认成本上升）。
                             val trustMin =
                                 if (new == null) Const.CLS_TRUST_MIN_EMPTY else Const.CLS_TRUST_MIN
                             if (res.top1Prob < trustMin) {

@@ -16,7 +16,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.chess.bot.TestBoards as TB
 
-/** 我方走棋帧分类测试（翻译 python test_capture 12 场景中的纯分类部分）。 */
+/** 我方走棋帧分类测试（翻译 python test_capture 12 场景中的纯分类部分）。
+ *  B-1（2026-09-11）：preBoard 取消默认值后，本文件统一显式传 null = 跳过伪合法校验
+ *  （本文件只测分类形状；preBoard 门控行为由 PseudoLegalTest 覆盖）。 */
 class ClassifierSelfTest {
 
     // ---------- n==2 ----------
@@ -28,7 +30,7 @@ class ClassifierSelfTest {
         val changes = listOf(Change(7, 3, "r_R", null), Change(0, 3, "b_r", "r_R"))
         val expected = Move(7 to 3, 0 to 3, "r_R")
 
-        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED, null)
         assertEquals(SelfFrameResult.SELF_DONE, fc.result)
         assertEquals(Move(7 to 3, 0 to 3, "r_R", "b_r"), fc.selfMove)
 
@@ -54,7 +56,7 @@ class ClassifierSelfTest {
             Change(0, 1, null, "b_r"),
             Change(5, 4, null, Const.LIFT),
         )
-        val fc = classifySelfFrame(changes, after, Move(6 to 1, 0 to 1, "b_r"), Side.BLACK)
+        val fc = classifySelfFrame(changes, after, Move(6 to 1, 0 to 1, "b_r"), Side.BLACK, null)
         assertEquals(SelfFrameResult.SELF_DONE, fc.result)
         assertEquals(Move(6 to 1, 0 to 1, "b_r", null), fc.selfMove)
     }
@@ -64,7 +66,7 @@ class ClassifierSelfTest {
         val b = TB.empty().also { it[7][3] = "r_R"; it[5][5] = "b_r" }
         val after = TB.copy(b).also { it[5][5] = null; it[5][4] = "b_r" }
         val changes = listOf(Change(5, 5, "b_r", null), Change(5, 4, null, "b_r"))
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
@@ -76,7 +78,7 @@ class ClassifierSelfTest {
         )
         val after = TB.empty().also { it[0][3] = "b_c" }
         val expected = Move(7 to 3, 0 to 3, "r_R")
-        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED, null)
         assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertNull(fc.selfMove?.captured)
         assertEquals(Move(5 to 5, 0 to 3, "b_c", "r_R"), fc.enemyMove)
@@ -92,7 +94,7 @@ class ClassifierSelfTest {
 
         // 新模型不再区分「是否最后一帧」：n==1 且正是我方起点提子即判 Lifted（循环会持续等到落定）
         val fc =
-            classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+            classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.LIFTED, fc.result)
     }
 
@@ -105,6 +107,7 @@ class ClassifierSelfTest {
             after,
             Move(7 to 3, 0 to 3, "r_R"),
             Side.RED,
+            null,
         )
         assertEquals(SelfFrameResult.NOISY, fc.result)
     }
@@ -118,6 +121,7 @@ class ClassifierSelfTest {
             TB.fullBoard(Side.RED),
             Move(7 to 3, 0 to 3, "r_R"),
             Side.RED,
+            null,
         )
         assertEquals(SelfFrameResult.SILENT, fc.result)
     }
@@ -137,7 +141,7 @@ class ClassifierSelfTest {
         )
         val expected = Move(8 to 4, 9 to 4, "r_P")
 
-        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED, null)
         assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
 
         val state = GameState()
@@ -167,7 +171,7 @@ class ClassifierSelfTest {
             Change(0, 3, null, "r_R"),
         )
         val expected = Move(7 to 3, 0 to 3, "r_R")
-        val fc = classifySelfFrame(changes, after, expected, Side.RED)
+        val fc = classifySelfFrame(changes, after, expected, Side.RED, null)
         assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertEquals(Move(5 to 5, 7 to 3, "b_c", null), fc.enemyMove)
     }
@@ -188,7 +192,7 @@ class ClassifierSelfTest {
             Change(7, 7, "b_c", null),
             Change(7, 4, null, "b_c"),
         )
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertEquals(Move(7 to 7, 7 to 4, "b_c", null), fc.enemyMove)
     }
@@ -204,7 +208,7 @@ class ClassifierSelfTest {
             after[i][0] = "b_p"
             changes.add(Change(i, 0, null, "b_p"))
         }
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
@@ -212,7 +216,7 @@ class ClassifierSelfTest {
     fun `n大于4 双方将帅缺失 Noisy`() {
         val after = TB.empty() // 无任何将帅
         val changes = (0 until 5).map { Change(it, 0, null, "b_p") }
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 
@@ -225,7 +229,7 @@ class ClassifierSelfTest {
             Change(5, 5, "b_c", null),
         )
         val after = TB.empty().also { it[0][3] = "b_c" }
-        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+        val fc = classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.SELF_THEN_ENEMY, fc.result)
         assertNull(fc.selfMove?.captured)
         assertTrue(Board::class.java.isInstance(after))
@@ -238,7 +242,7 @@ class ClassifierSelfTest {
         val lifted = TB.copy(b).also { it[7][3] = Const.LIFT }
         val changes = listOf(Change(7, 3, "r_R", Const.LIFT))
         val fc =
-            classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+            classifySelfFrame(changes, lifted, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.LIFTED, fc.result)
     }
 
@@ -248,7 +252,7 @@ class ClassifierSelfTest {
         val after = TB.copy(b).also { it[7][3] = "b_p" }
         val changes = listOf(Change(7, 3, "r_R", "b_p"))
         val fc =
-            classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED)
+            classifySelfFrame(changes, after, Move(7 to 3, 0 to 3, "r_R"), Side.RED, null)
         assertEquals(SelfFrameResult.NOISY, fc.result)
     }
 

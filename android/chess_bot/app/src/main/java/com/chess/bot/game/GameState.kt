@@ -140,9 +140,20 @@ class GameState {
     var baselineFen: String? = null
         private set
 
-    /** 基线之后的着法全列表（ICCS 标准方向，与基线 FEN 同坐标系）：
-     *  applySelfMove / applyEnemyMove / applySelfThenEnemy 三个提交点追加。 */
-    val movesList = mutableListOf<String>()
+    /** 基线之后着法全列表的存储（F-1 2026-09-11：私有，写入仅经 [appendMoveIccs]）。 */
+    private val _movesList = mutableListOf<String>()
+
+    /** 基线之后的着法全列表（ICCS 标准方向，与基线 FEN 同坐标系）——**只读视图**：
+     *  写入仅经三个提交点（applySelfMove / applyEnemyMove / applySelfThenEnemy → appendMoveIccs）。 */
+    val movesList: List<String> get() = _movesList
+
+    /**
+     * 开局库挂起（E2，2026-09-11）：皮卡鱼 info 一旦返回 mate（正=我方 N 步杀 / 负=被绝杀，
+     * 两者皆意味局面已进入杀棋序列）→ 本局后续不再查开局库，直接走引擎（书对残局无贡献，
+     * 且每步白查 ~134MB 库）。新局 [reset] 自动解除——口径「直到自动下一局开新局再启用开局库」。
+     */
+    var bookSuspendedByMate = false
+        private set
 
     /** 我方最近一步起止格（棋盘小窗「我方箭头」数据源；红/黑方各保留各自最新一步）。 */
     var selfHighlight: List<Pair<Int, Int>> = emptyList()
@@ -196,7 +207,8 @@ class GameState {
         initialized = false
         halfmoveClock = 0
         baselineFen = null
-        movesList.clear()
+        _movesList.clear()
+        bookSuspendedByMate = false
         gameOver = false
         highlight = emptyList()
         selfHighlight = emptyList()
@@ -250,6 +262,11 @@ class GameState {
         initialized = true
     }
 
+    /** E2：引擎 info 已返回 mate → 本局挂起开局库（幂等；新局 [reset] 解除）。 */
+    fun suspendBookByMate() {
+        bookSuspendedByMate = true
+    }
+
     /**
      * 拍引擎 position 基线（幂等：已有则直接返回）。基线 = 当前局面 FEN；
      * 此前累积的 movesList 清零（那些着法已体现在基线里，防回放双计）。
@@ -260,8 +277,8 @@ class GameState {
         if (existing != null) return existing
         val fen = fenOfBoard(board, mySide, turn, halfmoveClock)
         baselineFen = fen
-        val absorbed = movesList.size
-        movesList.clear()
+        val absorbed = _movesList.size
+        _movesList.clear()
         LogBus.log(
             LogLevel.INFO, LogTag.ENGINE,
             "引擎 position 基线已拍（moves 从零累计${if (absorbed > 0) "，基线前 $absorbed 手已并入基线" else ""}）：$fen"
@@ -271,7 +288,7 @@ class GameState {
 
     /** moves 追加漏斗：网格 → ICCS（gridToSquare 与 fenOfBoard 同一套翻转规则，坐标系一致）。 */
     private fun appendMoveIccs(move: Move) {
-        movesList.add(
+        _movesList.add(
             gridToSquare(move.src.first, move.src.second, mySide) +
                     gridToSquare(move.dst.first, move.dst.second, mySide)
         )

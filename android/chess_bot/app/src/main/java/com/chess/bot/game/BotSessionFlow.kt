@@ -57,7 +57,9 @@ internal suspend fun BotSession.startFlow() {
     running = true
     emit()
     try {
-        engine.newGame(context)
+        // U-1（2026-09-11）：提子恢复路径（recoverOwnLift）已发过 ucinewgame 复位 TT，
+        // 此处不重复发——同一次启动流程内 ucinewgame 只发一次；正常启动路径（标志为 false）照常发。
+        if (engineAlreadyReset) engineAlreadyReset = false else engine.newGame(context)
         flowLoop()
     } catch (e: Exception) {
         LogBus.log(
@@ -68,7 +70,9 @@ internal suspend fun BotSession.startFlow() {
         setStatus(BotStatus.ABNORMAL_PAUSED)
     } finally {
         running = false
-        setStatus(BotStatus.PAUSED)
+        // C5 批复（2026-09-11）：异常暂停（走棋/等敌总超时、主循环异常）保留给用户看，不再被无条件
+        // 打回「已暂停」——两种退出原因在状态行上可辨识
+        pauseIfNotAbnormal()
     }
     LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "对弈主循环已退出")
 }
@@ -85,12 +89,21 @@ internal suspend fun BotSession.flowLoop() {
             if (!doMove()) {
                 if (state.gameOver) {
                     LogBus.log(LogLevel.DEBUG, LogTag.PLAY, "我方走棋阶段检测到对局结束")
+                } else if (interrupted) {
+                    // E 批复（2026-09-11）：用户主动点「停止」——本步搜索/结果整体作废，主循环结束。
+                    // 再次点「开始」一律按**新一局**处理（重新截屏全量同步；已走棋即视为残局），
+                    // 不续接中断前的局面与着法记录（state.reset 已清基线/moves）。
+                    LogBus.log(
+                        LogLevel.INFO,
+                        LogTag.PLAY,
+                        "已按用户请求停止，本步结果已作废；重新点「开始」将按新一局处理",
+                    )
                 } else if (running) {
-                    // 走棋失败但未结束：doMove 内部已按总超时/中断处理并落日志
+                    // 走棋失败但未结束：doMove 内部已按总超时处理并落日志
                     LogBus.log(
                         LogLevel.WARN,
                         LogTag.PLAY,
-                        "走棋中止，自动对弈已暂停，可点击「开始」续弈"
+                        "走棋中止，自动对弈已暂停，可点击「开始」重新开始（按新一局处理）"
                     )
                 }
                 break
@@ -120,14 +133,19 @@ internal suspend fun BotSession.flowLoop() {
  * 首击直接补落目标格（跳过点源格——对提着中的棋子再点源格行为不可控）。
  */
 internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Boolean {
+    // C4 批复（2026-09-11）：总超时起点提前到入口——computeMove 的引擎思考时长一并计入
+    // SELF_MOVE_TOTAL_TIMEOUT_MS(60s) 预算，避免「思考久 + 走棋重试」两段各自计时而叠加越界。
+    val startMs = System.nanoTime() / 1_000_000
     val pending = computeMove() ?: return false
+    // E 中断守卫（2026-09-11）着子前复检：computeMove 期间用户可能已点「停止」——
+    // 此刻立刻放弃，不再向棋盘注入点击（避免「已停止却仍落子」）
+    if (!running || interrupted) return false
     val unpacked = unpackMove(pending.move) ?: return false
     val (r1, c1, r2, c2, piece) = unpacked
     state.resignStreak = 0
     // 提子恢复：源格==提子格 → 棋子已在手，首轮直接只点目标格
     var dstOnly = dstOnlySrc != null && r1 == dstOnlySrc.first && c1 == dstOnlySrc.second
     var attempt = 0
-    val startMs = System.nanoTime() / 1_000_000
     while (true) {
         attempt++
         if (!running || interrupted) return false
@@ -135,14 +153,14 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
             LogBus.log(LogLevel.DEBUG, LogTag.SELF, "对局已结束，停止走棋重试")
             return false
         }
-        // D1=A 总超时（2026-09-10）：无限重试由总时长封顶。设备卡顿（点击排队延迟）场景
-        // 数秒内自行恢复后下一次补点即成功；真遮挡/着法被拒场景 60s 后暂停交用户处理。
+        // D1=A 总超时（2026-09-10；C4 2026-09-11 起点提前到入口含思考时间）：无限重试由总时长封顶。
+        // 设备卡顿（点击排队延迟）场景数秒内自行恢复后下一次补点即成功；真遮挡/着法被拒场景 60s 后暂停交用户处理。
         if (System.nanoTime() / 1_000_000 - startMs > Const.SELF_MOVE_TOTAL_TIMEOUT_MS) {
             LogBus.log(
                 LogLevel.ERROR,
                 LogTag.SELF,
                 "走棋总超时 ${Const.SELF_MOVE_TOTAL_TIMEOUT_MS / 1000}s（共尝试 $attempt 次），" +
-                        "疑似设备卡顿或弹窗遮挡，自动对弈已暂停（处理后点「开始」续弈）",
+                        "疑似设备卡顿或弹窗遮挡，自动对弈已暂停（点「开始」重新开始，按新一局处理）",
             )
             Recognizer.formatLayout(state.board)
                 .forEach { LogBus.log(LogLevel.WARN, LogTag.VISION, "守卫触发布局 $it") }
@@ -241,6 +259,17 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     }
     setStatus(BotStatus.THINKING)
     selfMatePending = false
+    // E 中断守卫（2026-09-11；E 批复 2026-09-11）：用户点「停止」→ 本次着法计算**整体作废**，
+    // 开局库 / ponder 预搜 / 引擎三条来源一律不再出着法（中断就是中断，不落盘任何中间态：
+    // 不写 pendingPonderMove 与 state.lastMove*，也不落入「引擎无着法 → 终局」误判分支）。
+    // computeMove 与 doMove 同线程，此处只读会话标志、无竞态；doMove 在点击前另有一道复检兜底。
+    val shouldAbort: () -> Boolean = { !running || interrupted }
+    fun droppedByInterrupt(): Boolean {
+        if (!shouldAbort()) return false
+        LogBus.log(LogLevel.DEBUG, LogTag.ENGINE, "已中断，丢弃本次着法计算结果，不产生着法")
+        return true
+    }
+    if (droppedByInterrupt()) return null
     // 敌方走子命中预判：直接消费 ponderHit 预搜结果，省去一次完整引擎搜索（仅当着法有效）
     val pre = pendingPonderResult
     pendingPonderMove = null
@@ -260,7 +289,7 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
             emit()
             LogBus.log(
                 LogLevel.DEBUG, LogTag.ENGINE,
-                "命中预判：直接使用 ponder 预搜着法 $preMove（${evalDetail(pre)}）",
+                "命中预判：采用 ponder 预搜着法 $preMove（${evalDetail(pre)}），预测敌着 ${pre.ponderMove ?: "-"}",
             )
             return PendingMove(preMove)
         }
@@ -275,7 +304,8 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     val cfg = BotConfig.data
 
     // ---------- 开局库优先（启用即全程生效，命中走书、未命中回落引擎） ----------
-    if (cfg.bookEnabled) {
+    // E2（2026-09-11）：引擎一旦返回 mate，本局挂起书（state.bookSuspendedByMate），直接走引擎
+    if (cfg.bookEnabled && !state.bookSuspendedByMate) {
         // 书库 vkey 按 ICCS 标准方向（黑上红下、a 列在左）计算；执黑时屏幕棋盘需先 180° 旋转归一化，
         // 返回的 ICCS 着法再经 unpackMove 的 squareToGrid(iccs, mySide) 转回屏幕网格（两条链路对称）
         val bookBoard =
@@ -311,6 +341,7 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     }
 
     // ---------- 引擎 ----------
+    if (droppedByInterrupt()) return null // 开局库查询/预搜消费期间发生的中断
     val baselineFen = state.ensureEngineBaseline() // 轮次判定已拍，此处防御兜底
     LogBus.log(
         LogLevel.DEBUG, LogTag.ENGINE,
@@ -318,23 +349,28 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     )
     var result: EngineResult
     try {
-        result = engine.bestMove(context, baselineFen, state.movesList)
+        result = engine.bestMove(context, baselineFen, state.movesList, interrupted = shouldAbort)
     } catch (e: EngineError) {
         LogBus.log(LogLevel.ERROR, LogTag.ENGINE, "引擎错误：${e.message}")
         return null
     }
-    // 记录引擎预测敌着，供我方走子后启动 ponder 预搜（仅引擎来源；开局库无预测）
-    pendingPonderMove = result.ponderMove
+    if (droppedByInterrupt()) return null
     if (result.move == null) {
         val shortTime = Const.ENGINE_MOVETIME_MS * 2 / 3
         LogBus.log(LogLevel.WARN, LogTag.ENGINE, "引擎无可用着法，改用 $shortTime ms 短时限重试")
         try {
-            result = engine.bestMove(context, baselineFen, state.movesList, movetimeMs = shortTime)
+            result = engine.bestMove(
+                context, baselineFen, state.movesList,
+                movetimeMs = shortTime, interrupted = shouldAbort,
+            )
         } catch (e: EngineError) {
             LogBus.log(LogLevel.ERROR, LogTag.ENGINE, "重试引擎错误：${e.message}")
             return null
         }
+        if (droppedByInterrupt()) return null
     }
+    // 记录引擎预测敌着，供我方走子后启动 ponder 预搜（仅引擎来源；开局库无预测）
+    pendingPonderMove = result.ponderMove
     if (result.move == null) {
         LogBus.log(LogLevel.WARN, LogTag.ENGINE, "引擎无可用着法（对局可能已结束）")
         finishGame("引擎判定我方无路可走，对局结束")
@@ -355,7 +391,7 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     LogBus.log(
         LogLevel.DEBUG,
         LogTag.ENGINE,
-        "引擎着法：${result.move}（${evalDetail(result)}）",
+        "引擎着法：${result.move}（${evalDetail(result)}），预测敌着 ${result.ponderMove ?: "-"}",
     )
     return PendingMove(result.move)
 }
@@ -375,6 +411,20 @@ internal fun BotSession.unpackMove(move: String): Unpacked? {
             LogTag.PLAY,
             "着法 $move 起点无我方棋子，棋盘数据可能已过期，请点击「开始」重同步"
         )
+        return null
+    }
+    // B-3（2026-09-11）：点击前对已提交棋盘做伪合法断言 —— R3「基线/moves 与 board 静默分叉」的检出器。
+    // 我方着法来自引擎/开局库，正常必然合法；一旦在 board 上非法，说明发给引擎的 position 与已提交
+    // board 已不是同一局面（引擎在错误局面上算棋）→ 立刻中止报错，而不是盲点 + 把错误着法写进 movesList。
+    if (!isPseudoLegal(state.board, Move(from, to, piece), state.mySide)) {
+        LogBus.log(
+            LogLevel.ERROR,
+            LogTag.PLAY,
+            "着法 $move（${pieceLabel(piece)}）在已提交棋盘上伪合法校验失败，" +
+                    "疑似棋盘状态与引擎局面分叉，中止走棋；请检查局面后点「开始」重同步"
+        )
+        Recognizer.formatLayout(state.board, state.mySide)
+            .forEach { LogBus.log(LogLevel.WARN, LogTag.VISION, "分叉诊断布局 $it") }
         return null
     }
     state.selfHighlight = listOf(from, to)
@@ -447,9 +497,22 @@ internal fun BotSession.evalOverlayText(): String = when {
     }
 }
 
-/** mate 记账：matePly == 1 = 本步即杀着 → 走完验证后直接终局（绝杀只认 info mate）。 */
+/** mate 记账：matePly == 1 = 本步即杀着 → 走完验证后直接终局（绝杀只认 info mate）。
+ *  E2（2026-09-11）：此处亦是「引擎已返回 mate」的唯一漏斗（主搜 / ponder 两路共用），
+ *  matePly 非空（正=我方 N 步杀 / 负=被绝杀）即挂起本局开局库，后续直接走引擎。 */
 internal fun BotSession.recordMateInfo(result: EngineResult) {
     selfMatePending = result.matePly == 1
+    suspendBookIfMate(result.matePly)
+}
+
+/** E2：引擎 info 返回 mate → 本局不再查开局库（幂等，仅首次打点）。新局 [GameState.reset] 自动解除。 */
+internal fun BotSession.suspendBookIfMate(matePly: Int?) {
+    if (matePly == null || state.bookSuspendedByMate) return
+    state.suspendBookByMate()
+    LogBus.log(
+        LogLevel.INFO, LogTag.ENGINE,
+        "皮卡鱼 info 已返回 mate（$matePly），本局后续改用引擎、不再查开局库（自动下一局恢复）"
+    )
 }
 
 // ---------- 自动下一局 ----------

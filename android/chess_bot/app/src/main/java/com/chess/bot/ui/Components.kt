@@ -84,9 +84,10 @@ fun SwitchRow(
     title: String,
     checked: Boolean,
     enabled: Boolean = true,
+    subtitle: String? = null,
     onChange: (Boolean) -> Unit,
 ) {
-    SettingRow(title = title, enabled = enabled) {
+    SettingRow(title = title, subtitle = subtitle, enabled = enabled) {
         Switch(checked = checked, enabled = enabled, onCheckedChange = onChange)
     }
 }

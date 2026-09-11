@@ -12,7 +12,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * BotSession 敌方链（B2 拆分自 BotSession.kt，2026-09-09 方案 6 / D1=A）。
  *
- * 职责：我方提子恢复 + 敌方走棋检测（T-D 两帧一致确认）+ ponder 收发守卫（A 项）+
+ * 职责：我方提子恢复 + 敌方走棋检测（D1 连续两帧同着法确认，取代原 T-D 两帧复抓与 stable 闸门；途经格误判与 04:15 hang 修复见 VERIFY.md §十五）+ ponder 收发守卫（A 项）+
  * 敌着提交公共路径（ponder 命中取预搜/未命中丢弃 + cellImgs 局部更新）+ 敌方局面应用。
  * 纯移动不改逻辑：函数体逐字搬运，类成员 private 已在 B1 放宽为 internal 后经扩展函数访问
  * （字段 lastLiftArtifactWarnAt 留守类内：顶层 var 会改变多实例语义）。
@@ -31,7 +31,9 @@ import kotlin.time.Duration.Companion.milliseconds
  * 理论上不存在我方提子，下半区提子帧按过渡等待，见 StartLoop）。
  *
  * 步骤：
- * 1. 重新接管会话语义（state.reset；StartLoop 入口此前的旧局状态一并清除）；
+ * 1. 重新接管会话语义（state.reset 清空基线/着法记录；StartLoop 入口此前的旧局状态一并清除）——
+ *    引擎侧等价「以恢复后的棋盘为新开局」（D2=A 2026-09-11）：ucinewgame 复位 TT，旧局着法记录
+ *    有意丢弃；基线由随后的 doMove→computeMove→ensureEngineBaseline 以恢复后棋盘重拍；
  * 2. 向上逐 px cls 扫描识别提起子身份（悬浮棋子位于格子上半部，无需先验猜测，D1）；
  * 3. 恢复棋盘（提起子落回原格）并按 initialize 语义接管状态（resetCellImgs 基线、
  *    turn=我方；恢复着法计入 moveCount，D4=A）；
@@ -94,7 +96,13 @@ internal suspend fun BotSession.recoverOwnLift(
         Recognizer.formatLayout(state.board, mySide)
             .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "恢复布局 $it") }
         emit()
+        // D2 批复（2026-09-11，结论=保持现状）：接管按「新开一局残局」处理，不保留上一局的 TT——
+        // 保留中断前的着法记录无意义（真实棋盘已与之无关，沿玩下去只会污染 position 回放），
+        // 而 App 每次都完整发 `position fen 基线 moves …`，局面由 App 显式指定。
+        // 此处 ucinewgame 后，紧随的 doMove→computeMove→ensureEngineBaseline 会把「恢复后的棋盘」
+        // 拍成本局初始 FEN（state.reset 已把基线清空，故必重拍、moves 从零累计）。
         engine.newGame(context)
+        engineAlreadyReset = true // U-1（2026-09-11）：本次启动已复位 TT，紧随的 startFlow 不再重复发
         if (!doMove(dstOnlySrc = liftPos)) {
             LogBus.log(
                 LogLevel.ERROR, LogTag.PLAY,
@@ -127,6 +135,8 @@ internal suspend fun BotSession.waitForEnemyMove() {
     val cap = capture
     val startMs = System.nanoTime() / 1_000_000
     var prevChanges: List<Change>? = null // 帧间一致性（参考 verifyForSelfMove v3）：上一帧变化格子集合（null=首帧视为不稳定）
+    var pendingEnemyMove: Move? =
+        null // D1（2026-09-11 04:15 修正）：最近一次 MOVED 检测到的着法；连续两主循环帧相等（Move 相等，忽略置信度浮动）才提交
     var stableUnknownSinceMs = -1L // 稳定未知模式起始时刻（仅 NOISY/灰区等不可行动帧累计，已知进度帧重置）
     var lastStableScanMs = -1L // (e) 兜底外层节流时间戳：稳定未知触发终局检查+OCR 强扫的最小间隔
     while (running && !interrupted && !state.gameOver) {
@@ -171,28 +181,22 @@ internal suspend fun BotSession.waitForEnemyMove() {
                 when (frame.result) {
                     EnemyFrameResult.MOVED -> {
                         frame.enemyMove?.let { move ->
-                            // T-D 两帧一致确认（2026-09-06）：首帧 MOVED 可能是动画中途帧
-                            //（如車 C0→C9 途经 C5，几何合法、伪合法校验拦截不了），复抓复判
-                            //（不加显式延时，单次 grabBoard 已够），敌着两帧一致才提交。
-                            val confirmGrab = reconfirmEnemyMoved(move)
-                            if (confirmGrab == null) {
-                                if (running && !interrupted && !state.gameOver) {
-                                    LogBus.log(
-                                        LogLevel.DEBUG,
-                                        LogTag.ENEMY,
-                                        "两帧确认未通过（敌着未复现，疑似动画中途帧），丢弃本帧继续等待",
-                                    )
-                                }
-                                // S5：敌方在动=已知进度（动画中途帧），重置稳定未知计数
-                                stableUnknownSinceMs = -1L
+                            // D1（2026-09-11）：先修 log2.txt 276-278 途经格误判（原 reconfirmEnemyMoved 两帧复抓
+                            // 在 b4 停两帧误判 b3→b4）；再修 04:15 日志「stable 闸门因 Change 含 top1Prob 逐帧浮动
+                            // 永不成立」导致敌方走子落定后 changes 归零/被日志去重、着法永不提交（卡 16s+）。
+                            // 落点确认改为「连续两主循环帧检测到同一着法（Move 相等，忽略置信度浮动）即提交」：
+                            // ① 真实落点连续两帧稳定 → 提交；② 途经格 b4 仅被一帧捕捉、下一帧变为下一步/变空 →
+                            // 不会连续两帧相同，自然排除（比原 reconfirm 立即复抓更稳，33ms 停留抓不到两帧）；
+                            // ③ 当前帧 grabbed 的 changes 非空 → commitEnemyMove 内 updateCellImgs 正确。grabbed 交外层 finally 单 release。
+                            if (pendingEnemyMove == move) {
+                                setStatus(BotStatus.ENEMY_CONFIRM)
+                                commitEnemyMove(move, grabbed)
+                                pendingEnemyMove = null
+                                return
                             } else {
-                                try {
-                                    setStatus(BotStatus.ENEMY_CONFIRM)
-                                    commitEnemyMove(move, confirmGrab)
-                                    return
-                                } finally {
-                                    confirmGrab.corrected.release()
-                                }
+                                // 记候选，等下一帧复检：途经格会在下一帧落选，真实着法会在下一帧复现
+                                pendingEnemyMove = move
+                                stableUnknownSinceMs = -1L
                             }
                         }
                     }

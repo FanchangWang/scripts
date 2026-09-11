@@ -229,7 +229,9 @@ class PseudoLegalTest {
     }
 
     @Test
-    fun `classifyEnemyFrame 不传preBoard保持旧行为`() {
+    fun `classifyEnemyFrame 显式传null时跳过校验`() {
+        // B-1（2026-09-11）：preBoard 取消默认值后调用方必须显式声明；显式 null = 跳过伪合法校验
+        //（测试专用——生产两处调用均传 state.board，见 BotSessionEnemy）
         val b = board(Triple(0, 2, "b_b"))
         val changes = listOf(
             Change(0, 2, "b_b", null),
@@ -237,7 +239,7 @@ class PseudoLegalTest {
         )
         assertEquals(
             EnemyFrame(EnemyFrameResult.MOVED, move(0 to 2, 1 to 3, "b_b")),
-            classifyEnemyFrame(changes, Side.RED),
+            classifyEnemyFrame(changes, Side.RED, null),
         )
     }
 }
