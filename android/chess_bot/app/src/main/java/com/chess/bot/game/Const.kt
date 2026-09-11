@@ -138,7 +138,7 @@ object Const {
     // 手机 SoC 核心数少于 PC：有意低于 python 的 12（勿在未确认目标机型核心数时调回）
     const val ENGINE_THREADS = 6
     const val ENGINE_HASH_MB = 1024
-    const val ENGINE_RULE60_MAX_PLY = 60 // 自然限招
+    const val ENGINE_RULE60_MAX_PLY = 90 // 自然限招
 
     // 硬顶追加值（R6）：硬顶 = TARGET + 此值。go movetime 由引擎自停、正常路径永不触顶；
     // 此值只为 go ponder 与引擎假死/管道堵塞兜底，仅留 1s 收尾余量。

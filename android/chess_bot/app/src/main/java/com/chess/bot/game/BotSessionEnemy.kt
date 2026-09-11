@@ -19,7 +19,8 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * waitForEnemyMove 重构（2026-09-10，参考 verifyForSelfMove v3）：n 分流（0 静默 / ≤2 classify /
  * 3..30 灰区）+ (d) diffCells>30 大面积遮挡 verifyEndgameCheck + (e) 稳定未知 2s 兜底（OCR 强扫）+
- * (f) 32 子新局摆棋检测（终局漏检兜底，2026-09-10 D3=A）+ 180s 总超时；
+ * (f) 32 子新局摆棋检测（终局漏检兜底；2026-09-11 晚扩两级：级2 覆盖无吃子局——大动画帧 latch +
+ * 稳定帧 + 开局形态 + 无 lift）+ 180s 总超时；stable 比较忽略 top1Prob（同日修复）；
  * 废除旧「连续噪声帧暂停」体系（noisyCount/ENEMY_NOISY_MAX，见 Const.kt 注释）。
  */
 
@@ -139,6 +140,10 @@ internal suspend fun BotSession.waitForEnemyMove() {
         null // D1（2026-09-11 04:15 修正）：最近一次 MOVED 检测到的着法；连续两主循环帧相等（Move 相等，忽略置信度浮动）才提交
     var stableUnknownSinceMs = -1L // 稳定未知模式起始时刻（仅 NOISY/灰区等不可行动帧累计，已知进度帧重置）
     var lastStableScanMs = -1L // (e) 兜底外层节流时间戳：稳定未知触发终局检查+OCR 强扫的最小间隔
+    // 新局摆棋判定 latch（2026-09-11 晚）：本轮等待发生过 diffCells>VERIFY_OCR_DIFF_CELLS 的大面积
+    // 动画/遮挡帧即置位，waitForEnemyMove 结束自然失效。重摆动画必然产生 >30 格 diff 帧（即使整段
+    // 动画落在两次截屏之间，过渡单帧 diff 也是 32~38 格），故「发生过」对重开是必然事件
+    var largeAnimSeen = false
     while (running && !interrupted && !state.gameOver) {
         // D1=A 总超时（2026-09-10）：对方单步限时 ≤120s + 动画余量；超时先 OCR 强扫
         //（对方超时判负的结算页可能已渲染而格子信号未达标），命中直接终局，未命中再暂停
@@ -162,8 +167,13 @@ internal suspend fun BotSession.waitForEnemyMove() {
             val n = changes.size
             if (!running || interrupted || state.gameOver) break
             val nowMs = System.nanoTime() / 1_000_000
-            // 帧间一致性（参考 verifyForSelfMove v3）：变化格子集合逐格相同（同格同 old/new；两帧皆空也算稳定）
-            val stable = (prevChanges != null) && (changes == prevChanges)
+            // 帧间一致性（参考 verifyForSelfMove v3）：变化格子集合逐格相同（同格同 old/new；两帧皆空也算稳定）。
+            // 忽略 top1Prob（2026-09-11 晚）：cls 概率逐帧低位浮动，含它则两帧永不相等 → stable 永不成立，
+            // (e) 稳定兜底与新局摆棋判定双双失效（04:15 卡死同款病，MOVED 路径已修，此处补齐）
+            val stable = prevChanges != null && changes.size == prevChanges.size &&
+                    changes.zip(prevChanges).all { (a, b) ->
+                        a.r == b.r && a.c == b.c && a.old == b.old && a.new == b.new
+                    }
             prevChanges = changes
 
             // ── n==0：静默帧（伪代码 changes==0 continue；S1：真静默重置稳定未知计数，防误入 (e) 兜底）──
@@ -237,24 +247,41 @@ internal suspend fun BotSession.waitForEnemyMove() {
             }
             // n ∈ 3..VERIFY_OCR_DIFF_CELLS：动画/噪声灰区，静默继续（参考 verifyForSelfMove (c)），交 (e) 稳定兜底
 
-            // ── (f) 新局摆棋检测（2026-09-10 D3=A 简化版）：已提交棋盘 <32 子而扫描板恢复
-            //     32 子 → 上一局终局信号漏检后游戏已自动摆好下一局（32 子连读模式），
-            //     此时 n 落灰区、(d) 的 OCR 已错过结算页，原逻辑只能空等到 180s 总超时。
-            //     对局中棋子只减不增，32 子不可能在局中出现；开局等敌手时 committed==32
-            //     不满足 <32，零误触发。标记本局结束交 flowLoop 走 autoNextGame——
+            // ── (f) 新局摆棋检测（2026-09-10 D3=A；2026-09-11 晚扩两级）：
+            //     级1（原版）：已提交棋盘 <32 子（本局有吃子）而扫描板恢复 32 子 → 上一局终局
+            //     信号漏检后游戏已自动摆好下一局（32 子连读模式），此时 n 落灰区、(d) 的 OCR
+            //     已错过结算页，原逻辑只能空等到 180s 总超时。
+            //     级2（2026-09-11 晚，用户方案批复）：committed==32（本局无吃子，级1 前置恒假）
+            //     时，要求本轮等待发生过大面积动画帧 + 两帧稳定 + 扫描板为开局形态（全初始位或
+            //     仅红方一子）+ 全盘无 lift 格 → 判定重摆新局。误触发论证：真实对局棋子只减不增、
+            //     位置不可回退到开局形态，能稳定读出该形态的只可能是重摆（即使误判，代价=重拍
+            //     基线 + ucinewgame，行为等价无错误）。标记本局结束交 flowLoop 走 autoNextGame——
             //     StartLoop 对 32 子开局形态免准入证据（openingForm 直通），摆棋若仍在
             //     动画中由其稳定判定 + det 几何守卫兜底。
-            if (pieceCount(grabbed.scan.board) == 32 && pieceCount(state.board) < 32) {
-                finishGame(
-                    "检测到棋盘恢复 32 子（原 ${pieceCount(state.board)} 子），" +
-                            "判定本局已结束，进入自动下一局"
-                )
-                return
+            if (pieceCount(grabbed.scan.board) == 32) {
+                if (pieceCount(state.board) < 32) {
+                    finishGame(
+                        "检测到棋盘恢复 32 子（原 ${pieceCount(state.board)} 子），" +
+                                "判定本局已结束，进入自动下一局"
+                    )
+                    return
+                }
+                if (largeAnimSeen && stable &&
+                    liftCells(grabbed.scan.board).isEmpty() &&
+                    isEarlyOpeningForm(grabbed.scan.board, state.mySide)
+                ) {
+                    finishGame(
+                        "检测到大面积动画后棋盘稳定回到开局形态（本局无吃子），" +
+                                "判定本局已结束，进入自动下一局"
+                    )
+                    return
+                }
             }
 
             // ── (d) diffCells > VERIFY_OCR_DIFF_CELLS：大面积遮挡（弹窗/遮罩/结算画面）→
             //     OCR/终局检查（updateResign / confirmEndByOcr 节流 / dismissDrawDialog 内聚于 verifyEndgameCheck）──
             if (grabbed.scan.diffCells > Const.VERIFY_OCR_DIFF_CELLS) {
+                largeAnimSeen = true // (f) 级2 前置：本轮等待发生过大面积动画帧
                 verifyEndgameCheck(grabbed)?.let {
                     if (it == VerifyOutcome.DONE_END) return
                     // RETRY_BOTH（和棋弹窗已关闭）：继续等待
