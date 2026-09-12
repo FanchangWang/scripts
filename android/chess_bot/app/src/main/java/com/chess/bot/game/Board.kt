@@ -151,17 +151,22 @@ fun fenOfBoard(
 }
 
 /**
- * 布局日志格式化（2026-09-08 Q1：打印视角跟随我方——「下方为我方棋子」）。
- * 网格恒定「我方在屏幕下半区（rows 5..9）」；执红打印 r9→r0 使红子落在文本块底部
- * （与屏幕一致）；执黑时行序翻转为 r0→r9，使我方黑子落在文本块底部。
- * 行号标签保留原始网格坐标 r0..r9，与其他日志（gridToSquare 等）可对照。
+ * 布局日志格式化（2026-09-12 用户批示：打印 UCI 的 file 竖列与 rank 横排）。
+ * - board 网格**原样打印**（行序恒 r0→r9，不做红黑翻转）：网格口径我方恒在 r5..9，
+ *   故最后一行恒为我方后排（帥/將行），与棋盘小窗显示方向一致。
+ *   （原实现红方分支 r9→r0 把我方后排打到文本块顶部，属方向 bug，已删。）
+ * - 行/列表头跟随我方视角（与 [gridToSquare] 同一映射）：
+ *   执红：列头 a b c … i、行号 9 8 … 0（自上而下）；执黑：列头 i h … a、行号 0 1 … 9。
+ * - 首行与末行均为列头（真机棋盘上下边界的坐标标识）。
  * 空格用全宽中点「・」(U+30FB) 与汉字等宽（2026-09-08 Q2：窄字符「·」导致列不对齐）。
  * lift 提子瞬时态显示为「提」。纯函数（无 OpenCV 依赖），JVM 单测可直接覆盖。
  */
 fun formatLayoutLines(board: Board, mySide: Side = Side.RED): List<String> {
     val lines = mutableListOf<String>()
-    val rowRange = if (mySide == Side.BLACK) 0 until ROWS else ROWS - 1 downTo 0
-    for (r in rowRange) {
+    val files = (0 until COLS).map { c -> gridToSquare(0, c, mySide)[0] }
+    val header = "  " + files.joinToString(" ")
+    lines.add(header)
+    for (r in 0 until ROWS) {
         val cells = (0 until COLS).joinToString(" ") { c ->
             when (val v = board[r][c]) {
                 null -> "・"
@@ -169,7 +174,8 @@ fun formatLayoutLines(board: Board, mySide: Side = Side.RED): List<String> {
                 else -> PIECE_CN[v] ?: v
             }
         }
-        lines.add("r$r $cells")
+        lines.add("${gridToSquare(r, 0, mySide).substring(1)} $cells")
     }
+    lines.add(header)
     return lines
 }

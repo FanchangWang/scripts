@@ -75,6 +75,7 @@
 - 二进制放置：APK `jniLibs/<abi>/libpikafish.so` → 安装后在 nativeLibraryDir 下可直接 exec（规避 targetSdk 29+ W^X 限制）
 - NNUE：`assets/pikafish.nnue` 首启拷贝至 filesDir（临时名 + rename 原子写），启动参数显式 setoption EvalFile
 - 方法一一对应：best_move / is_mate / newgame / close；ucinewgame→go movetime→bestmove 解析、(none) 重试短时限、EngineError 异常类型全部对齐
+- **position 滚动重锚演进制（2026-09-12 D1=B 窗口 6 / D2=A DEBUG 日志）**：引擎 position 一律 `position fen <基线> moves <锚点后着法>`；基线由 `GameState.ensureEngineBaseline()`（无基线时首拍，幂等）与 `maybeRollEngineBaseline()`（滚动重锚）共同维护——movesList 达 `ENGINE_MOVE_WINDOW`(6) 手即重拍基线 FEN（`fenOfBoard(board, mySide, turn, halfmoveClock)`，侧向/半回合钟由当前 state 保证，50 回合规则无损）、moves 清零，**携带上限 = 窗口−1 = 5 手**。滚动仅挂在三个 apply* 提交函数末尾（board/turn/halfmoveClock 一致点）；`applySelfThenEnemy` 两手提交完才判（中途滚动会拍到错误行棋方）。取舍：窗口越大重复局面/长打感知越深（引擎靠 position 回放历史识别重复），越小 position 行越短——性能收益≈0，本机制价值在列表有界 + FEN 直接由视觉 board 生成。消费端（computeMove / maybeStartPonder / PikafishEngine）零感知
 
 ### 5. 状态机（对应 session.py GameSession）
 方法级对照（2026-09-09 方案 6 拆分后，internal 扩展函数路线——类成员 private 放宽 internal，调用点零改动）：
@@ -104,7 +105,7 @@ python 对照：start / verify / waitForEnemyMove / applySelfMove / applySelfThe
   - (c) n ∈ 5..`VERIFY_OCR_DIFF_CELLS`(30) → 动画/噪声灰区，静默继续；
   - (d) n > 30 → 大面积遮挡（和棋弹窗/结算遮罩/结束画面）→ `verifyEndgameCheck`（updateResign + confirmEndByOcr + dismissDrawDialog，OCR 类节流 `OCR_SUSPECT_SCAN_THROTTLE_MS`）；drawDialog 关闭 → RETRY_BOTH；
   - (e) 稳定未知模式持续超 `VERIFY_UNKNOWN_STABLE_MS`(2000) → 终局检查 + RETRY_BOTH（计入守卫）；liveness 硬顶 `VERIFY_HARD_CAP_MS`(15s) → RETRY_BOTH。
-  - **帧间一致性 = 变化格子集合逐格比较**（`changes == prevChanges`，Change 为 data class；两帧皆空也算稳定），不用自定义状态机记忆
+  - **帧间一致性 = 变化格子集合逐格比较**（同格同 old/new，**忽略 top1Prob**——cls 概率逐帧浮动，含它则 stable 永不成立，2026-09-12 与敌方链同款修复；两帧皆空也算稳定），不用自定义状态机记忆
   - **基线白名单（核心）**：所有提交点（`commitSelfSettled`/`commitSelfThenEnemy`/T-B/敌方提交）只刷新被提交着法覆盖的格子 + driftCells（`refreshBaselineCells` 合成 Change 保证落定格必刷）；其余变化格（敌方仅提起/伪影）一律留 diff 管线——防 17:59 类「无关格进基线 → 敌着两格对被拆散 → 误暂停」污染。原 SELF_DONE「方案 A filter」（按格类型排除，放行敌方落子格）与 SELF_THEN_ENEMY 全量刷基线均已废除
   - **敌着拼对规则**：敌源格只认「敌子→空格」，不认「敌子→lift」（提子格当敌源易误判）；敌落点认「空→敌子」或本步 dst（被反吃）。`inferMove` 源格条件 `new==null` 天然满足；classifyN3/N4 各分支同
   - doMove：attemptMove 退化为纯点击（原 isRetry 稳判预检删除，职责移入 verify——无时间窗后落定态必被观测，盲点重试不再有「重新提起已落子」问题）；RETRY_DST 首轮清零守卫、连续两轮计入（防补点死循环）；RETRY_BOTH 计入守卫；RETRY_AFTER_ENEMY 清零

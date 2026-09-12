@@ -75,8 +75,14 @@ internal suspend fun BotSession.verifyForSelfMove(
         try {
             val changes = grabbed.scan.changes
             val n = changes.size
-            // 帧间一致性（v3）：变化格子集合逐格相同（同格同 old/new；两帧皆空也算稳定）
-            val stable = prevChanges != null && changes == prevChanges
+            // 帧间一致性（v3）：变化格子集合逐格相同（同格同 old/new；两帧皆空也算稳定）。
+            // 忽略 top1Prob（2026-09-12）：cls 概率逐帧低位浮动，含它则两帧永不相等 → stable 永不
+            // 成立，SELF_THEN_ENEMY 稳定提交与 (e) 2s 稳定兜底双双失效（敌方链 2026-09-11 晚已修，
+            // 此处补齐同款；MOVED 两帧确认走 Move 相等不受影响）
+            val stable = prevChanges != null && changes.size == prevChanges.size &&
+                    changes.zip(prevChanges).all { (a, b) ->
+                        a.r == b.r && a.c == b.c && a.old == b.old && a.new == b.new
+                    }
             prevChanges = changes
             val nowMs = System.nanoTime() / 1_000_000
 

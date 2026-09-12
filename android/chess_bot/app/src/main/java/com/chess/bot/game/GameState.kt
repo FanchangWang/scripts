@@ -271,6 +271,7 @@ class GameState {
      * 拍引擎 position 基线（幂等：已有则直接返回）。基线 = 当前局面 FEN；
      * 此前累积的 movesList 清零（那些着法已体现在基线里，防回放双计）。
      * 显式调用点：decideStartTurn / autoNextGame 轮次判定后；computeMove / maybeStartPonder 兜底。
+     * 与 [maybeRollEngineBaseline] 分工：本方法只在无基线时首拍；滚动重锚走后者。
      */
     fun ensureEngineBaseline(): String {
         val existing = baselineFen
@@ -284,6 +285,26 @@ class GameState {
             "引擎 position 基线已拍（moves 从零累计${if (absorbed > 0) "，基线前 $absorbed 手已并入基线" else ""}）：$fen"
         )
         return fen
+    }
+
+    /**
+     * position 滚动重锚（2026-09-12 D1=B 窗口 6 / D2=A DEBUG 日志）：movesList 达
+     * [Const.ENGINE_MOVE_WINDOW] 手 → 重拍基线 FEN（fen 滚动生成，侧向/半回合钟由
+     * 当前 state 保证，50 回合规则无损）、moves 清零 → 引擎 position 行只携带窗口内着法。
+     * 仅在三个 apply* 提交函数末尾调用（此时 board/turn/halfmoveClock 全部一致）；
+     * applySelfThenEnemy 须两手都提交完调用一次（中途滚动会拍到错误的行棋方）。
+     * 旧基线着法全部并入新基线，回放语义不变；对 computeMove/maybeStartPonder/PikafishEngine 透明。
+     */
+    fun maybeRollEngineBaseline() {
+        if (_movesList.size < Const.ENGINE_MOVE_WINDOW) return
+        val fen = fenOfBoard(board, mySide, turn, halfmoveClock)
+        baselineFen = fen
+        val absorbed = _movesList.size
+        _movesList.clear()
+        LogBus.log(
+            LogLevel.DEBUG, LogTag.ENGINE,
+            "引擎 position 基线滚动重锚（$absorbed 手并入基线，moves 从零累计）：$fen"
+        )
     }
 
     /** moves 追加漏斗：网格 → ICCS（gridToSquare 与 fenOfBoard 同一套翻转规则，坐标系一致）。 */
@@ -301,6 +322,7 @@ class GameState {
         highlight = listOf(move.src, move.dst)
         selfHighlight = listOf(move.src, move.dst)
         selfPlanned = false
+        maybeRollEngineBaseline()
     }
 
     fun applyEnemyMove(move: Move) {
@@ -309,6 +331,7 @@ class GameState {
         turn = mySide
         highlight = listOf(move.src, move.dst)
         enemyHighlight = listOf(move.src, move.dst)
+        maybeRollEngineBaseline()
     }
 
     /** 我方走棋成功 + 敌方已完成一步，轮到我方。 */
@@ -322,6 +345,8 @@ class GameState {
         selfHighlight = listOf(selfMove.src, selfMove.dst)
         selfPlanned = false
         enemyHighlight = listOf(enemyMove.src, enemyMove.dst)
+        // 两手全部提交完才判定滚动（中途滚动会拍到错误的行棋方）
+        maybeRollEngineBaseline()
     }
 
     fun markGameOver() {

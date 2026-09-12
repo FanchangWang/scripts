@@ -178,7 +178,9 @@ object Recognizer {
         Array(ROWS) { r -> Array<String?>(COLS) { c -> analyzeCell(corrected, r, c) } }
 
     /**
-     * 布局日志格式化：实现见 game 包 formatLayout（Board.kt，纯函数便于 JVM 单测）。
+     * 布局日志格式化：实现见 game 包 formatLayoutLines（Board.kt，纯函数便于 JVM 单测）。
+     * board 网格原样打印（r0→r9，我方后排恒在最后一行），行/列表头按 [mySide] 输出
+     * UCI 视角（红 a..i / 9..0，黑 i..a / 0..9）。
      */
     fun formatLayout(board: Board, mySide: Side = Side.RED): List<String> =
         formatLayoutLines(board, mySide)

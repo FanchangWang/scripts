@@ -162,7 +162,7 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
                 "走棋总超时 ${Const.SELF_MOVE_TOTAL_TIMEOUT_MS / 1000}s（共尝试 $attempt 次），" +
                         "疑似设备卡顿或弹窗遮挡，自动对弈已暂停（点「开始」重新开始，按新一局处理）",
             )
-            Recognizer.formatLayout(state.board)
+            Recognizer.formatLayout(state.board, state.mySide)
                 .forEach { LogBus.log(LogLevel.WARN, LogTag.VISION, "守卫触发布局 $it") }
             running = false
             setStatus(BotStatus.ABNORMAL_PAUSED)
