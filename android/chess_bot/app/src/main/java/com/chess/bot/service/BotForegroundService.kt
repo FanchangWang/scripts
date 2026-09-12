@@ -30,7 +30,7 @@ class BotForegroundService : Service() {
         createChannel()
         // 配置先于日志加载：文件日志级别过滤读 BotConfig（默认 DEBUG 兜底）
         serviceScope.launch { BotConfig.load(applicationContext) }
-        // 会话日志在 handleStart 按模式开启：仅「开始对弈」清历史并新建（校准不动日志）
+        // 会话日志在 handleStart 按模式开启：仅「开始对弈」新建会话分片（历史保留，校准不动日志）
         LogBus.log(LogLevel.INFO, LogTag.SERVICE, "前台服务已创建")
     }
 
@@ -77,11 +77,11 @@ class BotForegroundService : Service() {
             LogTag.SERVICE,
             "收到授权结果：code=$resultCode${if (isCalibration) "（校准模式）" else ""}"
         )
-        // 会话日志：仅「开始对弈」开启——清空历史（只保留最后一次对弈）并新建第一分片；
-        // 校准模式不开日志（不清历史、不写文件）
+        // 会话日志：仅「开始对弈」开启——保留历史分片，新建本会话第一分片；
+        // 校准模式不开日志（不写文件）
         if (!isCalibration) {
             FileLogger.start(this)
-            LogBus.log(LogLevel.INFO, LogTag.SERVICE, "会话日志已开启（历史已清空）")
+            LogBus.log(LogLevel.INFO, LogTag.SERVICE, "会话日志已开启（新建分片，历史保留）")
         }
 
         // Android 14+：必须先进入 mediaProjection 型前台服务，再获取 MediaProjection

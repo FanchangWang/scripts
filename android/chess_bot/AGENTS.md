@@ -290,7 +290,7 @@ android/chess_bot/
 │           │   └── BoardCornersStore.kt    # 校准四角持久化 board_corners.json（手动优先）
 │           └── log/
 │               ├── LogBus.kt               # LogEvent(kind+tag+time) SharedFlow + logcat 镜像
-│               └── FileLogger.kt           # 文件日志（级别四档 + FileProvider 导出）
+│               └── FileLogger.kt           # 文件日志（级别四档 + 5MB 分片轮转 + 保留 5 片 + FileProvider 导出；2026-09-12 起不再清空历史）
 ├── scripts/                        # Python 维护脚本（开局库校验 / 优化 / 探测）
 │   ├── obk_check.py                # OBK 格式全量校验（Zobrist 常量硬编码）
 │   ├── obk_optimize.py             # 索引修复 / 清空 vmemo / VACUUM 压缩

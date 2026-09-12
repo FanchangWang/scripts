@@ -8,12 +8,13 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 文件日志（2026-09-07 调整）：每次从主页「开始对弈」弹出前台服务时**清空全部历史日志**，
- * 只保留本次对弈；单文件超过 MAX_BYTES 轮转分片（不再截断），最多保留 MAX_FILES 个分片，
- * 超出时删除最早的一片。文件名 `session-<ts>-<NNN>.log`，NNN 序号保证字典序=时间序。
+ * 文件日志（2026-09-12 调整）：**不再清空历史**——每次从主页「开始对弈」弹出前台服务时只新建
+ * 一个会话分片，历史分片全部保留；单文件超过 MAX_BYTES 轮转分片（不再截断），最多保留
+ * MAX_FILES 个分片（**跨会话滚动**，按文件名时间序取最新 5 个），超出时删除最早的一片。
+ * 文件名 `session-<ts>-<NNN>.log`，NNN 序号保证字典序=时间序。
  *
  * 位置 filesDir/logs/（App 私有，无需权限）；导出经 FileProvider + 系统分享面板。
- * 校准模式启动的前台服务不开会话日志（不清历史、不写文件）。
+ * 校准模式启动的前台服务不开会话日志（不写文件）。
  */
 object FileLogger {
 
@@ -34,13 +35,15 @@ object FileLogger {
         override fun initialValue() = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
     }
 
-    /** 开启新会话：清空全部历史会话文件（只保留最后一次对弈），创建第一个分片。 */
+    /**
+     * 开启新会话：**保留全部历史分片**，只创建本会话的第一个分片（2026-09-12 起不再清空历史）。
+     * 分片总数上限由 [openNew] 按文件名时间序滚动淘汰到 MAX_FILES。
+     */
     @Synchronized
     fun start(context: Context) {
         stop()
         val d = File(context.filesDir, "logs").apply { mkdirs() }
         dir = d
-        d.listFiles { f -> f.name.startsWith(PREFIX) }?.forEach { it.delete() }
         seq = 1
         openNew()
     }
