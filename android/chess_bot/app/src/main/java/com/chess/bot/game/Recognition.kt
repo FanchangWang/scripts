@@ -24,7 +24,16 @@ import org.opencv.core.Mat
  *
  * @param baseline   上一提交点冻结的 90 格中心小图（state.prevCellImgs），用作逐格 diff 基线
  * @param committed  已提交棋盘（state.board）；未变格直接沿用，保证 newBoard 完整
- * @return BoardScan(新布局, 相对 committed 的变动列表, diff 命中格数,
+ * @param forceFull  全量模式（2026-09-13 用户批复 P5）：跳过逐格 diff 门，90 格**全部**跑 cls 复检。
+ *   动因：diff 基线可能失明——落点被误提起后 committed 该格为 null，读数「空→lift」被当飞行伪影剔除
+ *   （见下方 `old == null && new == LIFT` 分支），该格从此永不进 changes（真机 h6h4 卡死 39.7s）。
+ *   ⚠️ 只放宽「是否进入复检」这一道门，**其余语义一律不变**：
+ *   ① changes——未变格仍沿用 committed、低置信仍回退 committed、飞行伪影仍剔除；
+ *   ② diffCells / driftCells——仍按「本帧截图格子图 vs prevCells 小图真有像素差」计
+ *      （2026-09-13 用户批复：若让 diffCells 跟着全量走，恒 ≈90 会被下游 (d) 分支当成
+ *      大面积遮挡 → occlusionStreak 每帧累积 → 第 7 帧 finishGame 误判终局）；
+ *   产出结构与 diff 路径同构，调用方（verify 的 (a)~(e) 全部分支）零改动复用。
+ * @return BoardScan(新布局, 相对 committed 的变动列表, 像素真变格数（与是否全量无关）,
  *   自修复格列表 driftCells——diff 触发但识别值==已提交(无真实走子)，提交点据此自愈 cellImgs，
  *   防止 baseline 永久陈旧(白点/高亮/光照漂移)导致误触发随步数累积，2026-08-30 05:49)
  */
@@ -33,6 +42,7 @@ fun recognizeBoardChanged(
     baseline: Array<Array<Mat?>>,
     committed: Board,
     mySide: Side = Side.RED,
+    forceFull: Boolean = false,
 ): BoardScan {
     val board = makeEmptyBoard()
     val changes = mutableListOf<Change>()
@@ -48,8 +58,16 @@ fun recognizeBoardChanged(
             for (c in 0 until COLS) {
                 Recognizer.cropCellGrayInto(corrected, r, c, patch)
                 val base = baseline[r][c]
-                if (base == null || Recognizer.cellChanged(patch, base)) {
-                    diffCells++
+                // 2026-09-13 用户批复修正：forceFull 只放宽「本格是否进入复检」这一道门，
+                // diffCells **必须仍由「像素真的变了」决定**（本帧截图格子图 vs prevCells 小图）。
+                // 若照旧写成 `base == null || forceFull || cellChanged` 再无条件 ++，全量模式下
+                // diffCells 恒 ≈90 > VERIFY_OCR_DIFF_CELLS(30) → verify/(d) 与 waitForEnemyMove/(d)
+                // 会把每一帧都当「大面积遮挡」→ occlusionStreak 每帧累积 → 第 7 帧直接 finishGame
+                // **误判对局结束**（不只是日志数字失真）。
+                // 非全量时 forceFull=false，`forceFull || pixelChanged` ≡ `pixelChanged`，与旧实现逐字等价。
+                val pixelChanged = base == null || Recognizer.cellChanged(patch, base)
+                if (forceFull || pixelChanged) {
+                    if (pixelChanged) diffCells++
                     val (new, res) = Recognizer.analyzeCellEx(corrected, r, c)
                     val old = committed[r][c]
                     if (old == null && new == Const.LIFT) {
@@ -81,10 +99,13 @@ fun recognizeBoardChanged(
                             } else {
                                 changes.add(Change(r, c, old, new, res.top1Prob))
                             }
-                        } else if (base != null) {
+                        } else if (pixelChanged && base != null) {
                             // diff 触发但识别值与已提交一致（无真实走子）：画面漂移（白点/高亮/光照）。
                             // 提交点据此把 cellImgs 更新为当前干净外观，避免 baseline 永久陈旧→误触发累积。
                             // 漂移只服务基线自愈、与棋子变更无关，不落日志（2026-09-12 Q2）
+                            // pixelChanged 门（2026-09-13 用户批复）：全量模式下「未变格」也在复检内，
+                            // 但它们不属于漂移——不加此门会把 90 格全塞进 driftCells，令提交点把整盘基线
+                            // 无条件刷成当前帧外观（含正处动画中的误读格，会把误读固化成新基线）。
                             driftCells.add(r to c)
                         }
                     }
@@ -119,7 +140,9 @@ internal fun changeText(
  * 识别明细日志（2026-09-12 Q2）：开关 `BotConfig.data.debugVisionDetail`（设置页「调试日志」分组，默认关）。
  *
  * 只报三类计数 + 明细：
- * - 光影变化格数：像素 diff 触发的格子数（含动画遮挡/伪影/漂移）——「本帧有多少格进入复检」
+ * - 光影变化格数：像素 diff 触发的格子数（含动画遮挡/伪影/漂移）——非全量模式下即「本帧有多少格
+ *   进入复检」；全量模式下复检面扩到 90 格，但此计数**仍只算像素真变的格**（2026-09-13 用户批复：
+ *   它同时是下游 (d) 大面积遮挡分支的判据，跟着全量走会让每帧都被误判成遮挡）
  * - 确认格：diff 且置信度达标 → 真实变更，附「格 旧->新[置信]」清单
  * - 未确认格：diff 但置信度不足 → 本帧丢弃、待下帧复检，附同格式清单
  *

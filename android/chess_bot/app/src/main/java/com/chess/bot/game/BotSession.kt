@@ -148,6 +148,8 @@ class BotSession(internal val context: Context) {
             visionWarmup()
             state.reset()
             adoptedByRecovery = false
+            // 新会话清空上一局遗留的「游戏侧悬空我方子」标记（2026-09-13 P1/P6；见字段注释）
+            pendingOwnLiftCell = null
             engineAlreadyReset = false // U-1：新一轮启动，重置 ucinewgame 已发标志
             pendingPonderMove = null
             pendingPonderResult = null
@@ -287,15 +289,53 @@ class BotSession(internal val context: Context) {
     // 「大面积遮挡但不中止对局」的场景；两循环的遮挡上限判定均排在该检查之后。
     internal var occlusionStreak = 0
 
+    // 我方本步「起点是否曾变空」标志（2026-09-12 用户批复，重试点击加固）：
+    // verifyForSelfMove 每次进入时清零，只要某帧读到「我方 planned 起点已空」即置位（本步内不再回落）。
+    // 语义 = 我方棋子曾离开起点（已落点或提在手里）→ 两次点击其实生效过：
+    //   ① 不允许再按「吞点击」把敌着抢跑提交（见 tryRecoverSwallowedTap 的 srcEverLeft 门控）；
+    //   ② doMove 的 RETRY_BOTH 只点目标格（点起点只会把提着的子落回起点）。
+    internal var selfSrcLeftOnce = false
+
+    // 游戏侧有一颗我方子被**提起悬空**（不在静态 board 上，但仍占着「该格应有的子」）。
+    // 非 null = 该格坐标（grid r to c）。2026-09-13 用户批复 P1/P6 的载体：
+    //   ① 写入（唯一来源）：`verifyForSelfMove` 的 D5 命中——我方起点已空 ＋ 有敌子变动 ＋ 落点无我方子，
+    //      且向上扫描 `identifyLiftedPiece(落点)` 命中 expected 棋子 → 认定我方这步其实已落定、
+    //      只是落点被 RETRY 补点重新提起（真机 h6h4 事故）。此时提交我方着法（board 已写 expected.piece）
+    //      并记下悬空格。
+    //   ② 消费（唯一去处）：`doMove` 入口 anchor = 本字段 ?: dstOnlySrc —— 引擎着法源格==该格时只点
+    //      目标格（子已在手），否则两击（第一击点源格会让 App 把悬空子自动落回原格，其 diff 读数
+    //      ==已提交值 → 走 drift 自愈，不进 changes）。
+    //   ③ 清零点：start()/startFlow 入口、recoverOwnLift（state.reset 后）、doMove 入口取出后、
+    //      verify 返回前按局部 newLiftCell 回写。
+    // **禁止**把它写进 state.board（board 只承载静态局面；lift 是帧分类瞬时态）。
+    internal var pendingOwnLiftCell: Pair<Int, Int>? = null
+
     // ---------- 工具 ----------
 
-    internal suspend fun grabBoard(cap: Capture): Grabbed? {
+    /** 常规取帧：保留逐格 diff 门，仅变化格跑 cls（方案 A 变种，2026-08-30 起）。 */
+    internal suspend fun grabBoard(cap: Capture): Grabbed? = grabBoard(cap, full = false)
+
+    /**
+     * 全量取帧（2026-09-13 用户批复 P3/P4/P5）：跳过逐格 diff 门，90 格**全部**跑 cls 复检。
+     * 返回的 [Grabbed]（含 BoardScan 的 board/changes/diffCells/driftCells）与 [grabBoard] **结构完全
+     * 一致**（`diffCells` / `driftCells` 仍按「像素真变」计，**不随全量放大到 90**——见
+     * recognizeBoardChanged 的 forceFull 注释：它同时是下游 (d) 大面积遮挡分支的判据），
+     * 故 verify 的 (a)~(e) 全部分支与 D2/D5 守卫零改动复用——只是「输入」换了一路。
+     * 全量解决的是「diff 基线失明」，**不解决「置信度不够」**：落点身份仍须走 identifyLiftedPiece 的
+     * 0.5 档通道。触发条件（attempt ≥2 ‖ 首次成功点击起 > VERIFY_FULL_TRIGGER_MS）与「进入后本步
+     * 不回退」见 Const.VERIFY_FULL_TRIGGER_MS 注释。
+     */
+    internal suspend fun grabBoardFull(cap: Capture): Grabbed? = grabBoard(cap, full = true)
+
+    private suspend fun grabBoard(cap: Capture, full: Boolean): Grabbed? {
         // 统一计时日志：所有截屏识别入口（敌方检测 / 我方校验 / 重试稳判 / 认输复检）共用，便于一处查看 grab+recog 耗时。
         val tGrab = System.nanoTime()
         val corrected = cap.grab() ?: return null
         val grabMs = (System.nanoTime() - tGrab) / 1_000_000
         val tRecog = System.nanoTime()
-        val scan = recognizeBoardChanged(corrected, state.prevCellImgs, state.board, state.mySide)
+        val scan = recognizeBoardChanged(
+            corrected, state.prevCellImgs, state.board, state.mySide, forceFull = full
+        )
         val recogMs = (System.nanoTime() - tRecog) / 1_000_000
         // 行1「性能行」（2026-09-12 Q1 收敛）：仅慢帧打印，且只带时间——原事件明细
         //   （慢帧 / diff N / 暂缓 N / 剔除 N / 漂移 N）整块删除：剔除是空格被 cls 误读成 lift 的
@@ -305,7 +345,7 @@ class BotSession(internal val context: Context) {
             LogBus.log(
                 LogLevel.DEBUG,
                 LogTag.VISION,
-                "grabBoard grab=${grabMs}ms recog=${recogMs}ms"
+                "grabBoard${if (full) "[全量]" else ""} grab=${grabMs}ms recog=${recogMs}ms"
             )
         }
         // 行2「变化行」（2026-09-12 Q1 收敛）：只打明确变更的棋子——置信度不足的未确认格不再并入

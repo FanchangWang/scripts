@@ -128,6 +128,17 @@ object Const {
     const val VERIFY_HARD_CAP_MS =
         15_000L // 兜底硬顶：单次 verify 总时长超此值 → RETRY_BOTH（防非稳定的持续动画模式永久悬挂，liveness 保护）
 
+    // 全量取帧切换阈值（2026-09-13 用户批复 P3/P4）：本步走棋尝试次数 ≥2 **或**首次成功点击起超此值
+    // （取先到）→ verify 取帧由逐格 diff 切换为全量（grabBoardFull：跳过逐格 diff 门，90 格全部进复检）。
+    // 动因：diff 基线可能失明——落点被误提起后 committed 该格为 null，读数「空→lift」被扫描层当飞行
+    // 伪影剔除（Recognition.kt 的 `old == null && new == LIFT` 分支），该格从此不进 changes
+    // → 真机 h6h4 卡死 39.7s。
+    // ⚠️ 全量只放宽「进入复检」的门，changes / diffCells / driftCells 语义**全部不变**：飞行伪影照旧
+    // 剔除、diffCells 仍只算像素真变格——否则恒 ≈90 会被下游 (d) 分支当成大面积遮挡 → 误判终局
+    // （2026-09-13 用户批复）。
+    // 进入全量后**本步后续每帧都保持全量**（P4：正确读数优先于速度），不退回 diff。
+    const val VERIFY_FULL_TRIGGER_MS = 3_000L
+
     // ---------- 我方走棋重试（无限重试 + 总超时） ----------
     // 不设次数上限；退出条件 = 走棋成功 / 对弈结束 / 总超时。2026-09-10 D1=A 删除原
     // 「连续 5 轮零变化」守卫（SELF_MOVE_ZERO_CHANGE_MAX）：设备发烫卡顿时点击事件排队延迟，

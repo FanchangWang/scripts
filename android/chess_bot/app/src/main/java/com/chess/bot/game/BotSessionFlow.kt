@@ -136,6 +136,12 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
     // C4 批复（2026-09-11）：总超时起点提前到入口——computeMove 的引擎思考时长一并计入
     // SELF_MOVE_TOTAL_TIMEOUT_MS(60s) 预算，避免「思考久 + 走棋重试」两段各自计时而叠加越界。
     val startMs = System.nanoTime() / 1_000_000
+    // P1/P6 消费（2026-09-13 用户批复）：取出上一轮 verify 记下的「游戏侧悬空我方子」——语义与提子恢复
+    // 的 dstOnlySrc 完全一致（棋子已在手）：源格==该格 → 只点目标格（悬空子随之移到目标格）；否则两击，
+    // 第一击点源格会让 App 把悬空子**自动落回原格**（其 diff 读数==已提交值 → 走 drift 自愈、不进 changes）。
+    // 取出但**不在此清空**：verifyForSelfMove 每帧 finally 按「落回是否确认」统一回写（这样 verify 的
+    // 任何 return 路径都不会丢标记；doMove 提前返回时标记原样保留，下一轮继续尝试）。
+    val liftCell = pendingOwnLiftCell
     val pending = computeMove() ?: return false
     // E 中断守卫（2026-09-11）着子前复检：computeMove 期间用户可能已点「停止」——
     // 此刻立刻放弃，不再向棋盘注入点击（避免「已停止却仍落子」）
@@ -143,8 +149,10 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
     val unpacked = unpackMove(pending.move) ?: return false
     val (r1, c1, r2, c2, piece) = unpacked
     state.resignStreak = 0
-    // 提子恢复：源格==提子格 → 棋子已在手，首轮直接只点目标格
-    var dstOnly = dstOnlySrc != null && r1 == dstOnlySrc.first && c1 == dstOnlySrc.second
+    // 提子恢复 / 悬空子恢复：源格==锚点格 → 棋子已在手，首轮直接只点目标格
+    val anchor = liftCell ?: dstOnlySrc
+    var dstOnly = anchor != null && r1 == anchor.first && c1 == anchor.second
+    var firstTapMs = -1L // 本步首次成功注入点击的时刻（全量模式触发基准之一，P3-C2）
     var attempt = 0
     while (true) {
         attempt++
@@ -185,7 +193,9 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
             delay(Const.RETRY_BACKOFF_START_MS)
             continue
         }
-        val outcome = verifyForSelfMove(r1, c1, r2, c2, piece)
+        // 记录首次成功点击时刻（全量模式触发的 C2 基准；attempt 重置时不清零，仍是"首次点击起"）
+        if (firstTapMs < 0) firstTapMs = System.nanoTime() / 1_000_000
+        val outcome = verifyForSelfMove(r1, c1, r2, c2, piece, attempt, firstTapMs, liftCell)
         when (outcome) {
             VerifyOutcome.DONE_OK -> {
                 state.moveCount++
@@ -216,9 +226,12 @@ internal suspend fun BotSession.doMove(dstOnlySrc: Pair<Int, Int>? = null): Bool
                 continue
             }
 
-            // 两次点击均未生效（RETRY_BOTH，含稳定未知兜底）：落循环末尾冷却后重试
+            // 两次点击均未生效（RETRY_BOTH，含稳定未知兜底）：落循环末尾冷却后重试。
+            // 重试点击加固（2026-09-12 用户批复）：若本步曾观察到我方棋子离开起点（selfSrcLeftOnce），
+            // 说明点击其实生效过（只是落点识别没跟上）——此后再点「起点格」只会把提在手里的子落回起点、
+            // 对已落定的子则是无效点击，故一律改为只点目标格（dstOnly），封掉重试自己把棋子拨回去的副作用。
             VerifyOutcome.RETRY_BOTH -> {
-                dstOnly = false
+                dstOnly = selfSrcLeftOnce
             }
         }
         LogBus.log(
@@ -238,7 +251,14 @@ internal fun BotSession.maybeStartPonder() {
     val predicted = pendingPonderMove ?: return
     prematurePonderHarvested = false // 新一轮预搜开始，清除上一轮收割标志
     // position = 基线 FEN + moves 全列表（movesList 已含我方刚走的这步）+ 预测敌着追加尾部
-    engine.startPonder(context, state.ensureEngineBaseline(), state.movesList, predicted)
+    val ponderBase = state.ensureEngineBaseline()
+    // position 自检（2026-09-12 用户批复 D2）：ponder 只是加速手段，自检不过就**放弃本轮预搜**
+    // （不中止对局）——错局面必在下一轮 computeMove 的 bestMove 自检处被拦下并暂停，此处不重复处置。
+    if (!auditPosition(ponderBase)) {
+        LogBus.log(LogLevel.WARN, LogTag.ENGINE, "position 自检未通过，跳过本轮 ponder 预搜")
+        return
+    }
+    engine.startPonder(context, ponderBase, state.movesList, predicted)
     // 预测敌着中文化（2026-09-09 D6）：从「我方走子后」局面取起点格棋子名（黑马 b9 -> c7）
     val (pr, pc) = squareToGrid(predicted.take(2), state.mySide)
     val predictedLabel = state.board.getOrNull(pr)?.getOrNull(pc)?.let(::pieceLabel) ?: "未知子"
@@ -251,6 +271,33 @@ internal fun BotSession.maybeStartPonder() {
 
 /** computeMove 产物：着法（ICCS）——来源经 state.lastMoveSource 传递给悬浮窗引擎行。 */
 internal data class PendingMove(val move: String)
+
+/**
+ * 引擎 position 自检（2026-09-12 用户批复 D2：自检 + 报错中止；真机事故 a7c5）。
+ *
+ * 每一次向引擎发 `position fen <基线> moves <全列表>` 之前调用：验证「基线 + 着法列表」能否
+ * **严格交替**地演进到与已提交棋盘（[GameState.board]/[GameState.turn]）一致的局面。
+ *
+ * 为什么必须拦：UCI 引擎解析 `position ... moves ...` 时**遇到第一个非法着法即停止**、后续着法
+ * 全部丢弃 → 引擎在**过期局面**上算棋。2026-09-12 真机事故即由此而来——我方 a7c5 落点格被误读而
+ * 确认迟到 9.5s，期间「吞点击恢复」先把敌着提交了，movesList 变成「敌·敌·我·敌」（同色连走）；
+ * 引擎解析在第 2 手停下，返回了**已经走过**的 a7c5。若那一步在 board 上恰好合法，`unpackMove`
+ * 守卫也拦不住（该处已修：见 BotSessionVerify 的 srcEverLeft 门控）。
+ *
+ * 通过返回 true；不通过打 ERROR 并返回 false（调用方中止本步，绝不把错局面发给引擎）。
+ * 代价：纯函数、O(手数×棋盘)，仅在发 position 前跑一次，可忽略。
+ */
+internal fun BotSession.auditPosition(baselineFen: String): Boolean {
+    val problem = auditEnginePosition(
+        baselineFen, state.mySide, state.movesList, state.board, state.turn,
+    ) ?: return true
+    LogBus.log(
+        LogLevel.ERROR,
+        LogTag.ENGINE,
+        "引擎 position 自检未通过，已中止本步以免在错误局面上算棋：$problem",
+    )
+    return false
+}
 
 internal suspend fun BotSession.computeMove(): PendingMove? {
     if (!state.initialized) {
@@ -343,6 +390,9 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
     // ---------- 引擎 ----------
     if (droppedByInterrupt()) return null // 开局库查询/预搜消费期间发生的中断
     val baselineFen = state.ensureEngineBaseline() // 轮次判定已拍，此处防御兜底
+    // position 自检（2026-09-12 用户批复 D2）：movesList 若顺序错乱/含非法着法，引擎会在
+    // **过期局面**上算棋并可能返回已走过的着法——此处拦下，中止本步（doMove 返回 false → 主循环暂停）
+    if (!auditPosition(baselineFen)) return null
     LogBus.log(
         LogLevel.DEBUG, LogTag.ENGINE,
         "计算着法中：基线局面 + moves ${state.movesList.size} 手（position 演进制）"

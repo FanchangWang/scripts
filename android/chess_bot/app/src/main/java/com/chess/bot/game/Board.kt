@@ -151,6 +151,114 @@ fun fenOfBoard(
 }
 
 /**
+ * FEN -> 屏幕网格局面 + 行棋方（与 [fenOfBoard] **严格互逆**；解析失败返回 null）。
+ *
+ * 仅支持本项目自产格式 `<rank9>/…/<rank0> <w|b> …`（恒黑上红下）。解析出的 rank/file 数组
+ * 按 mySide 反向翻转：执黑时屏幕棋盘相对 ICCS 标准方向恰为 180°（与 fenOfBoard 生成侧同一套
+ * 规则，两侧对称 → 可 round-trip 单测）。`w`=红方行棋 / `b`=黑方行棋。
+ */
+fun boardFromFen(fen: String, mySide: Side = Side.RED): Pair<Board, Side>? {
+    val parts = fen.trim().split(Regex("\\s+"))
+    if (parts.size < 2) return null
+    val rows = parts[0].split("/")
+    if (rows.size != ROWS) return null
+    val byChar = PIECE_FEN.entries.associate { (id, ch) -> ch to id }
+    val iccs = Array(ROWS) { arrayOfNulls<String>(COLS) }
+    for ((i, line) in rows.withIndex()) {
+        var c = 0
+        for (ch in line) {
+            if (ch.isDigit()) {
+                c += ch - '0'
+            } else {
+                if (c >= COLS) return null
+                iccs[i][c] = byChar[ch] ?: return null
+                c++
+            }
+        }
+        if (c != COLS) return null
+    }
+    val toMove = when (parts[1]) {
+        "w" -> Side.RED
+        "b" -> Side.BLACK
+        else -> return null
+    }
+    val board = Array(ROWS) { r ->
+        Array(COLS) { c ->
+            if (mySide == Side.BLACK) iccs[ROWS - 1 - r][COLS - 1 - c] else iccs[r][c]
+        }
+    }
+    return board to toMove
+}
+
+/**
+ * 引擎 position 自检（2026-09-12 用户批复 D2：自检 + 报错中止；纯函数，JVM 单测可覆盖）。
+ *
+ * 校验「基线 FEN + 着法列表」能否**严格交替**地演进到与已提交棋盘（[expectedBoard]/[expectedTurn]）
+ * 完全一致的局面：每一手必须由**轮到的一方**持子、且为伪合法着法。任一步不满足 → 返回问题描述
+ * （调用方打 ERROR 并中止本步，绝不把错局面发给引擎）；全部通过返回 null。
+ *
+ * 为什么必须有这一道（2026-09-12 真机事故）：我方 a7c5 因落点格被误读而确认迟到 9.5s，期间
+ * 「吞点击恢复」先把敌着提交了 → movesList 变成「敌·敌·我·敌」（同色连走）。UCI 引擎解析
+ * `position fen … moves …` 时**遇到第一个非法着法即停止**，后续着法全部丢弃 → 引擎在过期局面
+ * 上算棋（该例返回已走过的 a7c5）；若该着法在 board 上恰好合法，`unpackMove` 守卫也拦不住。
+ */
+fun auditEnginePosition(
+    baselineFen: String,
+    mySide: Side,
+    moves: List<String>,
+    expectedBoard: Board,
+    expectedTurn: Side,
+): String? {
+    val parsed = boardFromFen(baselineFen, mySide) ?: return "基线 FEN 解析失败（$baselineFen）"
+    val board = parsed.first
+    var sideToMove = parsed.second
+    moves.forEachIndexed { i, iccs ->
+        val no = i + 1
+        if (iccs.length != 4) return "第 $no 手格式非法（$iccs）"
+        val src = squareToGrid(iccs.substring(0, 2), mySide)
+        val dst = squareToGrid(iccs.substring(2, 4), mySide)
+        if (src.first !in 0 until ROWS || src.second !in 0 until COLS ||
+            dst.first !in 0 until ROWS || dst.second !in 0 until COLS
+        ) {
+            return "第 $no 手 $iccs 坐标越界"
+        }
+        val piece = board[src.first][src.second]
+            ?: return "第 $no 手 $iccs 起点为空（按交替应轮到 ${sideToMove.cn}方走）"
+        if (pieceColor(piece) != sideToMove) {
+            return "第 $no 手 $iccs 持子为 ${pieceColor(piece).cn}方，但按交替应轮到 " +
+                    "${sideToMove.cn}方（着法列表顺序错乱）"
+        }
+        val move = Move(src, dst, piece, board[dst.first][dst.second])
+        if (!isPseudoLegal(board, move, mySide)) {
+            return "第 $no 手 $iccs（${pieceLabel(piece)}）非伪合法着法"
+        }
+        applyMove(board, move, 0)
+        sideToMove = sideToMove.opponent
+    }
+    if (sideToMove != expectedTurn) {
+        return "着法列表演进后轮到 ${sideToMove.cn}方，与已提交棋盘（${expectedTurn.cn}方）不符" +
+                "（着法列表缺手/多手）"
+    }
+    for (r in 0 until ROWS) {
+        for (c in 0 until COLS) {
+            val evolved = board[r][c]
+            val committed = expectedBoard[r][c]
+            if (evolved != committed && !(evolved == null && committed == Const.LIFT)) {
+                return "演进局面与已提交棋盘不一致：${gridToSquare(r, c, mySide)} " +
+                        "${cellText(committed)} != ${cellText(evolved)}"
+            }
+        }
+    }
+    return null
+}
+
+private fun cellText(piece: String?): String =
+    when (piece) {
+        null, Const.LIFT -> "空"
+        else -> pieceLabel(piece)
+    }
+
+/**
  * 布局日志格式化（2026-09-12 用户批示：打印 UCI 的 file 竖列与 rank 横排）。
  * - board 网格**原样打印**（行序恒 r0→r9，不做红黑翻转）：网格口径我方恒在 r5..9，
  *   故最后一行恒为我方后排（帥/將行），与棋盘小窗显示方向一致。

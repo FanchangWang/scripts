@@ -54,6 +54,8 @@ internal suspend fun BotSession.recoverOwnLift(
         state.reset()
         pendingPonderMove = null
         pendingPonderResult = null
+        // 提子恢复会对全盘重新识别并重同步棋盘，先前的「悬空我方子」标记随之失效（2026-09-13）
+        pendingOwnLiftCell = null
         val (lr, lc) = liftPos
         val raw = Recognizer.analyzeBoard(correctedOwned)
         val abovePiece = if (lr > 0) raw[lr - 1][lc] else null

@@ -5,6 +5,7 @@ import com.chess.bot.log.LogBus
 import com.chess.bot.log.LogLevel
 import com.chess.bot.log.LogTag
 import com.chess.bot.service.Capture
+import com.chess.bot.vision.Recognizer
 import kotlinx.coroutines.delay
 
 /**
@@ -28,12 +29,25 @@ import kotlinx.coroutines.delay
 // 基线白名单：提交只刷新被提交着法覆盖的格子 + driftCells，其余变化格（敌方仅提起/伪影）
 // 一律留 diff 管线（防 17:59 类「无关格进基线 → 敌着两格对被拆散 → 误暂停」污染）。
 
+/**
+ * @param attempt    本步走棋的第几次尝试（doMove 的 attempt，1 起）——全量模式触发条件之一（P3-C1）。
+ * @param firstTapMs 本步首次成功注入点击的时刻（ms，`System.nanoTime()/1e6`）；<0 = 尚未点击
+ *                   —— 全量模式触发条件之二（P3-C2）。
+ * @param liftCell   本步开始时「游戏侧悬空的我方子」坐标（`BotSession.pendingOwnLiftCell`，P1/P6 载体）：
+ *                   ① 每帧确认它是否已落回（读数 == `state.board` 该格值）→ 落回则清除；
+ *                   ② D5 命中时改置为新落点；
+ *                   ③ 本步源格 == 它（dstOnly 路径）→ 悬空子已随本步着法移走，清除。
+ *                   最终状态经**帧内 finally** 回写到 `pendingOwnLiftCell`（任何 return 路径都不丢）。
+ */
 internal suspend fun BotSession.verifyForSelfMove(
     r1: Int,
     c1: Int,
     r2: Int,
     c2: Int,
     piece: String,
+    attempt: Int = 1,
+    firstTapMs: Long = -1L,
+    liftCell: Pair<Int, Int>? = null,
 ): VerifyOutcome {
     setStatus(BotStatus.VERIFYING)
     val expected = Move(r1 to c1, r2 to c2, piece)
@@ -56,6 +70,22 @@ internal suspend fun BotSession.verifyForSelfMove(
     var stillCount = 0 // n==0 静止连续帧数（SILENT 稳定判定）
     var liftSinceMs = -1L // LIFTED（我子提起未落）起始时刻
     var stableUnknownSinceMs = -1L // 稳定未知模式起始时刻
+    selfSrcLeftOnce = false // 本步起点「曾变空」标志：每次校验重算（doMove 读它决定重试点击方式）
+    // 全量模式（2026-09-13 用户批复 P3/P4）：本步尝试 ≥2 次 或 首次点击起超 VERIFY_FULL_TRIGGER_MS
+    // → 取帧切 grabBoardFull（90 格全部跑 cls 复检）。判定**不依赖任何画面读数**——diff 已失明时
+    // 条件依然确定。一旦置真，本步后续每帧保持全量（P4：正确读数优先于速度），不退回。
+    var fullMode = false
+    // 悬空我方子的最终状态（P1/P6）：入口值 → 落回确认 / D5 命中 / 随本步移走时更新；帧内 finally 回写。
+    var newLiftCell = liftCell
+    // 悬空格「应有之子」= 该格在**已提交 board** 上的值（D5 提交时写入 expected.piece）。
+    // 落回确认判据 = 当前读数等于它。board 在本步提交后才会变，故入口取一次即可。
+    val liftExpectedPiece = liftCell?.let { state.board[it.first][it.second] }
+
+    // §6.6（2026-09-13 用户提醒「注意提交进 board 以及 prevCells」）：把悬空格**显式**并入基线冻结
+    // 集合——不依赖 driftCells 的隐式自愈（Recognition.kt 的 drift 收集条件是 `base != null`，基线
+    // 首帧为 null 时该格永远刷不上 → 每帧重复 diff）。Set 去重，重复并入幂等。
+    fun withLift(cells: Set<Pair<Int, Int>>): Set<Pair<Int, Int>> =
+        if (liftCell != null) cells + liftCell else cells
 
     while (running && !interrupted && !state.gameOver) {
         // 首帧等走子动画落定；后续帧按用户设置间隔
@@ -72,8 +102,31 @@ internal suspend fun BotSession.verifyForSelfMove(
             return VerifyOutcome.RETRY_BOTH
         }
 
-        val grabbed = grabBoard(cap) ?: continue
+        // 全量模式切换（P3：attempt ≥2 ‖ 首次成功点击起 > 阈值，取先到；P4：进入后本步不回退）
+        val nowFullMs = System.nanoTime() / 1_000_000
+        if (!fullMode && (attempt >= 2 ||
+                    (firstTapMs >= 0 && nowFullMs - firstTapMs > Const.VERIFY_FULL_TRIGGER_MS))
+        ) {
+            fullMode = true
+            LogBus.log(
+                LogLevel.WARN,
+                LogTag.SELF,
+                "本步仍无结论（第 $attempt 次尝试，距首次点击 ${if (firstTapMs >= 0) nowFullMs - firstTapMs else -1}ms），" +
+                        "切换全量识别模式（后续帧不再回退）",
+            )
+        }
+        val grabbed = (if (fullMode) grabBoardFull(cap) else grabBoard(cap)) ?: continue
         try {
+            // 我方 planned 起点已空 = 我方棋子曾离开起点（已落点或提在手里）→ 本步点击确实生效过。
+            // 置位后本步不再回落（2026-09-12 用户批复）：① 禁止敌着抢跑提交（见 NOISY 分支）；
+            // ② doMove 的重试改为只点目标格（点起点只会把提着的子落回起点）。
+            if (grabbed.scan.board[r1][c1] == null) selfSrcLeftOnce = true
+            // 悬空我方子落回确认（P1，2026-09-13）：该格读到应有之子 ⇒ 悬空子已回到位，标记清除。
+            // （其 diff 读数恰等于已提交值 → 走 driftCells 自愈、不进 changes；此处只是把状态收敛。）
+            if (newLiftCell != null && liftExpectedPiece != null) {
+                val (lr, lc) = newLiftCell!!
+                if (grabbed.scan.board[lr][lc] == liftExpectedPiece) newLiftCell = null
+            }
             val changes = grabbed.scan.changes
             val n = changes.size
             // 帧间一致性（v3）：变化格子集合逐格相同（同格同 old/new；两帧皆空也算稳定）。
@@ -95,7 +148,7 @@ internal suspend fun BotSession.verifyForSelfMove(
                 commitSelfSettled(
                     grabbed,
                     expected.copy(captured = captured),
-                    setOf(srcCell, dstCell)
+                    withLift(setOf(srcCell, dstCell))
                 )
                 endgameHook()
                 return if (state.gameOver) VerifyOutcome.DONE_END else VerifyOutcome.DONE_OK
@@ -116,6 +169,52 @@ internal suspend fun BotSession.verifyForSelfMove(
                     "校验帧 n=$n stable=$stable result=${fc.result}"
                 )
 
+                // D5 前置判定（2026-09-13 用户批复，防线②；优先于帧分类动作）——三条前提全成立才探测：
+                //   C1 我方 planned 起点已空（本步点击确实生效过）
+                //   C2 changes 中存在敌子变动（old 为敌子 且 new 为空/lift）。「敌动 ⇒ 我方已完成」是
+                //      **硬约束**（对局严格交替）：敌方动画出现即轮次已交替，我方这步在游戏内必然完成；
+                //      不要求凑出完整敌着——动画首帧（仅提起）同样成立。
+                //   C3 落点无我方子
+                // → 向上扫描落点（0.5 档；单档 0.88 过不了 0.95 门，但 7 档多数票能认出）：命中 expected
+                //   棋子即认定「我方这步其实已落定，只是被 RETRY 补点重新提起」（h6h4 事故形状）→ 提交
+                //   我方着法（含敌着）+ 记录悬空格，交下一轮 doMove 消费（P1/P6）。
+                // **绝不点击该格**：已提起的棋子无法主动落子，点它只会让子移动过去、或把已落定的子重新提起。
+                if (newLiftCell == null && grabbed.scan.board[r1][c1] == null &&
+                    grabbed.scan.board[r2][c2] != expected.piece
+                ) {
+                    val enemyChanged = changes.any { ch ->
+                        val old = ch.old
+                        old != null && old != Const.LIFT && pieceColor(old) != state.mySide &&
+                                (ch.new == null || ch.new == Const.LIFT)
+                    }
+                    if (enemyChanged) {
+                        val abovePiece = if (r2 > 0) grabbed.scan.board[r2 - 1][c2] else null
+                        val lifted =
+                            Recognizer.identifyLiftedPiece(grabbed.corrected, r2, c2, abovePiece)
+                        if (lifted == expected.piece) {
+                            val enemyM = fc.enemyMove
+                            val cells = buildSet {
+                                add(srcCell)
+                                add(dstCell)
+                                enemyM?.let { add(it.src); add(it.dst) }
+                            }
+                            if (enemyM != null) {
+                                commitSelfThenEnemy(grabbed, expected, enemyM, withLift(cells))
+                            } else {
+                                commitSelfSettled(grabbed, expected, withLift(cells))
+                            }
+                            newLiftCell = dstCell
+                            LogBus.log(
+                                LogLevel.INFO, LogTag.SELF,
+                                "D5 命中：我方${pieceLabel(expected.piece)}被提起悬空在落点，已按「已落定」提交" +
+                                        "（含敌着=${enemyM != null}）；悬空格留待下一轮 doMove 让它落回",
+                            )
+                            endgameHook()
+                            return if (state.gameOver) VerifyOutcome.DONE_END else VerifyOutcome.DONE_OK
+                        }
+                    }
+                }
+
                 when (fc.result) {
                     SelfFrameResult.SELF_DONE -> {
                         // 我方走子成功；可能夹带敌方仅提起格（n==3 情况1，如 17:59 的 e9 b_k→空）
@@ -123,7 +222,7 @@ internal suspend fun BotSession.verifyForSelfMove(
                         commitSelfSettled(
                             grabbed,
                             fc.selfMove ?: expected,
-                            setOf(srcCell, dstCell)
+                            withLift(setOf(srcCell, dstCell))
                         )
                         endgameHook()
                         return if (state.gameOver) VerifyOutcome.DONE_END else VerifyOutcome.DONE_OK
@@ -144,7 +243,9 @@ internal suspend fun BotSession.verifyForSelfMove(
                             // T-D 两帧一致确认（复抓重推敌着；不加显式延时——单次 grabBoard
                             // ~70-100ms 已越半格飞行窗）。一致 → 就地提交双着（省一轮敌方截图分析）
                             if (!running || interrupted || state.gameOver) return VerifyOutcome.DONE_END
-                            if (tryCommitSelfThenEnemy(cap, expected, selfM, enemyM)) {
+                            // §6.6：悬空格一并进基线冻结集合（本步消费的 liftCell 未必在这四格内）
+                            val extraLift = if (liftCell != null) setOf(liftCell) else emptySet()
+                            if (tryCommitSelfThenEnemy(cap, expected, selfM, enemyM, extraLift)) {
                                 endgameHook()
                                 return if (state.gameOver) VerifyOutcome.DONE_END else VerifyOutcome.DONE_OK
                             }
@@ -156,20 +257,41 @@ internal suspend fun BotSession.verifyForSelfMove(
                     }
 
                     SelfFrameResult.LIFTED -> {
-                        // 第一点击生效、第二点击未注册：持续超过动画时长 → 补点目标格
-                        if (liftSinceMs < 0) liftSinceMs = nowMs
-                        if (nowMs - liftSinceMs > firstWaitMs) {
-                            LogBus.log(
-                                LogLevel.INFO,
-                                LogTag.SELF,
-                                "我方提子未落（${nowMs - liftSinceMs}ms），补点落子"
-                            )
-                            return VerifyOutcome.RETRY_DST
+                        // D2 前置探测（2026-09-13 用户批复，防线①）：补点**之前**先看落点格中心读数——
+                        // 若读到的就是 expected 棋子（哪怕只有 0.88，被 CLS_TRUST_MIN=0.95 挡在 changes
+                        // 之外），说明子**其实已经落定**，只是置信度不够。此时补点会把它重新提起
+                        // （真机 h6h4 事故的直接诱发动作：`h4 空→红炮[0.88]` 判 LIFTED → RETRY_DST 点 h4
+                        // → 已落定的红炮被提起 → 该格读数彻底消失 → 零变化死循环 39.7s）。
+                        // → 不补点，继续观察；下帧读数达标即自然走 SELF_DONE。
+                        val dstCenter = Recognizer.analyzeCellEx(grabbed.corrected, r2, c2).first
+                        val settled = probeLandingState(
+                            dstCenter, null, expected.piece, state.mySide
+                        ) == LandingState.LANDED
+                        if (settled) {
+                            if (liftSinceMs >= 0) {
+                                LogBus.log(
+                                    LogLevel.INFO, LogTag.SELF,
+                                    "落点已有我方${pieceLabel(expected.piece)}（置信度未达确认门），" +
+                                            "判定已落定，不补点"
+                                )
+                            }
+                            liftSinceMs = -1L // 已落定：不计入「提起未落」计时
+                        } else {
+                            // 第一点击生效、第二点击未注册：持续超过动画时长 → 补点目标格
+                            if (liftSinceMs < 0) liftSinceMs = nowMs
+                            if (nowMs - liftSinceMs > firstWaitMs) {
+                                LogBus.log(
+                                    LogLevel.INFO,
+                                    LogTag.SELF,
+                                    "我方提子未落（${nowMs - liftSinceMs}ms），补点落子"
+                                )
+                                return VerifyOutcome.RETRY_DST
+                            }
                         }
                     }
 
                     SelfFrameResult.SILENT -> {
-                        // n==0：两次点击均未生效 → 稳定 K1 帧后重试两格
+                        // n==0：两次点击均未生效 → 稳定 K1 帧后重试（起点已空则只点目标格，见 doMove）
                         stillCount++
                         if (stillCount >= Const.VERIFY_SILENT_K1) {
                             return VerifyOutcome.RETRY_BOTH
@@ -177,8 +299,13 @@ internal suspend fun BotSession.verifyForSelfMove(
                     }
 
                     SelfFrameResult.NOISY -> {
-                        // T-B 吞点击恢复：changes 恰为一步完整合法敌着且我方未执行 → 提交敌着重试本步
-                        if (tryRecoverSwallowedTap(changes, expected)) {
+                        // T-B 吞点击恢复：changes 恰为一步完整合法敌着且我方未执行 → 提交敌着重试本步。
+                        // 前置门控 srcEverLeft（2026-09-12 用户批示）：**我方走子尚未提交期间，敌着不得抢跑**
+                        // ——「点击被吞」的语义要求我方棋子从未离开起点；一旦本步曾读到起点变空，说明我方
+                        // 点击确实生效过（已落点或提在手里），此时先提交敌着会让 movesList 变成同色连走
+                        // （2026-09-12 真机事故：敌·敌·我·敌 → 引擎 position 解析在第一个非法着法处停止
+                        //  → 引擎在过期局面上算棋，返回已走过的一步）。
+                        if (tryRecoverSwallowedTap(changes, expected, selfSrcLeftOnce)) {
                             return VerifyOutcome.RETRY_AFTER_ENEMY
                         }
                     }
@@ -235,6 +362,8 @@ internal suspend fun BotSession.verifyForSelfMove(
             }
         } finally {
             grabbed.corrected.release()
+            // P1/P6：每帧把悬空标记的最终状态回写会话字段——本帧内或函数末的任何 return 路径都不会丢。
+            pendingOwnLiftCell = newLiftCell
         }
     }
     // 循环退出 = 对局结束或运行中断（doMove 按 gameOver/running 分流）
@@ -292,6 +421,7 @@ internal suspend fun BotSession.tryCommitSelfThenEnemy(
     expected: Move,
     selfM: Move,
     enemyM: Move,
+    extraCells: Set<Pair<Int, Int>> = emptySet(),
 ): Boolean {
     val reGrab = grabBoard(cap) ?: return false
     try {
@@ -307,14 +437,14 @@ internal suspend fun BotSession.tryCommitSelfThenEnemy(
                 // 敌着两帧一致：就地提交我方+敌方（基线白名单只刷四格）
                 commitSelfThenEnemy(
                     reGrab, selfM, enemyM,
-                    setOf(expected.src, expected.dst, enemyM.src, enemyM.dst),
+                    setOf(expected.src, expected.dst, enemyM.src, enemyM.dst) + extraCells,
                 )
                 true
             }
 
             reFc.result == SelfFrameResult.SELF_DONE -> {
                 // 敌着未复现（首帧敌变为瞬时态）→ 仅提交我方走子，敌着交回敌方检测
-                commitSelfSettled(reGrab, selfM, setOf(expected.src, expected.dst))
+                commitSelfSettled(reGrab, selfM, setOf(expected.src, expected.dst) + extraCells)
                 LogBus.log(
                     LogLevel.DEBUG, LogTag.SELF,
                     "敌着未复现（首帧为动画瞬时态），仅提交我方走子",
@@ -397,8 +527,13 @@ internal suspend fun BotSession.verifyEndgameCheck(
  */
 internal suspend fun BotSession.tryRecoverSwallowedTap(
     changes: List<Change>,
-    expected: Move
+    expected: Move,
+    srcEverLeft: Boolean
 ): Boolean {
+    // 顺序门控（2026-09-12 用户批复，事故 a7c5）：本步内我方起点曾变空 → 说明我方这一手
+    // 已经生效（子已离位或在手），此刻绝不能先把敌着提交——「我方走棋顺带敌方走棋」的前提
+    // 是我方走棋成功，敌着只是顺带，不能抢跑在我方提交之前。此时交回 verify 继续核验我方落点。
+    if (srcEverLeft) return false
     if (changes.size != 2) return false
     val moved = inferMove(changes) ?: return false
     if (pieceColor(moved.piece) == state.mySide) return false
