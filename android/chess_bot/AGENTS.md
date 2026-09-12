@@ -14,9 +14,9 @@
 | 功能 | 说明 |
 |---|---|
 | 开始棋局 | 截图全量同步棋盘 → 判我方红黑 → 判阶段(开局/残局) → 推断轮次（未知时确认弹窗）→ 自动对弈 |
-| 我方走棋 | pikafish 算着法 → 点击起子/落子 → verifyForSelfMove v3 diff 数量分流（n==2 恰两格直接成功 / n≤4 classifySelfFrame 归类 / 5..30 灰区 / >30 OCR 检查 / 稳定兜底），提起未落补点、整步重试 |
+| 我方走棋 | pikafish 算着法 → 点击起子/落子 → verifyForSelfMove v3 diff 数量分流（n==2 恰两格直接成功 / n≤4 classifySelfFrame 归类 / 5..30 灰区 / >30 遮挡帧计数 + OCR 检查 / 稳定兜底），提起未落补点、整步重试 |
 | 敌方走棋检测 | 持续帧差分类（n==2 走法 / 提子 / 噪声 / 无变动），噪声达上限暂停 |
-| 认输检测 | 双方将帅同时缺失连续 3 帧 → 结束 |
+| 认输检测 | 任一将/帥离盘（**变空才算，lift 提起算仍在盘上**）连续 3 帧 → 结束；或 单帧清盘 >6 格；或 连续 >6 帧大面积遮挡（`VERIFY_OCCLUSION_STREAK_MAX`）→ 终局（2026-09-12 放宽；**和棋弹窗检出即把该计数归零**，见下「我方走棋 (d)」） |
 | 绝杀探测 | Y 方案：引擎 info 质量达标且 matePly 非空非 1 → 跳过探测；matePly==1 直接判定绝杀；无 mate / 盲区 → 仅终局附近（≤ENDGAME_PROBE_PIECE_MAX 子）n==2 干净走棋后调 engine.is_mate（保困毙+盲区兜底） |
 | 和棋弹窗 | 同意+拒绝双按钮同现才认定；按最近评估分 > DRAW_REJECT_CP 拒绝否则同意 |
 | 自动下一局 | 统一启动循环 StartLoop：结算文字交互（按钮点击/遮罩返回键，重试上限）→ 摆棋稳定等待 → 重新初始化；开关实时可切 |
@@ -104,7 +104,7 @@ python 对照：start / verify / waitForEnemyMove / applySelfMove / applySelfThe
   - **(a) n==2 且恰为本步两格 → 直接成功免两帧校验**（`isSelfPairSettled(changes, expected)` 纯函数，内部复用 inferMove+moveMatches；dst→敌子的「落子即被反吃」形状已删——干净 diff 下不可达）——用户裁定「我方成败只由本步两格决定」；
   - (b) n ≤ 4 → `classifySelfFrame` 归类：SELF_DONE → 提交我步（夹带敌方仅提起格不进基线）；SELF_THEN_ENEMY → **稳定（变化格子集合与上帧逐格相同）+ T-D 复判 → `applySelfThenEnemy` 就地提交双着**（基线只刷四格），复判为 SELF_DONE 仅提交我步，未复现丢弃本帧；LIFTED → 持续 >T2(=firstWaitMs) → RETRY_DST 补点；SILENT(n==0) → 稳定 K1(=2) 帧 → RETRY_BOTH；NOISY → T-B 吞点击恢复 → RETRY_AFTER_ENEMY；
   - (c) n ∈ 5..`VERIFY_OCR_DIFF_CELLS`(30) → 动画/噪声灰区，静默继续；
-  - (d) n > 30 → 大面积遮挡（和棋弹窗/结算遮罩/结束画面）→ `verifyEndgameCheck`（updateResign + confirmEndByOcr + dismissDrawDialog，OCR 类节流 `OCR_SUSPECT_SCAN_THROTTLE_MS`）；drawDialog 关闭 → RETRY_BOTH；
+  - (d) n > 30 → 大面积遮挡（和棋弹窗/结算遮罩/结束画面）→ **先 `verifyEndgameCheck(grabbed, occluded=true)`**（updateResign + confirmEndByOcr〔**遮挡帧即使未判疑似也扫**，2026-09-12〕 + dismissDrawDialog，OCR 类节流 `OCR_SUSPECT_SCAN_THROTTLE_MS`；drawDialog 关闭 → RETRY_BOTH），**仍未终局才判连续遮挡帧计数**（`VERIFY_OCCLUSION_STREAK_MAX`=6：连续帧数 >6 即 `finishGame`，中途任一帧 ≤30 清零；计数跨 verify 重试累积于 `BotSession.occlusionStreak`）。**顺序 + 豁免（2026-09-12 用户批复）**：唯一「大面积遮挡但不中止对局」的场景是和棋弹窗，而它在 `verifyEndgameCheck` 内检出并处理——故上限判定必须排在该检查之后（否则弹窗停留到第 7 帧先被判终局），且该处检出后即 `occlusionStreak = 0` 不参与累加；结算遮罩不受影响（既过不了三词同现，也会在更前面的 `confirmEndByOcr` 被结算词提前命中）；
   - (e) 稳定未知模式持续超 `VERIFY_UNKNOWN_STABLE_MS`(2000) → 终局检查 + RETRY_BOTH（计入守卫）；liveness 硬顶 `VERIFY_HARD_CAP_MS`(15s) → RETRY_BOTH。
   - **帧间一致性 = 变化格子集合逐格比较**（同格同 old/new，**忽略 top1Prob**——cls 概率逐帧浮动，含它则 stable 永不成立，2026-09-12 与敌方链同款修复；两帧皆空也算稳定），不用自定义状态机记忆
   - **基线白名单（核心）**：所有提交点（`commitSelfSettled`/`commitSelfThenEnemy`/T-B/敌方提交）只刷新被提交着法覆盖的格子 + driftCells（`refreshBaselineCells` 合成 Change 保证落定格必刷）；其余变化格（敌方仅提起/伪影）一律留 diff 管线——防 17:59 类「无关格进基线 → 敌着两格对被拆散 → 误暂停」污染。原 SELF_DONE「方案 A filter」（按格类型排除，放行敌方落子格）与 SELF_THEN_ENEMY 全量刷基线均已废除
@@ -135,7 +135,7 @@ python 对照：start / verify / waitForEnemyMove / applySelfMove / applySelfThe
 - **运行时定位链不变**：Homography = 手动校准 JSON → Const.BOARD_CORNERS（第一道判断：含该分辨率则跳过校准）；运行时无自动定位
 - **结算文字/和棋按钮识别 = PP-OCRv6 官方 ppocr-sdk**（2026-09-06 替代 templates/text、templates/draw 图片模板，二者已删除）：独立 module `ppocr-sdk/`（源自 PaddleOCR deploy/ppocr-android，Apache-2.0，纯 Kotlin 无 NDK，依赖已对齐 org.opencv:4.11.0 / onnxruntime:1.29.0）；模型 assets/ocr/{det.onnx, rec.onnx, rec.yml}（rec 字典在 yml 内由 SDK 直读）。TextMatcher 懒创建引擎（Mutex 双检，recScoreThresh=OCR_REC_SCORE_MIN=0.75），`ocr()` 返回整屏文本行（框中心坐标+置信度）；词匹配为**包含**语义（纯函数 matchScanWords/matchDrawDialog 可 JVM 单测）。选词优先级语义不变：遮罩词表（GAMEOVER_BACK_WORDS）优先于按钮词表（GAMEOVER_BUTTON_WORDS）、表内按序
 - **和棋页面判定（2026-09-06 改 OCR 后新规则）**：「对方请求和棋」+「同意」+「拒绝」**三词同现**才算和棋页面（缺一可能是其他含同意/拒绝按钮的页面），点击 OCR 框中心
-- **疑似结束画面 OCR 加速（T-OCR）**：updateResign SUSPECT 时 `confirmEndByOcr()` 整屏扫一次结算词（≥1s 节流），命中任一词 → **立即 finishGame**；未命中（结算动画尚无文字）回落原连续 RESIGN_CONFIRM_COUNT 帧棋盘信号确认，二者互补。接线三处：verify 尾部 / waitForEnemyMove NOISY SUSPECT / 噪声计满认输复检
+- **疑似结束画面 OCR 加速（T-OCR）**：updateResign SUSPECT 时 `confirmEndByOcr()` 整屏扫一次结算词（≥1s 节流），命中任一词 → **立即 finishGame**；未命中（结算动画尚无文字）回落原连续 RESIGN_CONFIRM_COUNT 帧棋盘信号确认，二者互补。**2026-09-12 追加**：`verifyEndgameCheck(grabbed, occluded=true)` 时即使 updateResign 判 NONE 也扫一次节流 OCR——残局遮罩下格子信号可能既凑不出清盘 >6 格、也读不出将帅（半透明遮罩把置信度压到确认门以下），而结算文字是文字级强证据（log2.txt 实证：83 格遮挡帧此前连一次 OCR 都没跑过）。接线三处：verify 尾部 / waitForEnemyMove NOISY SUSPECT / 噪声计满认输复检
 - 结算文字/和棋按钮图片模板（templates/text、templates/draw）已删除；原 14 枚棋子 60×60 模板已删除（YOLO cls 替代）
 - ONNX 推理封装：vision/OnnxRuntime.kt（Session 管理）+ CornerDetModel.kt（det）+ PieceClsModel.kt（cls）；依赖 onnxruntime-android（CPU EP）
 

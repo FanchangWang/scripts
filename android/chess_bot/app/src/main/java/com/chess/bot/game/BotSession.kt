@@ -253,6 +253,7 @@ class BotSession(internal val context: Context) {
         state.replaceBoard(board)
         state.resetCellImgs(corrected) // 开局全量重建 90 格中心小图（无动画中间帧风险）
         state.markInitialized(mySide, phase)
+        occlusionStreak = 0 // 新棋盘已接管（开始/自动下一局）：连续遮挡计数归零，防上一局残值带入
         LogBus.log(LogLevel.INFO, LogTag.PLAY, "我方为${mySide.cn}方，当前棋盘为${phase.cn}")
         // 摆棋布局无条件落日志（2026-09-08 意见1：Q1 类问题直接从布局定位，不再靠猜）
         LogBus.log(LogLevel.INFO, LogTag.VISION, "摆棋布局（${pieceCount(board)} 子）")
@@ -278,6 +279,13 @@ class BotSession(internal val context: Context) {
     internal var lastOcrEndScanAt = 0L
     internal var lastVerifyDrawScanAt =
         0L // verify 内和棋弹窗 OCR 检查节流（v3，复用 OCR_SUSPECT_SCAN_THROTTLE_MS）
+
+    // 连续大面积遮挡帧计数（2026-09-12 用户批复）：verify 与敌方等待两循环共用、**跨重试累积**
+    // （同一遮罩不应因 verify 重入而忘记）；任一循环遇到 diffCells ≤ VERIFY_OCR_DIFF_CELLS 的帧即清零。
+    // 超 VERIFY_OCCLUSION_STREAK_MAX → finishGame（残局遮罩兜底，见 BotSessionVerify/(d)）。
+    // 豁免（2026-09-12 用户批复）：和棋弹窗检出并处理后归零（verifyEndgameCheck）——它是唯一
+    // 「大面积遮挡但不中止对局」的场景；两循环的遮挡上限判定均排在该检查之后。
+    internal var occlusionStreak = 0
 
     // ---------- 工具 ----------
 

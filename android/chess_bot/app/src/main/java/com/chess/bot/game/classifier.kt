@@ -2,13 +2,35 @@ package com.chess.bot.game
 
 /** 帧分类纯函数（移植 python classifier.py，含 captured=r2_old 修正）。 */
 
-/** 双方将/帥同时缺失（单帧疑似结束）；连续帧 streak 由控制层维护。 */
-fun isResignSuspect(board: Board, mySide: Side): Boolean {
+/**
+ * 将/帥离盘疑似信号（2026-09-12 用户批复放宽：原「双方将帅同时缺失」→ **任一将/帥消失即成立**）。
+ *
+ * 「消失」只认「变成空格子」：该将/帥既不在 [newBoard] 上以标签出现，其在 [committed]（已提交棋盘）
+ * 上的原格本帧也不是 lift（**提起算仍在盘上**——lift 是棋子被拿起/飞行中途的模糊读数，不是离盘证据）
+ * → 才判该将/帥消失。
+ *
+ * 放宽理由（2026-09-12 log2.txt 实证）：残局遮罩下 我方黑將 d8 已确认 `->空[1.00]`，而 红帥 d0 只读到
+ * 0.65~0.80（< CLS_TRUST_MIN 未确认、不进 board）→ 旧口径「两将同时缺失」不成立，终局判不出。
+ * 连续 [Const.RESIGN_CONFIRM_COUNT] 帧由控制层（BotSession.updateResign）维护。
+ */
+fun isResignSuspect(newBoard: Board, committed: Board, mySide: Side): Boolean {
     val myGeneral = if (mySide == Side.RED) "r_K" else "b_k"
     val enemyGeneral = if (mySide == Side.RED) "b_k" else "r_K"
-    val hasMine = board.any { row -> row.any { it == myGeneral } }
-    val hasEnemy = board.any { row -> row.any { it == enemyGeneral } }
-    return !hasMine && !hasEnemy
+    return generalGone(newBoard, committed, myGeneral) ||
+            generalGone(newBoard, committed, enemyGeneral)
+}
+
+/** 单侧将/帥是否已离盘（口径见 [isResignSuspect]）。 */
+private fun generalGone(newBoard: Board, committed: Board, label: String): Boolean {
+    for (r in 0 until ROWS) {
+        for (c in 0 until COLS) {
+            val v = newBoard[r][c]
+            if (v == label) return false // 仍在盘上
+            // 该将/帥的原格本帧读到 lift → 棋子还在（拿在手里/飞行中途），不算消失
+            if (v == Const.LIFT && committed[r][c] == label) return false
+        }
+    }
+    return true
 }
 
 /**

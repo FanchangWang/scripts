@@ -89,19 +89,43 @@ class ClassifierEnemyTest {
     }
 
     @Test
-    fun `双方将帅缺失 suspect`() {
-        assertTrue(isResignSuspect(TB.empty(), Side.RED))
+    fun `双方将帅均缺失 suspect`() {
+        assertTrue(isResignSuspect(TB.empty(), TB.empty(), Side.RED))
     }
 
     @Test
-    fun `仅存我方将帅 none`() {
-        val board: Board = TB.empty().also { it[9][4] = "r_K" }
-        assertFalse(isResignSuspect(board, Side.RED))
+    fun `敌方将帅消失 我方将帅仍在 suspect`() {
+        // 2026-09-12 用户批复放宽：原口径需「两将同时缺失」，残局遮罩下常只有一侧被读空
+        val committed: Board = TB.empty().also { it[9][4] = "r_K"; it[0][4] = "b_k" }
+        val newBoard: Board = TB.copy(committed).also { it[0][4] = null }
+        assertTrue(isResignSuspect(newBoard, committed, Side.RED))
     }
 
     @Test
-    fun `仅存敌方将帅 none`() {
-        val board: Board = TB.empty().also { it[0][4] = "b_k" }
-        assertFalse(isResignSuspect(board, Side.RED))
+    fun `我方将帅消失 敌方将帅仍在 suspect`() {
+        val committed: Board = TB.empty().also { it[9][4] = "r_K"; it[0][4] = "b_k" }
+        val newBoard: Board = TB.copy(committed).also { it[9][4] = null }
+        assertTrue(isResignSuspect(newBoard, committed, Side.RED))
+    }
+
+    @Test
+    fun `两将俱在 none`() {
+        val committed: Board = TB.empty().also { it[9][4] = "r_K"; it[0][4] = "b_k" }
+        assertFalse(isResignSuspect(TB.copy(committed), committed, Side.RED))
+    }
+
+    @Test
+    fun `将帅本格读到 lift 算仍在盘上 none`() {
+        // 提起 = 棋子拿在手里/飞行中途，不是离盘证据（用户 2026-09-12 口径）
+        val committed: Board = TB.empty().also { it[9][4] = "r_K"; it[0][4] = "b_k" }
+        val newBoard: Board = TB.copy(committed).also { it[0][4] = Const.LIFT }
+        assertFalse(isResignSuspect(newBoard, committed, Side.RED))
+    }
+
+    @Test
+    fun `将帅已移位到别格 none`() {
+        val committed: Board = TB.empty().also { it[9][4] = "r_K"; it[0][4] = "b_k" }
+        val newBoard: Board = TB.copy(committed).also { it[0][4] = null; it[1][4] = "b_k" }
+        assertFalse(isResignSuspect(newBoard, committed, Side.RED))
     }
 }

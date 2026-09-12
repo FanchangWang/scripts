@@ -54,11 +54,16 @@ internal suspend fun BotSession.confirmEndByOcr(force: Boolean = false): Boolean
 }
 
 internal fun BotSession.updateResign(newBoard: Board, changes: List<Change>): ResignResult {
-    // 提速后游戏结束动画渐进遮盖将帅，单帧「两将缺失」信号会抖动；改用更稳定的清盘信号：
-    // 单帧 >6 个已提交棋子变为空（changes 中 old!=null && new==null），与「两将缺失」取 OR 判疑似结束。
+    // 疑似结束双路（2026-09-12 用户批复）：
+    // ① 任一将/帥离盘——「变空」才算，本格读到 lift（提起）算仍在盘上（口径见 isResignSuspect）。
+    //    原口径要求「两将同时缺失」，残局遮罩下常只有一侧读空（2026-09-12 log2.txt：黑將 d8 确认 ->空
+    //    [1.00]，红帥 d0 仅 0.65~0.80 未确认）→ 判不出结束；
+    // ② 单帧 >6 个已提交棋子变为空（changes 中 old!=null && new==null）——满盘清盘动画信号。
+    // 提速后游戏结束动画渐进遮盖将帅，单帧信号会抖动，故仍需连续 RESIGN_CONFIRM_COUNT 帧确认。
     val emptyDrop = changes.count { it.old != null && it.new == null }
     val suspect =
-        isResignSuspect(newBoard, state.mySide) || emptyDrop > Const.RESIGN_EMPTY_DROP_MAX
+        isResignSuspect(newBoard, state.board, state.mySide) ||
+                emptyDrop > Const.RESIGN_EMPTY_DROP_MAX
     if (suspect) {
         state.resignStreak++
         LogBus.log(

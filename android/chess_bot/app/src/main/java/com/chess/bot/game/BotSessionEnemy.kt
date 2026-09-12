@@ -18,7 +18,8 @@ import kotlin.time.Duration.Companion.milliseconds
  * （字段 lastLiftArtifactWarnAt 留守类内：顶层 var 会改变多实例语义）。
  *
  * waitForEnemyMove 重构（2026-09-10，参考 verifyForSelfMove v3）：n 分流（0 静默 / ≤2 classify /
- * 3..30 灰区）+ (d) diffCells>30 大面积遮挡 verifyEndgameCheck + (e) 稳定未知 2s 兜底（OCR 强扫）+
+ * 3..30 灰区）+ (d) diffCells>30 大面积遮挡 → verifyEndgameCheck（含遮挡帧兜底 OCR）→ 仍未终局才判
+ * 连续遮挡上限（和棋弹窗检出时计数已归零，不参与累加）+ (e) 稳定未知 2s 兜底（OCR 强扫）+
  * (f) 32 子新局摆棋检测（终局漏检兜底；2026-09-11 晚扩两级：级2 覆盖无吃子局——大动画帧 latch +
  * 稳定帧 + 开局形态 + 无 lift）+ 180s 总超时；stable 比较忽略 top1Prob（同日修复）；
  * 废除旧「连续噪声帧暂停」体系（noisyCount/ENEMY_NOISY_MAX，见 Const.kt 注释）。
@@ -279,17 +280,32 @@ internal suspend fun BotSession.waitForEnemyMove() {
             }
 
             // ── (d) diffCells > VERIFY_OCR_DIFF_CELLS：大面积遮挡（弹窗/遮罩/结算画面）→
-            //     OCR/终局检查（updateResign / confirmEndByOcr 节流 / dismissDrawDialog 内聚于 verifyEndgameCheck）──
+            //     OCR/终局检查 + 连续帧计数（updateResign / confirmEndByOcr 节流 / dismissDrawDialog
+            //     内聚于 verifyEndgameCheck）──
             if (grabbed.scan.diffCells > Const.VERIFY_OCR_DIFF_CELLS) {
                 largeAnimSeen = true // (f) 级2 前置：本轮等待发生过大面积动画帧
-                verifyEndgameCheck(grabbed)?.let {
+                occlusionStreak++
+                // 与 verify 侧同口径（见 BotSessionVerify (d)）：**先跑终局/和棋检查，再判遮挡上限**；
+                // 和棋弹窗被检出时 verifyEndgameCheck 已把 occlusionStreak 归零（弹窗不算终局性遮挡）
+                verifyEndgameCheck(grabbed, occluded = true)?.let {
                     if (it == VerifyOutcome.DONE_END) return
                     // RETRY_BOTH（和棋弹窗已关闭）：继续等待
+                }
+                if (occlusionStreak > Const.VERIFY_OCCLUSION_STREAK_MAX) {
+                    LogBus.log(
+                        LogLevel.INFO,
+                        LogTag.PLAY,
+                        "连续 $occlusionStreak 帧大面积遮挡（>${Const.VERIFY_OCR_DIFF_CELLS} 格），判定对局结束",
+                    )
+                    finishGame("连续大面积遮挡画面（$occlusionStreak 帧），判定对局结束")
+                    return
                 }
                 // S5：大动画帧=已知进度，重置稳定未知计数
                 stableUnknownSinceMs = -1L
                 silentStreak = 0
                 state.liftLogged = false
+            } else {
+                occlusionStreak = 0 // 出现正常帧 → 连续中断，计数清零
             }
 
             // ── (e) 稳定未知模式兜底：变化格子集合与上帧逐格相同且不可行动（NOISY/灰区卡死），

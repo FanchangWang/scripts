@@ -117,6 +117,14 @@ object Const {
         2000L // 稳定未知模式（变化格子与上帧逐格相同且不可行动）持续阈值 → 终局/和棋检查 + 重试兜底
     const val VERIFY_OCR_DIFF_CELLS =
         30 // diff cell 数 > 此值 → 大面积遮挡（和棋弹窗/结算遮罩/结束画面），触发 OCR/终局检查（节流）
+
+    // 连续大面积遮挡帧上限（2026-09-12 用户批复）：连续帧数 > 此值（即第 7 帧）→ 判定对局结束。
+    // 为什么要这一路：残局棋子本来就少，遮罩既可能凑不出「清盘 >6 格」、也可能读不出将帅（遮罩半透明
+    // 导致置信度掉到确认门以下）——「画面连续多帧被大面积覆盖」本身就是终局证据。计数器跨 verify 重试
+    // 累积（BotSession.occlusionStreak），中途出现任一帧 diffCells ≤ VERIFY_OCR_DIFF_CELLS 即清零（连续口径）。
+    // 豁免（2026-09-12 用户批复）：和棋弹窗是唯一「大面积遮挡但不中止对局」的场景，而它在 verifyEndgameCheck
+    // 内检出并处理——故该处检出后即把计数归零，且上限判定排在该检查之后（弹窗拿得到否决机会）。
+    const val VERIFY_OCCLUSION_STREAK_MAX = 6
     const val VERIFY_HARD_CAP_MS =
         15_000L // 兜底硬顶：单次 verify 总时长超此值 → RETRY_BOTH（防非稳定的持续动画模式永久悬挂，liveness 保护）
 
@@ -202,7 +210,7 @@ object Const {
         40L // 每轮全量识别后的短暂让步间隔（2026-09-07 D1=B：30→50，降低 grab 频率/GC 压力，敌着检出延迟 +~20ms）
 
     // ---------- 对局结束 / 认输检测 ----------
-    const val RESIGN_CONFIRM_COUNT = 3 // 双方将帅缺失需连续几帧才确认
+    const val RESIGN_CONFIRM_COUNT = 3 // 任一将/帥离盘（或清盘信号）需连续几帧才确认（2026-09-12 起原「双方将帅缺失」改为单侧）
     const val RESIGN_SUSPECT_WAIT_MS = 1000L // 单帧疑似结束时延时再采样
     const val RESIGN_EMPTY_DROP_MAX = 6 // 单帧「棋子变空」的格子数超过此值即疑似结束（>6）；清盘动画强于将帅遮挡信号
 

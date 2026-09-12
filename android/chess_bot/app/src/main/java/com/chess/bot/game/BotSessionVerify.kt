@@ -21,7 +21,8 @@ import kotlinx.coroutines.delay
 //   (b) n ≤ 4 → classifySelfFrame 明确归类（SELF_DONE / SELF_THEN_ENEMY[稳定 + T-D 复判，
 //       敌着就地提交] / LIFTED[超 T2 补点] / SILENT[稳定 K1 帧重试两格] / NOISY[T-B 吞点击恢复]）；
 //   (c) n ∈ 5..VERIFY_OCR_DIFF_CELLS → 动画/噪声灰区，静默继续；
-//   (d) diffCells > VERIFY_OCR_DIFF_CELLS → 大面积遮挡（弹窗/遮罩/结束画面）→ OCR/终局检查（节流）；
+//   (d) diffCells > VERIFY_OCR_DIFF_CELLS → 大面积遮挡（弹窗/遮罩/结束画面）→ 连续帧计数（超
+//       VERIFY_OCCLUSION_STREAK_MAX 帧直接终局）+ OCR/终局检查（节流）；
 //   (e) 稳定（变化格子集合与上帧逐格相同）且不可行动持续超 T3 → 终局检查 + RETRY_BOTH 兜底；
 //   liveness 硬顶 VERIFY_HARD_CAP_MS（防非稳定的持续动画模式永久悬挂）。
 // 基线白名单：提交只刷新被提交着法覆盖的格子 + driftCells，其余变化格（敌方仅提起/伪影）
@@ -192,9 +193,29 @@ internal suspend fun BotSession.verifyForSelfMove(
 
             // ── (c) n ∈ 5..VERIFY_OCR_DIFF_CELLS：动画/噪声灰区，静默继续（不 OCR、不重试）──
 
-            // ── (d) diffCells > VERIFY_OCR_DIFF_CELLS：大面积遮挡 → OCR/终局检查（节流）──
+            // ── (d) diffCells > VERIFY_OCR_DIFF_CELLS：大面积遮挡 → OCR/终局检查（节流）+ 连续帧计数 ──
             if (grabbed.scan.diffCells > Const.VERIFY_OCR_DIFF_CELLS) {
-                verifyEndgameCheck(grabbed)?.let { return it }
+                occlusionStreak++
+                // 顺序（2026-09-12 用户批复）：**先跑终局/和棋检查，再判遮挡上限**。唯一「大面积遮挡
+                // 但不中止对局」的场景是和棋弹窗，而它正是在 verifyEndgameCheck 内检出并处理的——上限
+                // 判定若排在前头，弹窗停留到第 7 帧就先被判终局，弹窗这一路拿不到否决机会；且弹窗被
+                // 检出时会把 occlusionStreak 归零（见 verifyEndgameCheck 的 dismissDrawDialog 命中分支），
+                // 本帧不再计入连续遮挡。
+                verifyEndgameCheck(grabbed, occluded = true)?.let { return it }
+                // 连续遮挡帧超上限：残局遮罩可能既凑不出「清盘 >6 格」、也读不出将帅（半透明遮罩把
+                // 置信度压到确认门以下）——画面连续多帧被大面积覆盖本身就是终局证据；
+                // 计数器跨重试累积，任一帧 diffCells ≤ 阈值即清零（连续口径）
+                if (occlusionStreak > Const.VERIFY_OCCLUSION_STREAK_MAX) {
+                    LogBus.log(
+                        LogLevel.INFO,
+                        LogTag.PLAY,
+                        "连续 $occlusionStreak 帧大面积遮挡（>${Const.VERIFY_OCR_DIFF_CELLS} 格），判定对局结束",
+                    )
+                    finishGame("连续大面积遮挡画面（$occlusionStreak 帧），判定对局结束")
+                    return VerifyOutcome.DONE_END
+                }
+            } else {
+                occlusionStreak = 0 // 出现正常帧 → 连续中断，计数清零
             }
 
             // ── (e) 稳定未知模式兜底：与上帧变化格子相同且不可行动，持续超 T3 →
@@ -318,8 +339,19 @@ internal fun BotSession.refreshBaselineCells(grab: Grabbed, cells: Set<Pair<Int,
 
 /** v3 verify 内终局/和棋检查（触发条件：diff cell > VERIFY_OCR_DIFF_CELLS 的大面积遮挡帧，
  *  或稳定未知模式超 T3）。和棋弹窗关闭 → RETRY_BOTH（点击多半被吞）；终局确认 → DONE_END。
- *  OCR 类检查自带节流（confirmEndByOcr / lastVerifyDrawScanAt），updateResign 为纯格子信号不节流。 */
-internal suspend fun BotSession.verifyEndgameCheck(grabbed: Grabbed): VerifyOutcome? {
+ *  OCR 类检查自带节流（confirmEndByOcr / lastVerifyDrawScanAt），updateResign 为纯格子信号不节流。
+ *
+ *  @param occluded 本帧是否为大面积遮挡帧（diffCells > VERIFY_OCR_DIFF_CELLS）。为 true 时**即使
+ *   updateResign 未判疑似也补一次节流 OCR 结算扫描**（2026-09-12 用户批复）：遮罩上的结算/终止文字
+ *   是最强证据，而原实现只在 SUSPECT 分支扫 OCR——log2.txt 残局遮罩帧（83 格）连一次 OCR 都没跑过。
+ *
+ *  副作用（2026-09-12 用户批复）：检出和棋弹窗并点击后把 `occlusionStreak` 归零——和棋是唯一
+ *  「大面积遮挡但不中止对局」的场景，不应参与「连续遮挡 = 终局」的累加。
+ */
+internal suspend fun BotSession.verifyEndgameCheck(
+    grabbed: Grabbed,
+    occluded: Boolean = false,
+): VerifyOutcome? {
     when (updateResign(grabbed.scan.board, grabbed.scan.changes)) {
         ResignResult.CONFIRMED -> {
             if (selfMatePending) {
@@ -333,7 +365,9 @@ internal suspend fun BotSession.verifyEndgameCheck(grabbed: Grabbed): VerifyOutc
 
         ResignResult.SUSPECT -> if (confirmEndByOcr()) return VerifyOutcome.DONE_END
 
-        ResignResult.NONE -> {}
+        // 遮挡帧兜底 OCR（2026-09-12 用户批复；节流由 confirmEndByOcr 内部 OCR_SUSPECT_SCAN_THROTTLE_MS
+        // 承担）：命中结算词立即终局；命中「体力获取/复活」等终止词由上层 StartLoop 处理
+        ResignResult.NONE -> if (occluded && confirmEndByOcr()) return VerifyOutcome.DONE_END
     }
     val now = System.nanoTime()
     if (now - lastVerifyDrawScanAt >= Const.OCR_SUSPECT_SCAN_THROTTLE_MS * 1_000_000) {
@@ -343,6 +377,11 @@ internal suspend fun BotSession.verifyEndgameCheck(grabbed: Grabbed): VerifyOutc
             LogBus.log(LogLevel.INFO, LogTag.SELF, "verify 检出并关闭和棋弹窗，交由重试重新核验")
             setStatus(BotStatus.DRAW_HANDLING)
             state.resignStreak = 0
+            // 和棋弹窗 = 唯一「大面积遮挡但不中止对局」的场景（2026-09-12 用户批复）：
+            // 检出即把连续遮挡计数归零，它不参与「连续遮挡 = 终局」的累加。
+            // 安全性：结算遮罩既过不了三词同现（findDrawDialog），也会在更前面的
+            // confirmEndByOcr 就被结算词命中提前终局——本归零不可能把真终局短路。
+            occlusionStreak = 0
             return VerifyOutcome.RETRY_BOTH
         }
     }

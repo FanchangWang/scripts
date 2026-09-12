@@ -2,6 +2,7 @@ package com.chess.bot.log
 
 import android.content.Context
 import com.chess.bot.data.BotConfig
+import com.chess.bot.log.FileLogger.openNew
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
