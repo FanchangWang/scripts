@@ -1,5 +1,9 @@
 package com.chess.bot.game
 
+import com.chess.bot.data.BotConfig
+import com.chess.bot.log.LogBus
+import com.chess.bot.log.LogLevel
+import com.chess.bot.log.LogTag
 import com.chess.bot.vision.Recognizer
 import org.opencv.core.Mat
 
@@ -14,12 +18,15 @@ import org.opencv.core.Mat
  * 性能：原全量 90 格 × ~14 模板 ≈ 466ms/帧；现 90 次 10x10 diff(~6ms) + 仅变化格(~2-3)cls 推理
  * ≈ ~20ms/帧，整轮循环 ~540ms → ~80ms，敌方落定约 1 帧内检出。
  *
+ * 日志（2026-09-12 Q2）：本函数内直接落「识别明细」DEBUG 行（开关 BotConfig.data.debugVisionDetail，
+ * 默认关），因此 BoardScan 不再回传纯日志字段（原 transitLifts / unconfirmedDetail / unconfirmedCells
+ * 已随 2026-09-12 瘦身删除，降为本函数局部变量）。
+ *
  * @param baseline   上一提交点冻结的 90 格中心小图（state.prevCellImgs），用作逐格 diff 基线
  * @param committed  已提交棋盘（state.board）；未变格直接沿用，保证 newBoard 完整
  * @return BoardScan(新布局, 相对 committed 的变动列表, diff 命中格数,
  *   自修复格列表 driftCells——diff 触发但识别值==已提交(无真实走子)，提交点据此自愈 cellImgs，
- *   防止 baseline 永久陈旧(白点/高亮/光照漂移)导致误触发随步数累积，2026-08-30 05:49,
- *   transitLifts——「空格→lift」飞行途经伪影剔除格数，2026-09-06 03:02)
+ *   防止 baseline 永久陈旧(白点/高亮/光照漂移)导致误触发随步数累积，2026-08-30 05:49)
  */
 fun recognizeBoardChanged(
     corrected: Mat,
@@ -30,9 +37,8 @@ fun recognizeBoardChanged(
     val board = makeEmptyBoard()
     val changes = mutableListOf<Change>()
     val driftCells = mutableListOf<Pair<Int, Int>>()
-    val clsDetails = mutableListOf<String>()
+    val unconfirmedDetails = mutableListOf<String>()
     var diffCells = 0
-    var transitLifts = 0
     var unconfirmed = 0
     // 2026-09-07 GC 优化：90 格循环复用同一 10x10 patch 缓冲（单 worker 管线串行，
     // cropCellGrayInto + cellChanged 均为写入式/scratch 版；持久基线仍走分配版 cropCellGray）
@@ -51,8 +57,8 @@ fun recognizeBoardChanged(
                         // 伪影——裁剪窗拍到带阴影/运动模糊的悬空棋子 → cls lift 类误触发。
                         // 视为无变化：不进 changes（不参与帧分类/噪声计数/提交），board 写回
                         // committed 值，基线保持空格——伪影随棋子落定自然消失，无需刷新。
+                        // 该计数原供 grabBoard 耗时行「剔除 N」使用，2026-09-12 Q1 取消，不再记账。
                         board[r][c] = old
-                        transitLifts++
                     } else {
                         board[r][c] = new
                         if (old != new) {
@@ -67,26 +73,18 @@ fun recognizeBoardChanged(
                             if (res.top1Prob < trustMin) {
                                 board[r][c] = old
                                 unconfirmed++
-                                // 未确认明细（2026-09-09 D5 中文化；Q3 修正 18:13）：old 显示已提交
-                                // 棋盘的实际棋子（原「?」占位误导——board 里明明有值），grabBoard 变化行并入
-                                clsDetails.add(
-                                    "${
-                                        gridToSquare(
-                                            r,
-                                            c,
-                                            mySide
-                                        )
-                                    } ${old?.let(::pieceLabel) ?: "空"}->" +
-                                            "${new?.let(::pieceLabel) ?: "空"}(${("%.2f".format(res.top1Prob))})未确认"
+                                // 未确认明细：old 显示已提交棋盘的实际棋子（board 里明明有值）；
+                                // 与确认格同一表述格式（changeText），由「识别明细」开关日志承载
+                                unconfirmedDetails.add(
+                                    changeText(r, c, old, new, res.top1Prob, mySide)
                                 )
                             } else {
                                 changes.add(Change(r, c, old, new, res.top1Prob))
-                                // 变化格 cls 置信度改由 Change 结构化携带（2026-09-09 日志拆分 D1=A），
-                                // grabBoard 变化行内联显示——消除「变化段 + cls 段」一格打两遍的冗余
                             }
                         } else if (base != null) {
                             // diff 触发但识别值与已提交一致（无真实走子）：画面漂移（白点/高亮/光照）。
                             // 提交点据此把 cellImgs 更新为当前干净外观，避免 baseline 永久陈旧→误触发累积。
+                            // 漂移只服务基线自愈、与棋子变更无关，不落日志（2026-09-12 Q2）
                             driftCells.add(r to c)
                         }
                     }
@@ -98,23 +96,78 @@ fun recognizeBoardChanged(
     } finally {
         patch.release()
     }
-    return BoardScan(
-        board, changes, diffCells, driftCells, transitLifts,
-        unconfirmedDetail = clsDetails.takeIf { it.isNotEmpty() }?.joinToString(", "),
-        unconfirmedCells = unconfirmed,
-    )
+    logVisionDetail(changes, diffCells, unconfirmed, unconfirmedDetails, mySide)
+    return BoardScan(board, changes, diffCells, driftCells)
 }
 
-/** 单帧识别结果（方案 A 变种自修复用）。 */
+/**
+ * 单格变更的中文表述：「格 旧->新[置信]」（如 `e7 黑將->空[1.00]`）。
+ * 棋盘变化行与识别明细行（确认/未确认）共用同一格式，便于逐格对照。
+ */
+internal fun changeText(
+    r: Int,
+    c: Int,
+    old: String?,
+    new: String?,
+    top1Prob: Float,
+    mySide: Side,
+): String =
+    "${gridToSquare(r, c, mySide)} ${old?.let(::pieceLabel) ?: "空"}->" +
+            "${new?.let(::pieceLabel) ?: "空"}[${"%.2f".format(top1Prob)}]"
+
+/**
+ * 识别明细日志（2026-09-12 Q2）：开关 `BotConfig.data.debugVisionDetail`（设置页「调试日志」分组，默认关）。
+ *
+ * 只报三类计数 + 明细：
+ * - 光影变化格数：像素 diff 触发的格子数（含动画遮挡/伪影/漂移）——「本帧有多少格进入复检」
+ * - 确认格：diff 且置信度达标 → 真实变更，附「格 旧->新[置信]」清单
+ * - 未确认格：diff 但置信度不足 → 本帧丢弃、待下帧复检，附同格式清单
+ *
+ * 刻意不报（2026-09-12 Q2 用户裁定）：① 剔除——空格被 cls 误读成 lift 的飞行途经伪影，本帧即丢弃，
+ * 无诊断价值；② 漂移——光效导致基线自愈，与棋子变更无关。
+ *
+ * 触发门（2026-09-12 Q2 二次裁定 A）：仅当本帧有确认格或未确认格时才打整块（含汇总行）——
+ * 纯漂移帧（`光影=N 确认=0 未确认=0`：UI 光效致像素 diff 触发，棋子一个没变）整块静默。
+ * 真机 log.txt 实测该类占汇总行 60%（834/1390）、占全日志 24%，收紧后识别明细行 2027 → 1193。
+ */
+private fun logVisionDetail(
+    changes: List<Change>,
+    diffCells: Int,
+    unconfirmed: Int,
+    unconfirmedDetails: List<String>,
+    mySide: Side,
+) {
+    if (!BotConfig.data.debugVisionDetail) return
+    if (changes.isEmpty() && unconfirmed == 0) return
+    LogBus.log(
+        LogLevel.DEBUG,
+        LogTag.VISION,
+        "识别明细 光影=$diffCells 确认=${changes.size} 未确认=$unconfirmed"
+    )
+    if (changes.isNotEmpty()) {
+        LogBus.log(
+            LogLevel.DEBUG,
+            LogTag.VISION,
+            "识别明细·确认 " + changes.joinToString(", ") {
+                changeText(it.r, it.c, it.old, it.new, it.top1Prob, mySide)
+            }
+        )
+    }
+    if (unconfirmedDetails.isNotEmpty()) {
+        LogBus.log(
+            LogLevel.DEBUG,
+            LogTag.VISION,
+            "识别明细·未确认 " + unconfirmedDetails.joinToString(", ")
+        )
+    }
+}
+
+/** 单帧识别结果（方案 A 变种自修复用）。
+ *  2026-09-12 瘦身：删 3 个纯日志字段（transitLifts / unconfirmedDetail / unconfirmedCells，
+ *  明细日志已内聚到 recognizeBoardChanged），余下 4 个字段均有功能消费者。 */
 data class BoardScan(
     val board: Board,
     val changes: List<Change>,
     val diffCells: Int,
     val driftCells: List<Pair<Int, Int>>,
-    val transitLifts: Int = 0,
-    /** 低置信未确认格明细（2026-09-09 D1=A/D5：「格 红兵->黑X(置信)未确认」逗号拼接，无则 null）。
-     *  已确认变化格的置信度改由 [Change] 结构化携带，grabBoard 变化行统一拼装。 */
-    val unconfirmedDetail: String? = null,
-    /** 低置信未确认格数（< 分档阈值 CLS_TRUST_MIN / CLS_TRUST_MIN_EMPTY，不进 changes 待下帧复检）。 */
-    val unconfirmedCells: Int = 0,
 )

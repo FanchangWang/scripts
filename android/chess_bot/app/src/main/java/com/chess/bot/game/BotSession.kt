@@ -71,14 +71,10 @@ class BotSession(internal val context: Context) {
      */
     internal var selfMatePending = false
 
-    /** grabBoard「变化行」上次记录的内容（内容相同则静默，2026-09-09 日志拆分 D1=A）。 */
+    /** grabBoard「变化行」上次记录的内容（内容相同则静默，2026-09-09 日志拆分 D1=A）。
+     *  2026-09-12 Q1：异常行整套状态已随性能行收敛一并删除（`lastAnomalyKey` / `lastDriftLogMs`
+     *  / `GRAB_LOG_DRIFT_INTERVAL_MS` 漂移限频），本类不再有异常行记账字段。 */
     internal var lastGrabLogKey: String? = null
-
-    /** grabBoard「异常行」上次事件指纹（非慢帧部分连续相同只打首条，变化行打印时重置；2026-09-09 R5=A）。 */
-    internal var lastAnomalyKey: String? = null
-
-    /** grabBoard 异常行上次漂移打点时刻（单调 ms）；漂移限频 GRAB_LOG_DRIFT_INTERVAL_MS 内不重复打（R7）。 */
-    internal var lastDriftLogMs = 0L
 
     /** 我方走子时引擎返回的预测敌着（ponder）；用于敌方思考期启动 ponder 预搜。 */
     internal var pendingPonderMove: String? = null
@@ -293,47 +289,24 @@ class BotSession(internal val context: Context) {
         val tRecog = System.nanoTime()
         val scan = recognizeBoardChanged(corrected, state.prevCellImgs, state.board, state.mySide)
         val recogMs = (System.nanoTime() - tRecog) / 1_000_000
-        // 两行拆分（2026-09-09 D1=A，替代原「耗时拆解」单行混装；R4=A 收紧漂移触发）：
-        // 行1「异常行」：仅慢帧/暂缓/剔除/漂移事件必打，安静期全静默——grep grabBoard 即性能与识别异常流；
-        //   漂移仅在「无变化帧」（静止棋盘白点/高亮自愈）时才报——过渡期内已变格持续 diff 且识别值==提交值
-        //   必然计为漂移，属物理必然（log3.txt 实测 611 次/2 局曾把门控击穿），不进异常行；
-        //   且静止漂移本身高频（UI 光效逐帧像素漂移，log3 实测 468 条无变化帧漂移；指纹去重 R5 对
-        //   逐帧波动噪音基本无效，467 行）→ 漂移限频打点（R7）：GRAB_LOG_DRIFT_INTERVAL_MS(3s) 内
-        //   同因最多 1 条，log3 模拟 641 → 109 行；
-        // 行2「变化行」：变化+未确认中文明细并一行，内容与上一条相同才静默——grep 棋盘变化 即走子过程回放
-        val slow = grabMs > Const.GRAB_LOG_SLOW_MS
-        val nowMs = System.nanoTime() / 1_000_000
-        val driftReport = scan.driftCells.isNotEmpty() && scan.changes.isEmpty() &&
-                nowMs - lastDriftLogMs >= Const.GRAB_LOG_DRIFT_INTERVAL_MS
-        if (slow || scan.transitLifts > 0 || scan.unconfirmedCells > 0 || driftReport) {
-            val parts = buildList {
-                add("diff ${scan.diffCells}")
-                if (scan.unconfirmedCells > 0) add("暂缓 ${scan.unconfirmedCells}")
-                if (scan.transitLifts > 0) add("剔除 ${scan.transitLifts}")
-                if (driftReport) add("漂移 ${scan.driftCells.size}")
-            }
-            val eventKey = parts.joinToString(" / ")
-            if (slow || driftReport || eventKey != lastAnomalyKey) {
-                lastAnomalyKey = eventKey
-                if (driftReport) lastDriftLogMs = nowMs
-                val prefix = if (slow) "慢帧 / " else ""
-                LogBus.log(
-                    LogLevel.DEBUG,
-                    LogTag.VISION,
-                    "grabBoard grab=${grabMs}ms recog=${recogMs}ms（$prefix$eventKey）"
-                )
-            }
+        // 行1「性能行」（2026-09-12 Q1 收敛）：仅慢帧打印，且只带时间——原事件明细
+        //   （慢帧 / diff N / 暂缓 N / 剔除 N / 漂移 N）整块删除：剔除是空格被 cls 误读成 lift 的
+        //   飞行途经伪影、漂移只是光效导致基线自愈，均与棋子变更无关；未确认明细改由识别侧
+        //   「识别明细」开关日志承载。grep grabBoard = 纯性能异常流。
+        if (grabMs > Const.GRAB_LOG_SLOW_MS) {
+            LogBus.log(
+                LogLevel.DEBUG,
+                LogTag.VISION,
+                "grabBoard grab=${grabMs}ms recog=${recogMs}ms"
+            )
         }
-        // 行2：变化项「格 红X->黑Y[top1]」（D5 中文化；lift 概率附注已随 liftProb 删除）
-        val items = scan.changes.mapTo(mutableListOf()) { ch ->
-            "${gridToSquare(ch.r, ch.c, state.mySide)} ${ch.old?.let(::pieceLabel) ?: "空"}->" +
-                    "${ch.new?.let(::pieceLabel) ?: "空"}[${"%.2f".format(ch.top1Prob)}]"
+        // 行2「变化行」（2026-09-12 Q1 收敛）：只打明确变更的棋子——置信度不足的未确认格不再并入
+        //   本行；内容与上一条相同才静默。grep 棋盘变化 = 走子过程回放。
+        val changeLine = scan.changes.joinToString(", ") {
+            changeText(it.r, it.c, it.old, it.new, it.top1Prob, state.mySide)
         }
-        scan.unconfirmedDetail?.let { items.add(it) } // 未确认格并入变化行（D4=A）
-        val changeLine = items.joinToString(", ")
         if (changeLine.isNotEmpty() && changeLine != lastGrabLogKey) {
             lastGrabLogKey = changeLine
-            lastAnomalyKey = null // 真实变化发生：异常行指纹重置，下一节拍的漂移/暂缓可重新首打
             LogBus.log(LogLevel.DEBUG, LogTag.VISION, "棋盘变化：$changeLine")
         }
         return Grabbed(corrected, scan)

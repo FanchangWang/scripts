@@ -31,6 +31,9 @@ data class BotConfigData(
     // 调试日志开关（设置页「调试日志」分组）：默认关闭，抓日志时临时打开。
     // 不再由 Const 硬编码常量控制（原 ENGINE_UCI_TRACE 已迁移至此，默认值 false）。
     val debugUciTrace: Boolean = false,
+    // 视觉识别明细（2026-09-12 Q2）：开关 recognizeBoardChanged 内「识别明细」日志
+    // （光影变化/确认/未确认三类计数 + 逐格明细），默认关闭。
+    val debugVisionDetail: Boolean = false,
 )
 
 /** 全局配置单例：服务启动时 load；设置页保存时整体刷新。引擎/会话直接读 data。 */
@@ -58,6 +61,7 @@ object BotConfig {
             verifyNextFrameMs = s.verifyNextFrameMs.first(),
             enemyPollMs = s.enemyPollMs.first(),
             debugUciTrace = s.debugUciTrace.first(),
+            debugVisionDetail = s.debugVisionDetail.first(),
         )
         configMovetimeMs = data.movetimeMs
     }
@@ -78,6 +82,7 @@ object BotConfig {
             setVerifyNextFrameMs(value.verifyNextFrameMs)
             setEnemyPollMs(value.enemyPollMs)
             setDebugUciTrace(value.debugUciTrace)
+            setDebugVisionDetail(value.debugVisionDetail)
         }
     }
 
@@ -142,6 +147,10 @@ class BotSettings(private val context: Context) {
     val debugUciTrace: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_DEBUG_UCI_TRACE] ?: DEFAULTS.debugUciTrace }
 
+    /** 调试日志：视觉识别明细开关（设置页「调试日志」分组；默认关，抓日志时临时打开）。 */
+    val debugVisionDetail: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_DEBUG_VISION_DETAIL] ?: DEFAULTS.debugVisionDetail }
+
     suspend fun setMovetimeMs(v: Int) = context.dataStore.edit { it[KEY_MOVETIME] = v }
     suspend fun setThreads(v: Int) = context.dataStore.edit { it[KEY_THREADS] = v }
     suspend fun setHashMb(v: Int) = context.dataStore.edit { it[KEY_HASH] = v }
@@ -160,6 +169,9 @@ class BotSettings(private val context: Context) {
 
     suspend fun setDebugUciTrace(v: Boolean) =
         context.dataStore.edit { it[KEY_DEBUG_UCI_TRACE] = v }
+
+    suspend fun setDebugVisionDetail(v: Boolean) =
+        context.dataStore.edit { it[KEY_DEBUG_VISION_DETAIL] = v }
 
     suspend fun setOverlayInfo2(x: Int, y: Int) = context.dataStore.edit {
         it[KEY_OVERLAY_INFO2_X] = x
@@ -191,5 +203,6 @@ class BotSettings(private val context: Context) {
         private val KEY_VERIFY_NEXT_FRAME = intPreferencesKey("verify_next_frame_ms")
         private val KEY_ENEMY_POLL = intPreferencesKey("enemy_poll_ms")
         private val KEY_DEBUG_UCI_TRACE = booleanPreferencesKey("debug_uci_trace")
+        private val KEY_DEBUG_VISION_DETAIL = booleanPreferencesKey("debug_vision_detail")
     }
 }

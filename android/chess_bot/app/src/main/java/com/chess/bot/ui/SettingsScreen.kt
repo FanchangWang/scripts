@@ -172,6 +172,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                     subtitle = "记录发出的 UCI 命令与 bestmove 到达耗时（抓日志时临时打开）",
                     checked = cfg.debugUciTrace,
                 ) { v -> update { it.copy(debugUciTrace = v) } }
+                SwitchRow(
+                    title = "视觉识别明细",
+                    subtitle = "记录每帧光影变化 / 确认 / 未确认格数与逐格明细（抓日志时临时打开）",
+                    checked = cfg.debugVisionDetail,
+                ) { v -> update { it.copy(debugVisionDetail = v) } }
             }
 
             GroupLabel("其他")

@@ -67,11 +67,10 @@ object Const {
     /** 我方提子确认帧数：连续同位置 lift 达此帧数才触发恢复流程（过滤飞行途经瞬态伪影）。 */
     const val LIFT_CONFIRM_FRAMES = 2
 
-    /** grabBoard 耗时拆解慢帧阈值（D1 门控，2026-09-09）：grab 超此值必打日志（性能异常帧不丢）。 */
+    /** grabBoard 慢帧阈值（2026-09-09 D1 门控；2026-09-12 Q1 收敛为唯一的性能行触发条件）：
+     *  grab 超此值才打「grabBoard grab=Xms recog=Yms」——常态帧与安静期全静默，性能异常帧一条不丢。
+     *  原异常行事件明细（diff/暂缓/剔除/漂移）与其漂移限频常量 GRAB_LOG_DRIFT_INTERVAL_MS 已删除。 */
     const val GRAB_LOG_SLOW_MS = 80L
-
-    /** grabBoard 异常行漂移限频（2026-09-09 R7）：静止棋盘 UI 光效逐帧像素漂移高频自愈，同因限频打点。 */
-    const val GRAB_LOG_DRIFT_INTERVAL_MS = 3_000L
 
     /** 提子卡死诊断门（G1=A，2026-09-08）：确认次数达到 N 帧仍未完成恢复（首次恢复 RETRY
      *  后的下帧即满足）→ SettleWaiter 发 OwnLiftStalled，调用方触发一次 det 几何诊断，
