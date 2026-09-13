@@ -1,8 +1,5 @@
 package com.chess.bot.game
 
-import com.chess.bot.log.LogBus
-import com.chess.bot.log.LogLevel
-import com.chess.bot.log.LogTag
 import com.chess.bot.vision.Recognizer
 import org.opencv.core.Mat
 
@@ -133,19 +130,17 @@ class GameState {
     var highlight: List<Pair<Int, Int>> = emptyList()
 
     /**
-     * 引擎 position 基线（R3）：拍当前局面 FEN 快照；bestMove/startPonder 改发
-     * `position fen $基线 moves $全列表`，App 侧不再逐手拼完整 FEN
-     *（halfmove / 重复局面由引擎按 moves 自算）。null = 尚未拍。
+     * 引擎 position 局面（2026-09-13 拍板，废弃「基线 FEN + moves 全列表」）：
+     * **每次调用现算完整 FEN**（`fenOfBoard(board, mySide, turn, halfmoveClock)`），
+     * `bestMove` / `startPonder` 发 `position fen <FEN>`（无 moves 段）。
+     *
+     * 为何不再维护基线 + moves 列表：`position ... moves` 依赖 App 维护全历史着法，
+     * 该列表一旦错位（2026-09-12 a7c5 事故：序列错成「敌·敌·我·敌」），引擎会**在首个非法着法处
+     * 静默截断**，此后整局都在错误局面上搜索，且 App 无法察觉。完整 FEN 取自单一真实源
+     * [board]（由三个 apply* 提交点保证正确），**不存在错位可能**；代价是放弃历史搜索数据复用，
+     * 但 moves 只影响 halfmove / 重复局面（仅产生和棋分，不影响将杀判决），收益远大于此。
      */
-    var baselineFen: String? = null
-        private set
-
-    /** 基线之后着法全列表的存储（F-1 2026-09-11：私有，写入仅经 [appendMoveIccs]）。 */
-    private val _movesList = mutableListOf<String>()
-
-    /** 基线之后的着法全列表（ICCS 标准方向，与基线 FEN 同坐标系）——**只读视图**：
-     *  写入仅经三个提交点（applySelfMove / applyEnemyMove / applySelfThenEnemy → appendMoveIccs）。 */
-    val movesList: List<String> get() = _movesList
+    fun engineFen(): String = fenOfBoard(board, mySide, turn, halfmoveClock)
 
     /**
      * 开局库挂起（E2，2026-09-11）：皮卡鱼 info 一旦返回 mate（正=我方 N 步杀 / 负=被绝杀，
@@ -206,8 +201,6 @@ class GameState {
         phase = Phase.OPENING
         initialized = false
         halfmoveClock = 0
-        baselineFen = null
-        _movesList.clear()
         bookSuspendedByMate = false
         gameOver = false
         highlight = emptyList()
@@ -267,86 +260,30 @@ class GameState {
         bookSuspendedByMate = true
     }
 
-    /**
-     * 拍引擎 position 基线（幂等：已有则直接返回）。基线 = 当前局面 FEN；
-     * 此前累积的 movesList 清零（那些着法已体现在基线里，防回放双计）。
-     * 显式调用点：decideStartTurn / autoNextGame 轮次判定后；computeMove / maybeStartPonder 兜底。
-     * 与 [maybeRollEngineBaseline] 分工：本方法只在无基线时首拍；滚动重锚走后者。
-     */
-    fun ensureEngineBaseline(): String {
-        val existing = baselineFen
-        if (existing != null) return existing
-        val fen = fenOfBoard(board, mySide, turn, halfmoveClock)
-        baselineFen = fen
-        val absorbed = _movesList.size
-        _movesList.clear()
-        LogBus.log(
-            LogLevel.INFO, LogTag.ENGINE,
-            "引擎 position 基线已拍（moves 从零累计${if (absorbed > 0) "，基线前 $absorbed 手已并入基线" else ""}）：$fen"
-        )
-        return fen
-    }
-
-    /**
-     * position 滚动重锚（2026-09-12 D1=B 窗口 6 / D2=A DEBUG 日志）：movesList 达
-     * [Const.ENGINE_MOVE_WINDOW] 手 → 重拍基线 FEN（fen 滚动生成，侧向/半回合钟由
-     * 当前 state 保证，50 回合规则无损）、moves 清零 → 引擎 position 行只携带窗口内着法。
-     * 仅在三个 apply* 提交函数末尾调用（此时 board/turn/halfmoveClock 全部一致）；
-     * applySelfThenEnemy 须两手都提交完调用一次（中途滚动会拍到错误的行棋方）。
-     * 旧基线着法全部并入新基线，回放语义不变；对 computeMove/maybeStartPonder/PikafishEngine 透明。
-     */
-    fun maybeRollEngineBaseline() {
-        if (_movesList.size < Const.ENGINE_MOVE_WINDOW) return
-        val fen = fenOfBoard(board, mySide, turn, halfmoveClock)
-        baselineFen = fen
-        val absorbed = _movesList.size
-        _movesList.clear()
-        LogBus.log(
-            LogLevel.DEBUG, LogTag.ENGINE,
-            "引擎 position 基线滚动重锚（$absorbed 手并入基线，moves 从零累计）：$fen"
-        )
-    }
-
-    /** moves 追加漏斗：网格 → ICCS（gridToSquare 与 fenOfBoard 同一套翻转规则，坐标系一致）。 */
-    private fun appendMoveIccs(move: Move) {
-        _movesList.add(
-            gridToSquare(move.src.first, move.src.second, mySide) +
-                    gridToSquare(move.dst.first, move.dst.second, mySide)
-        )
-    }
-
     fun applySelfMove(move: Move) {
         halfmoveClock = applyMove(board, move, halfmoveClock)
-        appendMoveIccs(move)
         turn = mySide.opponent
         highlight = listOf(move.src, move.dst)
         selfHighlight = listOf(move.src, move.dst)
         selfPlanned = false
-        maybeRollEngineBaseline()
     }
 
     fun applyEnemyMove(move: Move) {
         halfmoveClock = applyMove(board, move, halfmoveClock)
-        appendMoveIccs(move)
         turn = mySide
         highlight = listOf(move.src, move.dst)
         enemyHighlight = listOf(move.src, move.dst)
-        maybeRollEngineBaseline()
     }
 
     /** 我方走棋成功 + 敌方已完成一步，轮到我方。 */
     fun applySelfThenEnemy(selfMove: Move, enemyMove: Move) {
         halfmoveClock = applyMove(board, selfMove, halfmoveClock)
-        appendMoveIccs(selfMove)
         halfmoveClock = applyMove(board, enemyMove, halfmoveClock)
-        appendMoveIccs(enemyMove)
         turn = mySide
         highlight = listOf(enemyMove.src, enemyMove.dst)
         selfHighlight = listOf(selfMove.src, selfMove.dst)
         selfPlanned = false
         enemyHighlight = listOf(enemyMove.src, enemyMove.dst)
-        // 两手全部提交完才判定滚动（中途滚动会拍到错误的行棋方）
-        maybeRollEngineBaseline()
     }
 
     fun markGameOver() {

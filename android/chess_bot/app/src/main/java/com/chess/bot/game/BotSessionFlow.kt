@@ -47,8 +47,8 @@ internal fun BotSession.decideStartTurn() {
             // 布局不在此打印：initialize 已无条件落「摆棋布局」（2026-09-08 Q1 去重）
         }
     }
-    // R3 配套：轮次已定 → 拍引擎 position 基线（32 子局 = 初始局面，其后全部着法进 movesList）
-    state.ensureEngineBaseline()
+    // 注（2026-09-13）：原「R3 拍引擎 position 基线」已删——position 改为每次现算完整 FEN
+    //（state.engineFen()），轮次确定后无需再拍任何快照。
 }
 
 // ---------- 自动对弈主循环 ----------
@@ -250,15 +250,11 @@ internal fun BotSession.maybeStartPonder() {
     if (state.turn != state.mySide.opponent) return
     val predicted = pendingPonderMove ?: return
     prematurePonderHarvested = false // 新一轮预搜开始，清除上一轮收割标志
-    // position = 基线 FEN + moves 全列表（movesList 已含我方刚走的这步）+ 预测敌着追加尾部
-    val ponderBase = state.ensureEngineBaseline()
-    // position 自检（2026-09-12 用户批复 D2）：ponder 只是加速手段，自检不过就**放弃本轮预搜**
-    // （不中止对局）——错局面必在下一轮 computeMove 的 bestMove 自检处被拦下并暂停，此处不重复处置。
-    if (!auditPosition(ponderBase)) {
-        LogBus.log(LogLevel.WARN, LogTag.ENGINE, "position 自检未通过，跳过本轮 ponder 预搜")
-        return
-    }
-    engine.startPonder(context, ponderBase, state.movesList, predicted)
+    // ponder 局面（2026-09-13 拍板）：在 board **副本**上试走预测敌着，再生成完整 FEN
+    //（= 我方刚走完 + 敌方走出预测着 的轮我方局面），发 `position fen <FEN>`（无 moves 段）。
+    // 副本试走不动真实 state；预测不着时仅日志告警，用未试走的局面起 ponder（引擎仍会算，只是局面早一手）。
+    val ponderFen = fenAfterPredictedEnemyMove(state, predicted)
+    engine.startPonder(context, ponderFen)
     // 预测敌着中文化（2026-09-09 D6）：从「我方走子后」局面取起点格棋子名（黑马 b9 -> c7）
     val (pr, pc) = squareToGrid(predicted.take(2), state.mySide)
     val predictedLabel = state.board.getOrNull(pr)?.getOrNull(pc)?.let(::pieceLabel) ?: "未知子"
@@ -269,35 +265,42 @@ internal fun BotSession.maybeStartPonder() {
     )
 }
 
+/**
+ * 生成「试走预测敌着后」的完整 FEN（ponder 专用，2026-09-13 拍板）：
+ * 深拷贝 [state] 棋盘 → 在该副本上落 [predicted]（预测敌着）→ 生成 FEN。
+ * 真实 state 不被触碰；预测着在副本上非法（识别误判 / 预测错）时记 WARN 并回退为「未试走」的当前局面
+ * ——ponder 只是加速手段，局面差一手不影响正确性（敌方真着一到即被 stopPonder 丢弃）。
+ */
+private fun fenAfterPredictedEnemyMove(state: GameState, predicted: String): String {
+    if (predicted.length != 4) return state.engineFen()
+    val src = squareToGrid(predicted.substring(0, 2), state.mySide)
+    val dst = squareToGrid(predicted.substring(2, 4), state.mySide)
+    val piece = state.board.getOrNull(src.first)?.getOrNull(src.second)
+    if (piece == null) {
+        LogBus.log(
+            LogLevel.WARN, LogTag.ENGINE,
+            "ponder 预测敌着 $predicted 起点为空（预测失准），改发当前局面"
+        )
+        return state.engineFen()
+    }
+    // 深拷贝（board 为 Array<Array<String?>>，逐行 copyOf 即可，元素为不可变 String）
+    val copy: Board = Array(ROWS) { r -> state.board[r].copyOf() }
+    val move = Move(src, dst, piece, copy[dst.first][dst.second])
+    if (!isPseudoLegal(copy, move, state.mySide)) {
+        LogBus.log(
+            LogLevel.WARN, LogTag.ENGINE,
+            "ponder 预测敌着 $predicted（${pieceLabel(piece)}）在副本上非法，改发当前局面"
+        )
+        return state.engineFen()
+    }
+    val clock = applyMove(copy, move, state.halfmoveClock)
+    // 敌着走完 ⇒ 轮到我方（调用方已在「轮到敌方」时进入本函数）
+    return fenOfBoard(copy, state.mySide, state.mySide, clock)
+}
+
+
 /** computeMove 产物：着法（ICCS）——来源经 state.lastMoveSource 传递给悬浮窗引擎行。 */
 internal data class PendingMove(val move: String)
-
-/**
- * 引擎 position 自检（2026-09-12 用户批复 D2：自检 + 报错中止；真机事故 a7c5）。
- *
- * 每一次向引擎发 `position fen <基线> moves <全列表>` 之前调用：验证「基线 + 着法列表」能否
- * **严格交替**地演进到与已提交棋盘（[GameState.board]/[GameState.turn]）一致的局面。
- *
- * 为什么必须拦：UCI 引擎解析 `position ... moves ...` 时**遇到第一个非法着法即停止**、后续着法
- * 全部丢弃 → 引擎在**过期局面**上算棋。2026-09-12 真机事故即由此而来——我方 a7c5 落点格被误读而
- * 确认迟到 9.5s，期间「吞点击恢复」先把敌着提交了，movesList 变成「敌·敌·我·敌」（同色连走）；
- * 引擎解析在第 2 手停下，返回了**已经走过**的 a7c5。若那一步在 board 上恰好合法，`unpackMove`
- * 守卫也拦不住（该处已修：见 BotSessionVerify 的 srcEverLeft 门控）。
- *
- * 通过返回 true；不通过打 ERROR 并返回 false（调用方中止本步，绝不把错局面发给引擎）。
- * 代价：纯函数、O(手数×棋盘)，仅在发 position 前跑一次，可忽略。
- */
-internal fun BotSession.auditPosition(baselineFen: String): Boolean {
-    val problem = auditEnginePosition(
-        baselineFen, state.mySide, state.movesList, state.board, state.turn,
-    ) ?: return true
-    LogBus.log(
-        LogLevel.ERROR,
-        LogTag.ENGINE,
-        "引擎 position 自检未通过，已中止本步以免在错误局面上算棋：$problem",
-    )
-    return false
-}
 
 internal suspend fun BotSession.computeMove(): PendingMove? {
     if (!state.initialized) {
@@ -389,17 +392,16 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
 
     // ---------- 引擎 ----------
     if (droppedByInterrupt()) return null // 开局库查询/预搜消费期间发生的中断
-    val baselineFen = state.ensureEngineBaseline() // 轮次判定已拍，此处防御兜底
-    // position 自检（2026-09-12 用户批复 D2）：movesList 若顺序错乱/含非法着法，引擎会在
-    // **过期局面**上算棋并可能返回已走过的着法——此处拦下，中止本步（doMove 返回 false → 主循环暂停）
-    if (!auditPosition(baselineFen)) return null
+    // 完整 FEN（2026-09-13 拍板）：每次现算，取单一真实源 state.board —— 不存在错位可能，
+    // 故原先的「position 自检（auditEnginePosition）」连同 movesList 机制一并删除。
+    val posFen = state.engineFen()
     LogBus.log(
         LogLevel.DEBUG, LogTag.ENGINE,
-        "计算着法中：基线局面 + moves ${state.movesList.size} 手（position 演进制）"
+        "计算着法中：完整 FEN（position 直发制）$posFen"
     )
     var result: EngineResult
     try {
-        result = engine.bestMove(context, baselineFen, state.movesList, interrupted = shouldAbort)
+        result = engine.bestMove(context, posFen, interrupted = shouldAbort)
     } catch (e: EngineError) {
         LogBus.log(LogLevel.ERROR, LogTag.ENGINE, "引擎错误：${e.message}")
         return null
@@ -410,7 +412,7 @@ internal suspend fun BotSession.computeMove(): PendingMove? {
         LogBus.log(LogLevel.WARN, LogTag.ENGINE, "引擎无可用着法，改用 $shortTime ms 短时限重试")
         try {
             result = engine.bestMove(
-                context, baselineFen, state.movesList,
+                context, posFen,
                 movetimeMs = shortTime, interrupted = shouldAbort,
             )
         } catch (e: EngineError) {
@@ -463,9 +465,9 @@ internal fun BotSession.unpackMove(move: String): Unpacked? {
         )
         return null
     }
-    // B-3（2026-09-11）：点击前对已提交棋盘做伪合法断言 —— R3「基线/moves 与 board 静默分叉」的检出器。
-    // 我方着法来自引擎/开局库，正常必然合法；一旦在 board 上非法，说明发给引擎的 position 与已提交
-    // board 已不是同一局面（引擎在错误局面上算棋）→ 立刻中止报错，而不是盲点 + 把错误着法写进 movesList。
+    // B-3（2026-09-11）：点击前对已提交棋盘做伪合法断言 —— 局面分叉的检出器。
+    // 我方着法来自引擎/开局库，正常必然合法；一旦在 board 上非法，说明引擎局面与已提交
+    // board 已不是同一局面（引擎在错误局面上算棋）→ 立刻中止报错，而不是盲点落子。
     if (!isPseudoLegal(state.board, Move(from, to, piece), state.mySide)) {
         LogBus.log(
             LogLevel.ERROR,
@@ -639,8 +641,7 @@ internal suspend fun BotSession.autoNextGame(): Boolean {
                     // 布局不在此打印：initialize 已无条件落「摆棋布局」（2026-09-08 Q1 去重）
                 }
             }
-            // R3 配套：轮次已定 → 拍引擎 position 基线
-            state.ensureEngineBaseline()
+            // 注（2026-09-13）：原「R3 拍引擎 position 基线」已删（position 改为每次现算完整 FEN）
             return true
         } finally {
             settledCorrected.release()

@@ -51,11 +51,16 @@ data class EngineResult(
  *   每个 mate 步都秒回），闸门对 mate 非空一律放行，不误杀赢棋着法。
  *   ponder 同样受本闸门约束（用 info time 而非 App 墙钟，因墙钟仅含 ponderhit→bestmove 一小段、
  *   且 ponder 的 info time 含累积时长）；重试封顶避免死循环；interrupted（E 守卫）整体作废不重试。
- * - position 改「基线 FEN + moves 全列表」（R3）：App 不逐手拼完整 FEN，
- *   halfmove / 重复局面由引擎按 moves 自算。
+ * - position **一律发完整 FEN**（2026-09-13 拍板，废弃「基线 FEN + moves 全列表」）：
+ *   App 每步用 `fenOfBoard(state.board, mySide, state.turn, halfmoveClock)` 现算完整局面，
+ *   发 `position fen <FEN>`（无 moves 段）。理由：`position ... moves` 依赖 App 维护全历史着法列表，
+ *   该列表一旦错位（2026-09-12 a7c5 事故：序列错成「敌·敌·我·敌」）引擎会**在首个非法着法处静默截断**，
+ *   此后整局都在错误局面上搜索；且 moves 仅影响 halfmove/重复局面（只产生和棋分，不影响将杀），
+ *   放弃它换取的鲁棒性远大于收益。完整 FEN 由单一真实源 state.board 现算，**不存在错位可能**。
  * - ponder 改 `go ponder movetime T`（R2）：movetime 是累积搜索时长（ponder 期不检查），
  *   命中 ponderhit 即刻交手；硬顶 = TARGET + ENGINE_HARD_CAP_APPEND_MS 仅作兜底（R6）。
- *   命令送达由 [abortPonderIfUnacknowledged] 自检（A 项）。
+ *   命令送达由 [abortPonderIfUnacknowledged] 自检（A 项）。ponder 局面同样用完整 FEN
+ *   （含用户拍板的「在 board 上试走预测敌着再生成 FEN」，见 [startPonder]）。
  * - drain 线程只解析 info 维护 currentInfo，不再做任何过滤/采样。
  * - D4（2026-09-11）：writeLine/drain 两处埋点记录 UCI 收发，由运行时开关
  *   `BotConfig.data.debugUciTrace` 控制（设置页「调试日志」分组，默认关闭）。
@@ -80,10 +85,8 @@ class PikafishEngine private constructor() {
     @Volatile
     private var ponderMovetimeMs = 0
 
-    /** ponder 局面快照（startPonder 时存，供 ponderHit 异常早退重搜，2026-09-11 04:24 修正）：基线 FEN / 我方 moves / 预测敌着。 */
+    /** ponder 局面快照（startPonder 时存，供 ponderHit 异常早退重搜，2026-09-11 04:24 修正）：完整 FEN。 */
     private var ponderFen: String? = null
-    private var ponderMovesList: List<String>? = null
-    private var ponderPredicted: String? = null
 
     /** 最近一次 `go` / `go ponder` 发出时刻（纳秒）：UCI 埋点据此把 bestmove 到达配对成真实耗时（D4）。 */
     @Volatile
@@ -163,22 +166,22 @@ class PikafishEngine private constructor() {
 
     /**
      * 发送局面并返回 EngineResult；无着法（终局）move = null。
-     * 局面 = [baselineFen] + [moves] 全列表（R3）：App 不逐手拼完整 FEN，
-     * halfmove / 重复局面由引擎按 moves 自算；moves 为空时省略 moves 段。
+     * 局面 = **完整 FEN**（2026-09-13 拍板）：`position fen <fen>`，不带 moves 段；
+     * halfmove / 重复局面由 App 在 FEN 里直接给出（见 Board.fenOfBoard）。
      * 主搜发 `go movetime <TARGET>`（R1，UCI 空格分隔，勿写等号），引擎到点自交 bestmove。
      *
+     * @param fen 完整局面 FEN（由 GameState.engineFen() 现算，单一真实源，不存在错位可能）。
      * @param interrupted E 中断守卫（2026-09-11）：返回 true 时立刻 `stop` 并收尾返回，
      *   不再等满 movetime —— 用户点「停止」/ 会话中断时不再空转最多 `TARGET + 1000ms`。
      *   E 批复（2026-09-11）：优先级最高（先于 bestmove），结果是「已作废」的，调用方必须丢弃。
      */
     fun bestMove(
         context: Context,
-        baselineFen: String,
-        moves: List<String>,
+        fen: String,
         movetimeMs: Int? = null,
         interrupted: (() -> Boolean)? = null,
     ): EngineResult {
-        val outcome = go(context, baselineFen, moves, movetimeMs, interrupted)
+        val outcome = go(context, fen, movetimeMs, interrupted)
         return buildResult(outcome.snapshot)
     }
 
@@ -221,19 +224,19 @@ class PikafishEngine private constructor() {
      * - 命中：`ponderhit` 转正式搜索后引擎继续算满 T 才自交 bestmove（info time=2000=T，
      *   非「即刻交手」；实机复验见 2026-09-11 04:24），故收割走 bestmove 第一退出条件；
      * - 未命中：App 发 `stop` → 引擎自清 ponder 旗标 → 常规 bestMove 自带 movetime，实耗恰为 T。
-     * 位置 = 基线 FEN + moves 全列表 + 预测敌着追加尾部（R3）→ 引擎回放至「对方行棋」局面。
+     * 位置 = **完整 FEN**（2026-09-13 拍板），由调用方在 board 副本上试走预测敌着后生成，
+     * 发 `position fen <fen>`（无 moves 段）→ 引擎直接进入「对方行棋」局面。
+     *
+     * @param fen 完整局面 FEN，**已含预测敌着**（调用方负责试走 + 生成）。
      */
     fun startPonder(
         context: Context,
-        baselineFen: String,
-        moves: List<String>,
-        predictedEnemyMove: String,
+        fen: String,
     ) {
         ensureStarted(context)
         synchronized(lock) {
             synchronized(lines) { lines.clear() }
-            val ponderMoves = moves + predictedEnemyMove
-            writeLine("position fen $baselineFen moves ${ponderMoves.joinToString(" ")}")
+            writeLine("position fen $fen")
             val targetMs = com.chess.bot.data.BotConfig.data.movetimeMs
             writeLine("go ponder movetime $targetMs")
             currentInfo = null
@@ -241,9 +244,7 @@ class PikafishEngine private constructor() {
             ponderMovetimeMs = targetMs
             pondering = true
             // 存局面供 ponderHit 异常早退时重搜（2026-09-11 04:24 修正：ponder 也受「思考时间过短」闸门约束）
-            ponderFen = baselineFen
-            ponderMovesList = moves
-            ponderPredicted = predictedEnemyMove
+            ponderFen = fen
         }
     }
 
@@ -291,7 +292,7 @@ class PikafishEngine private constructor() {
         // ponderhit 后 info time 仍≈target（用户实机复验 go ponder 2000+ponderhit→info time 2000）；
         // 异常早退（mate 空且 info time 远低于 target）则重搜，mate 非空的强制绝杀秒回合法放行。
         // - 首次：引擎仍在 ponder，发 ponderhit 收割；
-        // - 重试：引擎已交 bestmove 并复位，改从已知局面（moves + 预测敌着 = 敌方实际已走子）
+        // - 重试：引擎已交 bestmove 并复位，改从已知局面（完整 FEN，已含预测敌着 = 敌方实际已走子）
         //   发正常 go movetime 重搜（对手着法此刻已知，正常搜索口径正确）。
         val outcome = searchGuarded(targetMs, null) {
             synchronized(lock) {
@@ -300,13 +301,10 @@ class PikafishEngine private constructor() {
                 } else {
                     // 捕获到局部 val，规避 var 在 lambda 内无法智能转换
                     val fen = ponderFen
-                    val pmoves = ponderMovesList
-                    val pred = ponderPredicted
-                    if (fen != null && pmoves != null && pred != null) {
+                    if (fen != null) {
                         synchronized(lines) { lines.clear() }
                         currentInfo = null
-                        val pos = "position fen $fen moves ${(pmoves + pred).joinToString(" ")}"
-                        writeLine(pos)
+                        writeLine("position fen $fen")
                         writeLine("go movetime $targetMs")
                     } else {
                         LogBus.log(
@@ -374,8 +372,7 @@ class PikafishEngine private constructor() {
 
     private fun go(
         context: Context,
-        baselineFen: String,
-        moves: List<String>,
+        fen: String,
         movetimeMs: Int?,
         interrupted: (() -> Boolean)?,
     ): GoOutcome {
@@ -400,12 +397,8 @@ class PikafishEngine private constructor() {
                     synchronized(lock) {
                         synchronized(lines) { lines.clear() }
                         currentInfo = null
-                        val positionLine = if (moves.isEmpty()) {
-                            "position fen $baselineFen"
-                        } else {
-                            "position fen $baselineFen moves ${moves.joinToString(" ")}"
-                        }
-                        writeLine(positionLine)
+                        // 完整 FEN（2026-09-13 拍板）：不再拼 moves 段，单一真实源、无错位可能
+                        writeLine("position fen $fen")
                         goMovetime(mode, interrupted)
                     }
                 }

@@ -33,9 +33,9 @@ import kotlin.time.Duration.Companion.milliseconds
  * 理论上不存在我方提子，下半区提子帧按过渡等待，见 StartLoop）。
  *
  * 步骤：
- * 1. 重新接管会话语义（state.reset 清空基线/着法记录；StartLoop 入口此前的旧局状态一并清除）——
+ * 1. 重新接管会话语义（state.reset 清空历史局面；StartLoop 入口此前的旧局状态一并清除）——
  *    引擎侧等价「以恢复后的棋盘为新开局」（D2=A 2026-09-11）：ucinewgame 复位 TT，旧局着法记录
- *    有意丢弃；基线由随后的 doMove→computeMove→ensureEngineBaseline 以恢复后棋盘重拍；
+ *    有意丢弃；局面由随后的 doMove→computeMove 以恢复后棋盘现算完整 FEN（2026-09-13 起无基线快照）；
  * 2. 向上逐 px cls 扫描识别提起子身份（悬浮棋子位于格子上半部，无需先验猜测，D1）；
  * 3. 恢复棋盘（提起子落回原格）并按 initialize 语义接管状态（resetCellImgs 基线、
  *    turn=我方；恢复着法计入 moveCount，D4=A）；
@@ -101,10 +101,10 @@ internal suspend fun BotSession.recoverOwnLift(
             .forEach { LogBus.log(LogLevel.DEBUG, LogTag.VISION, "恢复布局 $it") }
         emit()
         // D2 批复（2026-09-11，结论=保持现状）：接管按「新开一局残局」处理，不保留上一局的 TT——
-        // 保留中断前的着法记录无意义（真实棋盘已与之无关，沿玩下去只会污染 position 回放），
-        // 而 App 每次都完整发 `position fen 基线 moves …`，局面由 App 显式指定。
-        // 此处 ucinewgame 后，紧随的 doMove→computeMove→ensureEngineBaseline 会把「恢复后的棋盘」
-        // 拍成本局初始 FEN（state.reset 已把基线清空，故必重拍、moves 从零累计）。
+        // 保留中断前的历史着法无意义（真实棋盘已与之无关，沿玩下去只会污染引擎局面认知），
+        // 而 App 每次都现算完整 FEN 发 `position fen <FEN>`，局面由 App 显式指定。
+        // 此处 ucinewgame 后，紧随的 doMove→computeMove 会把「恢复后的棋盘」现算出本局初始 FEN
+        //（2026-09-13 起不再有基线快照与 moves 累计）。
         engine.newGame(context)
         engineAlreadyReset = true // U-1（2026-09-11）：本次启动已复位 TT，紧随的 startFlow 不再重复发
         if (!doMove(dstOnlySrc = liftPos)) {

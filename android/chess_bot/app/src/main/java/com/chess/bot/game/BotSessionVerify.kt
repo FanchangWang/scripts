@@ -302,9 +302,10 @@ internal suspend fun BotSession.verifyForSelfMove(
                         // T-B 吞点击恢复：changes 恰为一步完整合法敌着且我方未执行 → 提交敌着重试本步。
                         // 前置门控 srcEverLeft（2026-09-12 用户批示）：**我方走子尚未提交期间，敌着不得抢跑**
                         // ——「点击被吞」的语义要求我方棋子从未离开起点；一旦本步曾读到起点变空，说明我方
-                        // 点击确实生效过（已落点或提在手里），此时先提交敌着会让 movesList 变成同色连走
-                        // （2026-09-12 真机事故：敌·敌·我·敌 → 引擎 position 解析在第一个非法着法处停止
-                        //  → 引擎在过期局面上算棋，返回已走过的一步）。
+                        // 点击确实生效过（已落点或提在手里），此时先提交敌着会让棋盘陷入同色连走
+                        //（2026-09-12 真机事故：敌·敌·我·敌）。注：position 自 2026-09-13 起改为每次
+                        // 现算完整 FEN（无 moves 列表），引擎已不可能回放错序着法，但同色连走仍会污染
+                        // state.board 本身，故此门控保留。
                         if (tryRecoverSwallowedTap(changes, expected, selfSrcLeftOnce)) {
                             return VerifyOutcome.RETRY_AFTER_ENEMY
                         }
