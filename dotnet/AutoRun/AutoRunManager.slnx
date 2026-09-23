@@ -1,6 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/AutoRunManager/AutoRunManager.csproj" />
-    <Project Path="src/AutoRunScheduler/AutoRunScheduler.csproj" />
-  </Folder>
-</Solution>
