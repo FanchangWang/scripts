@@ -1,0 +1,15 @@
+[project]
+name = "binmt-cc"
+version = "0.1.0"
+description = "bbs.binmt.cc MT论坛青龙签到脚本（自动过 WAF 盾 + 验证码识别）"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "ddddocr>=1.6.1",
+    "python-dotenv>=1.2.4",
+    "requests>=2.34.2",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
