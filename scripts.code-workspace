@@ -4,10 +4,6 @@
 			"path": "."
 		},
 		{
-			"name": "auto_run 开机自启动软件管理",
-			"path": "python/auto_run"
-		},
-		{
 			"name": "bjxd_getToken 北京现代APP获取 Token",
 			"path": "python/bjxd_getToken"
 		},
