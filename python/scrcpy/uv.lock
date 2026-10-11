@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [[package]]
@@ -64,4 +64,4 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pyqt6", specifier = ">=6.9.1" }]
+requires-dist = [{ name = "pyqt6", specifier = ">=6.11.0" }]
