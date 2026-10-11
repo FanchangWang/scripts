@@ -8,10 +8,6 @@
 			"path": "python/bjxd_getToken"
 		},
 		{
-			"name": "carwith_dexkit carwith Dex 分析工具",
-			"path": "python/carwith_dexkit"
-		},
-		{
 			"name": "process_pause 微信小程序暂停工具",
 			"path": "python/process_pause"
 		},
