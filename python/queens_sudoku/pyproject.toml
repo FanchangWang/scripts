@@ -5,9 +5,9 @@ description = "佛系消消消(皇后数独)求解器"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "numpy>=2.4.3",
-    "pillow>=12.1.1",
+    "numpy>=2.5.4",
+    "pillow>=12.3.0",
     "pure-python-adb>=0.3.0.dev0",
     "pyautogui>=0.9.54",
-    "pywin32>=311",
+    "pywin32>=312",
 ]
