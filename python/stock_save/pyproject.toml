@@ -5,25 +5,23 @@ description = "股票分钟线数据保存 & Web 展示服务"
 requires-python = ">=3.12"
 
 dependencies = [
-    "fastapi>=0.115.0",
-    "uvicorn>=0.32.0",
-    "httpx>=0.28.0",
-    "jinja2>=3.1.0",
-    "python-dotenv>=1.0.0",
+    "fastapi>=0.143.0",
+    "uvicorn>=0.54.0",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "python-dotenv>=1.2.4",
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/stock_save"]
+[tool.uv.build-backend]
+module-name = "stock_save"
+module-root = "src"
 
 [project.scripts]
 cli = "stock_save.cli:main"
 web = "stock_save.web.app:run"
 web-dev = "stock_save.web.app:run_dev"
 
-[[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-default = true
