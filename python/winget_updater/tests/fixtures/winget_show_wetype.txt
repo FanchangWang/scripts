@@ -1,0 +1,36 @@
+已找到 微信输入法 [Tencent.WeType]
+版本: 3.0.0.32
+发布者: 腾讯科技(深圳)有限公司
+发布服务器 URL: https://z.weixin.qq.com/
+作者: 深圳市腾讯计算机系统有限公司
+描述: 微信输入法是微信官方出品的中文输入法,提供高效的输入体验、精准的推荐策略、多元的创新玩法。
+主页: https://z.weixin.qq.com/
+许可证: 免费软件
+许可证 URL: https://wetype.wxqcloud.qq.com/page/article/index/14.html
+隐私 URL: https://wetype.wxqcloud.qq.com/page/article/index/13.html
+版权所有: 腾讯公司 版权所有 Copyright © 1998-2024 Tencent. All Rights Reserved.
+版权 URL: https://www.tencent.com/zh-cn/statement.html
+发行说明:
+  - 升级至微信 4.1.5 及以上版本,支持在微信聊天框推荐并直接发送表情
+  - 跨设备功能支持自定义设备名称
+  - 隔空传送支持发送文件夹
+  - 体验优化与问题修复
+发行说明 URL: https://z.weixin.qq.com/web/change-log/171
+安装说明：
+  请尽量使用输入法自带的更新功能。如果必须使用 WinGet 来更新,请运行:
+      winget install Tencent.WeType --interactive --force
+  或者
+      winget install Tencent.WeType -i --force
+  不指定 -i 或 --interactive 会导致更新需要重启系统后才能生效。
+标记：
+  中文
+  拼音
+  汉语
+  输入法
+安装：
+  安装程序类型： exe
+  安装程序区域设置： zh-CN
+  安装程序 URL： https://download.z.weixin.qq.com/app/win/WeTypeSetup_3.0.0.32_3.exe
+  安装程序 SHA256： 80326881e6c6d3b1a1a3fc2ab2bdbd61fd2085b9f2cfb11099eafbe909073797
+  发布日期: 2026-10-14
+  支持脱机分发: true

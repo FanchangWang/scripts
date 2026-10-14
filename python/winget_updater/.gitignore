@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# uv
+.venv/
+
+# Ruff
+.ruff_cache/
+
+# 本地配置（记录跳过/更新选项，不入库）
+config.json
