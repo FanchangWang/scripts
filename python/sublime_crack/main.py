@@ -5,8 +5,8 @@ import os
 import platform
 import sys
 import tkinter as tk
-from tkinter import filedialog
 import winreg
+from tkinter import filedialog
 
 # ====================== 可配置区域：预设多组特征码 ======================
 # 格式：[(搜索十六进制字符串, 替换十六进制字符串), ...]
@@ -15,6 +15,8 @@ PATCH_SETS = [
     ("807805000f94c1", "c64005014885c9"),    # Build 4143
     ("807905000f94c2", "c6410501b20090"),    # Build 4192
     ("0fb6510583f201", "c6410501b20090"),    # Build 4200
+    ("0fb6510583f201", "c6410501b20090"),    # Build 4213
+    ("0fb6510c83f201", "c6410c01b20090"),    # Build 4215
 ]
 # ======================================================================
 
@@ -118,7 +120,7 @@ def hex_search_replace(filename):
             show_message(f"无法写入文件：{filename}，尝试使用管理员权限运行！", "错误", 0x10)
             return False
         except Exception as e:
-            show_message(f"文件操作失败：{str(e)}", "错误", 0x10)
+            show_message(f"文件操作失败：{e!s}", "错误", 0x10)
             return False
     else:
         show_message("未找到任何匹配的特征码，替换失败", "失败", 0x10)
