@@ -1,0 +1,13 @@
+{
+  "name": "daily-calendar-puzzle",
+  "version": "1.0.0",
+  "description": "日历拼版：同源求解器 + 网页求解/游玩",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/build-bundle.js && node server/server.js",
+    "solve": "node cli/solve.js",
+    "test": "node test/solver.test.js",
+    "build": "node scripts/build-static.js"
+  },
+  "license": "MIT"
+}

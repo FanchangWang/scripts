@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.log
+# 由 scripts/build-bundle.js 生成，勿手改
+web/core.bundle.js
+web/worker.js

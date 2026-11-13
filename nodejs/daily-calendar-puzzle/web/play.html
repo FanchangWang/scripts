@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日历拼版 · 自己游玩</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <aside class="side">
+    <div class="nav-tabs">
+      <a href="/">求解方案</a>
+      <a href="/play" class="active">自己游玩</a>
+    </div>
+    <h1>每日拼图 · 自己拼</h1>
+    <p class="subtitle">把左侧拼板拖到棋盘上，盖住除当天月 / 日 / 星期外的所有格子。选中拼板后可旋转、翻转或取回。</p>
+
+    <div class="toolbar">
+      <label for="date">日期</label>
+      <input type="date" id="date">
+      <button id="today">回到今天</button>
+      <span class="msg" id="msg"></span>
+    </div>
+
+    <div class="play-tools">
+      <div class="tool-row">
+        <button id="rotateL">左旋 90°</button>
+        <button id="rotateR">右旋 90°</button>
+      </div>
+      <div class="tool-row">
+        <button id="flip">左右翻转</button>
+        <button id="flipV">上下翻转</button>
+      </div>
+      <div class="tool-row">
+        <button id="remove">取回选中</button>
+        <button id="reset">重置本局</button>
+      </div>
+      <div class="tool-row">
+        <button id="hint">提示下一块</button>
+        <button id="answer" class="primary">完整答案</button>
+        <button id="undoAnswer" hidden>撤销答案</button>
+      </div>
+    </div>
+
+    <div class="tray" id="tray"></div>
+    <div class="note">斜纹虚线格与米黄色露出格不可放置；拼板之间不可重叠。全部铺满即胜利。</div>
+  </aside>
+
+  <main class="main">
+    <div class="board-card">
+      <div class="board" id="board"></div>
+    </div>
+  </main>
+</div>
+
+<script src="core.bundle.js"></script>
+<script src="play-app.js"></script>
+</body>
+</html>

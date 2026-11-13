@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日历拼版 · 求解</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <aside class="side">
+    <div class="nav-tabs">
+      <a href="/" class="active">求解方案</a>
+      <a href="/play">自己游玩</a>
+    </div>
+    <h1>每日拼图 · 拼板方案</h1>
+    <p class="subtitle">根据所选年月日，用 1-10 号拼板盖住除当月、当日、当天星期之外的格子。可点“下一种”切换。</p>
+
+    <div class="toolbar">
+      <label for="date">日期</label>
+      <input type="date" id="date">
+      <button id="today">回到今天</button>
+      <span class="stat" id="stat">准备中…</span>
+      <button id="solveAll" class="solve-all">求解全部解法</button>
+    </div>
+
+    <div class="pager">
+      <button id="prev">上一种</button>
+      <span class="count" id="count"></span>
+      <button id="next" class="primary">下一种</button>
+    </div>
+
+    <div class="tray" id="tray"></div>
+    <div class="note">斜纹虚线格为永久禁放区（右上“坚持”、左下“就是胜利”，不可放置拼板）；米黄色格为当天露出的月 / 日 / 星期；左侧缩略图与棋盘上各拼板朝向一致。</div>
+  </aside>
+
+  <main class="main">
+    <div class="board-card">
+      <div class="board" id="board"></div>
+    </div>
+  </main>
+</div>
+
+<script src="core.bundle.js"></script>
+<script type="text/plain" id="worker-src"></script>
+<script src="solver-app.js"></script>
+</body>
+</html>
