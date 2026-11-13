@@ -18,6 +18,10 @@ uv run update-data
 uv run download
 ```
 
+## 忽略列表
+
+`config.py` 中的 `IGNORE_NOS` 用于跳过已知缺失的视频编号，避免重复下载和生成失败日志。
+
 ## 项目结构
 
 ```
@@ -47,7 +51,3 @@ out/
 ```bash
 uv run python check.py   # lint + format + type check
 ```
-
-## 忽略列表
-
-`config.py` 中的 `IGNORE_NOS` 用于跳过已知缺失的视频编号，避免重复下载和生成失败日志。

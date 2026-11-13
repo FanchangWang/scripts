@@ -2,22 +2,6 @@
 
 通过 ADB 控制 Android 手机（QQ/微信象棋等游戏）自动下中国象棋，提供**网页端**操作界面（FastAPI + 原生 JS/Canvas），手机/PC 浏览器均可访问。
 
-## 功能特性
-
-- **ADB 截图识别棋盘**：已知四角坐标做透视矫正，再对 14 张模板做模板匹配
-- **pikafish 引擎计算走棋**：UCI 协议长进程复用，`go movetime` 固定时限思考；正确维护 FEN halfmove clock，引擎感知自然限招（60 步不吃子判和），优势残局主动避和
-- **ADB 模拟点击落子**：点起子 → 间隔 → 点落子，`MOVE_VERIFY_COUNT=5` 帧逐帧分类校验
-- **走棋校验分类**：按变动格数 `n` 分类（0/1/2/3/4/>4），命中即写入内存；提子未落补点重跑
-- **走棋失败重试**：`SELF_MOVE_ATTEMPTS=2` 次整步重试上限；外层重新点击（完全不动）或补点重跑（提起未落）
-- **自动走棋**：预计算引擎着法，检测到敌方走子后自动应棋
-- **自动检测敌方走棋**（常开）：连续截图比对，识别敌方落子后自动分析并走棋；噪声帧延时复检
-- **对局结束/认输检测**：双方将/帅同时缺失 + 连续 `RESIGN_CONFIRM_COUNT=3` 帧确认，自动收局
-- **和棋智能决策**：同时识别到「和棋_同意」「和棋_拒绝」两按钮才认定为和棋弹窗；复用我方上一步走棋的引擎评估分（`info score cp`），我方优势超过 1000cp 拒绝，均势/劣势同意；不额外搜索，无延时
-- **自动下一局**：对局结束后扫描结算文字（晋级赛/重新挑战/再来一局/下一关/段位提升/铜钱/领取），
-  自动点击按钮或发返回键；scan/setup 状态机等待摆棋完毕再自动开始对弈；网页端**开关**可随时切换
-  （对局结束判定时取最新值）
-- **网页棋盘**：Canvas 绘制棋盘、走棋高亮、日志面板、同步/开始/中断棋局
-
 ## 运行环境
 
 - Windows 11，Python 3.12
@@ -66,53 +50,21 @@ uv run python -m xiangqi_bot
 
 > `AUTO_NEXT_GAME` 开启时对局结束进入 `auto_next` 状态（按钮保持对弈中形态），中止后才切到 `over`。
 
-## 目录结构
+## 功能特性
 
-```
-xiangqi-bot/
-├── pyproject.toml                  # uv 项目配置（依赖/ruff/ty）
-├── check.ps1                       # 一键 ruff format + ruff check + ty check
-├── src/xiangqi_bot/
-│   ├── __init__.py / __main__.py   # 入口委派 main
-│   ├── main.py                     # uvicorn 启动（0.0.0.0:8900，自动开浏览器）
-│   ├── server.py                   # FastAPI：静态托管 + REST API + WebSocket + 后台 worker
-│   ├── config.py                   # 常量、路径、阈值、四角坐标
-│   ├── adb_client.py               # ppadb + adb.exe 封装（无终端交互）
-│   ├── board.py                    # 网格坐标、记谱/FEN 转换、开局默认格
-│   ├── vision.py                   # 透视矫正、模板匹配、两图对比
-│   ├── engine.py                   # pikafish UCI 长进程客户端
-│   ├── game/                       # 对局模块（数据结构 + 纯函数 + IO 类 + 薄控制层）
-│   │   ├── __init__.py             # 导出 GameSession
-│   │   ├── state.py                # Side/Move/Change/GameState/FrameResult/VerifyOutcome
-│   │   ├── opening.py              # 开局分析纯函数（detect_side/detect_phase/infer_turn）
-│   │   ├── moves.py                # 走法推断/应用/格式化纯函数
-│   │   ├── classifier.py           # 帧分类纯函数（self/enemy 帧分类 + 认输疑似判断）
-│   │   ├── recognition.py          # 棋盘识别纯函数（矫正图 → 布局+变动）
-│   │   ├── draw.py                 # 和棋决策纯函数
-│   │   ├── capture.py              # Capture IO 类（截图/矫正/点击/和棋弹窗）
-│   │   ├── auto_next.py            # AutoNext IO 类（结算交互 + 等待摆棋）
-│   │   └── session.py              # GameSession 薄控制层（编排主循环，不继承任何类）
-│   └── web/                        # 网页前端（index.html / app.js / style.css）
-├── pikafish/
-│   ├── pikafish-bmi2.exe           # 引擎（必须在其目录运行，依赖 pikafish.nnue）
-│   └── pikafish.nnue
-├── templates/*.png                 # 14 张 60x60 棋子模板（从矫正棋盘切割，勿改）
-├── templates/text/*.png            # 结算文字模板（下一关/晋级赛/重新挑战/再来一局/段位提升/铜钱/领取）
-├── raw_screenshots/                # 原始开局截图 + 结算截图（脚本数据源，文件名含分辨率）
-├── scripts/                        # regenerate_templates / compare_piece_templates /
-│                                   # detect_board_corners / generate_text_templates
-└── tests/                          # pytest 测试（10 个文件）
-    ├── conftest.py                 # 共享 fixture + mock vision
-    ├── test_engine.py              # 引擎客户端
-    ├── test_fresh.py               # 开局轮次推断
-    ├── test_prompt.py              # 弹窗确认
-    ├── test_next.py                # 自动下一局
-    ├── test_eat_after_self_move.py # 吃子 + 敌方反吃
-    ├── test_capture.py             # 走棋校验 + 重试流程（12 场景）
-    ├── test_noisy.py               # 敌方走棋检测 + 噪声（6 场景）
-    ├── test_probe.py               # 绝杀探测（3 场景）
-    └── test_resign.py              # 认输检测（4 场景）
-```
+- **ADB 截图识别棋盘**：已知四角坐标做透视矫正，再对 14 张模板做模板匹配
+- **pikafish 引擎计算走棋**：UCI 协议长进程复用，`go movetime` 固定时限思考；正确维护 FEN halfmove clock，引擎感知自然限招（60 步不吃子判和），优势残局主动避和
+- **ADB 模拟点击落子**：点起子 → 间隔 → 点落子，`MOVE_VERIFY_COUNT=5` 帧逐帧分类校验
+- **走棋校验分类**：按变动格数 `n` 分类（0/1/2/3/4/>4），命中即写入内存；提子未落补点重跑
+- **走棋失败重试**：`SELF_MOVE_ATTEMPTS=2` 次整步重试上限；外层重新点击（完全不动）或补点重跑（提起未落）
+- **自动走棋**：预计算引擎着法，检测到敌方走子后自动应棋
+- **自动检测敌方走棋**（常开）：连续截图比对，识别敌方落子后自动分析并走棋；噪声帧延时复检
+- **对局结束/认输检测**：双方将/帅同时缺失 + 连续 `RESIGN_CONFIRM_COUNT=3` 帧确认，自动收局
+- **和棋智能决策**：同时识别到「和棋_同意」「和棋_拒绝」两按钮才认定为和棋弹窗；复用我方上一步走棋的引擎评估分（`info score cp`），我方优势超过 1000cp 拒绝，均势/劣势同意；不额外搜索，无延时
+- **自动下一局**：对局结束后扫描结算文字（晋级赛/重新挑战/再来一局/下一关/段位提升/铜钱/领取），
+  自动点击按钮或发返回键；scan/setup 状态机等待摆棋完毕再自动开始对弈；网页端**开关**可随时切换
+  （对局结束判定时取最新值）
+- **网页棋盘**：Canvas 绘制棋盘、走棋高亮、日志面板、同步/开始/中断棋局
 
 ## 工作原理
 
@@ -230,18 +182,6 @@ xiangqi-bot/
 - WebSocket：`/ws`（广播 `log` / `state` / `prompt_turn` / `connected` / `disconnected`）
 - 静态：`/pieces/<id>.png`（模板图）、`/`（网页前端）
 
-## 常用命令
-
-```powershell
-uv run python -m xiangqi_bot                              # 启动网页服务（端口 8900，自动开浏览器）
-.\check.ps1                                               # 一键 ruff format + ruff check + ty check
-uv run pytest tests/ -v                                  # 全部测试（31 场景）
-uv run python scripts/regenerate_templates.py            # 从矫正棋盘重新切割棋子模板
-uv run python scripts/detect_board_corners.py <截图> [--save-board]  # 探测四角坐标
-uv run python scripts/generate_text_templates.py         # 从结算截图重新生成结算文字模板
-uv run python scripts/compare_piece_templates.py        # 对比模板相似度
-```
-
 ## 关键配置（config.py）
 
 | 常量 | 默认值 | 说明 |
@@ -271,3 +211,63 @@ uv run python scripts/compare_piece_templates.py        # 对比模板相似度
 | `GAMEOVER_BUTTON_WORDS` | 下一关/晋级赛/重新挑战/再来一局 | 按钮类（点击）优先级 |
 | `GAMEOVER_BACK_WORDS` | 段位提升/铜钱/领取 | 文字/遮罩类（发送返回键） |
 | `DIFF_THRESHOLD` / `MATCH_SEARCH_HALF` / `EMPTY_MATCH_THRESHOLD` | 8 / 10 / 0.8 | 图片识别阈值 |
+
+## 目录结构
+
+```
+xiangqi-bot/
+├── pyproject.toml                  # uv 项目配置（依赖/ruff/ty）
+├── check.ps1                       # 一键 ruff format + ruff check + ty check
+├── src/xiangqi_bot/
+│   ├── __init__.py / __main__.py   # 入口委派 main
+│   ├── main.py                     # uvicorn 启动（0.0.0.0:8900，自动开浏览器）
+│   ├── server.py                   # FastAPI：静态托管 + REST API + WebSocket + 后台 worker
+│   ├── config.py                   # 常量、路径、阈值、四角坐标
+│   ├── adb_client.py               # ppadb + adb.exe 封装（无终端交互）
+│   ├── board.py                    # 网格坐标、记谱/FEN 转换、开局默认格
+│   ├── vision.py                   # 透视矫正、模板匹配、两图对比
+│   ├── engine.py                   # pikafish UCI 长进程客户端
+│   ├── game/                       # 对局模块（数据结构 + 纯函数 + IO 类 + 薄控制层）
+│   │   ├── __init__.py             # 导出 GameSession
+│   │   ├── state.py                # Side/Move/Change/GameState/FrameResult/VerifyOutcome
+│   │   ├── opening.py              # 开局分析纯函数（detect_side/detect_phase/infer_turn）
+│   │   ├── moves.py                # 走法推断/应用/格式化纯函数
+│   │   ├── classifier.py           # 帧分类纯函数（self/enemy 帧分类 + 认输疑似判断）
+│   │   ├── recognition.py          # 棋盘识别纯函数（矫正图 → 布局+变动）
+│   │   ├── draw.py                 # 和棋决策纯函数
+│   │   ├── capture.py              # Capture IO 类（截图/矫正/点击/和棋弹窗）
+│   │   ├── auto_next.py            # AutoNext IO 类（结算交互 + 等待摆棋）
+│   │   └── session.py              # GameSession 薄控制层（编排主循环，不继承任何类）
+│   └── web/                        # 网页前端（index.html / app.js / style.css）
+├── pikafish/
+│   ├── pikafish-bmi2.exe           # 引擎（必须在其目录运行，依赖 pikafish.nnue）
+│   └── pikafish.nnue
+├── templates/*.png                 # 14 张 60x60 棋子模板（从矫正棋盘切割，勿改）
+├── templates/text/*.png            # 结算文字模板（下一关/晋级赛/重新挑战/再来一局/段位提升/铜钱/领取）
+├── raw_screenshots/                # 原始开局截图 + 结算截图（脚本数据源，文件名含分辨率）
+├── scripts/                        # regenerate_templates / compare_piece_templates /
+│                                   # detect_board_corners / generate_text_templates
+└── tests/                          # pytest 测试（10 个文件）
+    ├── conftest.py                 # 共享 fixture + mock vision
+    ├── test_engine.py              # 引擎客户端
+    ├── test_fresh.py               # 开局轮次推断
+    ├── test_prompt.py              # 弹窗确认
+    ├── test_next.py                # 自动下一局
+    ├── test_eat_after_self_move.py # 吃子 + 敌方反吃
+    ├── test_capture.py             # 走棋校验 + 重试流程（12 场景）
+    ├── test_noisy.py               # 敌方走棋检测 + 噪声（6 场景）
+    ├── test_probe.py               # 绝杀探测（3 场景）
+    └── test_resign.py              # 认输检测（4 场景）
+```
+
+## 常用命令
+
+```powershell
+uv run python -m xiangqi_bot                              # 启动网页服务（端口 8900，自动开浏览器）
+.\check.ps1                                               # 一键 ruff format + ruff check + ty check
+uv run pytest tests/ -v                                  # 全部测试（31 场景）
+uv run python scripts/regenerate_templates.py            # 从矫正棋盘重新切割棋子模板
+uv run python scripts/detect_board_corners.py <截图> [--save-board]  # 探测四角坐标
+uv run python scripts/generate_text_templates.py         # 从结算截图重新生成结算文字模板
+uv run python scripts/compare_piece_templates.py        # 对比模板相似度
+```
