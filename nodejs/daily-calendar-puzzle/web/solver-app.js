@@ -203,9 +203,11 @@ nextBtn.addEventListener("click", () => {
 });
 
 function fitBoard() {
+  const wrap = document.querySelector(".wrap");
+  const side = document.querySelector(".side");
   const main = document.querySelector(".main");
   const pad = 32;
-  const availW = main.clientWidth - pad;
+  const availW = wrap.clientWidth - side.offsetWidth - 18 - pad;
   const availH = main.clientHeight - pad;
   const cell = Math.max(28, Math.floor(Math.min(availW / COLS, availH / ROWS)));
   boardEl.style.width = (cell * COLS) + "px";

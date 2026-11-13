@@ -9,11 +9,11 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 body{
   font-family:-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
-  background:var(--bg);color:var(--ink);height:100vh;overflow:hidden;
+  background:var(--bg);color:var(--ink);min-height:100vh;overflow:auto;
 }
-.wrap{display:flex;height:100vh;gap:18px;padding:16px;}
+.wrap{display:flex;min-height:100vh;gap:18px;padding:16px;justify-content:safe center;min-width:560px;}
 .side{width:270px;flex:none;display:flex;flex-direction:column;gap:14px;min-width:0;}
-.main{flex:1;min-width:0;display:flex;align-items:flex-start;justify-content:center;}
+.main{flex:0 1 auto;min-width:228px;display:flex;align-items:flex-start;justify-content:flex-start;}
 .board-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;}
 
 h1{font-size:20px;}
