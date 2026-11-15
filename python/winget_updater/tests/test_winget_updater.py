@@ -17,6 +17,7 @@ from winget_updater.winget import (
     WingetError,
     _FrameFeeder,
     _parse_installer_url,
+    _parse_row,
     check_upgrades,
     fetch_installer_url,
     parse_progress,
@@ -120,6 +121,42 @@ class TestParseUpgradeTable(unittest.TestCase):
         self.assertEqual(ubisoft.version, "< 174.2.0.13389")
         self.assertEqual(ubisoft.available, "174.2.0.13389")
 
+    def test_id_with_plus_signs(self) -> None:
+        """ID 含 "+"（Notepad++.Notepad++）：曾因字符集不含 + 整行被丢弃。
+
+        真实场景：winget 报「1 升级可用」，但程序解析出 0 条。
+        """
+        text = (
+            "名称                   ID                  版本  可用    源\n"
+            "---------------------------------------------------------------\n"
+            "Notepad++ (64-bit x64) Notepad++.Notepad++ 8.9.9 8.9.9.1 winget\n"
+            "1 升级可用。\n"
+        )
+        updates = parse_upgrade_table(text)
+        self.assertEqual(len(updates), 1)
+        pkg = updates[0]
+        self.assertEqual(pkg.package_id, "Notepad++.Notepad++")
+        self.assertEqual(pkg.name, "Notepad++ (64-bit x64)")
+        self.assertEqual(pkg.version, "8.9.9")
+        self.assertEqual(pkg.available, "8.9.9.1")
+
+    def test_dotless_store_id_fallback(self) -> None:
+        """msstore 的 Store ID 不含点，ID 锚定失败时退回右锚定解析。"""
+        row = "Some Store App 9NBLGGH4NNS1 1.0.0 1.2.0 msstore"
+        pkg = _parse_row(row)
+        self.assertIsNotNone(pkg)
+        self.assertEqual(pkg.package_id, "9NBLGGH4NNS1")
+        self.assertEqual(pkg.name, "Some Store App")
+        self.assertEqual(pkg.available, "1.2.0")
+
+    def test_summary_line_not_parsed(self) -> None:
+        """汇总行不含 ID，不能被右锚定兜底误认成条目。"""
+        for line in (
+            "1 升级可用。",
+            "2 程序包的版本号无法确定。使用 --include-unknown 查看所有结果。",
+        ):
+            self.assertIsNone(_parse_row(line))
+
     def test_english_header(self) -> None:
         updates = parse_upgrade_table(ENGLISH_SAMPLE)
         self.assertEqual(len(updates), 1)
@@ -196,9 +233,21 @@ class TestConfig(unittest.TestCase):
         pkg = _pkg("A.B")
         self.assertEqual(config_mod.default_action(pkg, self.records), Action.UPDATE_NO_PROXY)
 
-    def test_default_action_skip_record_falls_back_to_proxy(self) -> None:
+    def test_default_action_permanent_skip_stays_skip(self) -> None:
+        """显示已跳过项时，永久跳过的行默认仍是「永久跳过」，不能变「更新」。"""
         self.records["A.B"] = {"action": "permanent_skip"}
         pkg = _pkg("A.B")
+        self.assertEqual(config_mod.default_action(pkg, self.records), Action.PERMANENT_SKIP)
+
+    def test_default_action_skip_version_same_version_stays_skip(self) -> None:
+        self.records["A.B"] = {"action": "skip_version", "version": "1.0.0"}
+        pkg = _pkg("A.B")
+        self.assertEqual(config_mod.default_action(pkg, self.records), Action.SKIP_VERSION)
+
+    def test_default_action_skip_version_new_version_updates(self) -> None:
+        """跳过的是旧版本、可用版本已变化：回到「更新」重新提示。"""
+        self.records["A.B"] = {"action": "skip_version", "version": "0.9.0"}
+        pkg = _pkg("A.B", available="1.0.0")
         self.assertEqual(config_mod.default_action(pkg, self.records), Action.UPDATE_WITH_PROXY)
 
     def test_default_action_no_record(self) -> None:
@@ -250,6 +299,27 @@ class TestWingetCommands(unittest.TestCase):
         cmd = mock_run.call_args[0][0]
         self.assertIn("--no-proxy", cmd)
         self.assertNotIn("--proxy", cmd)
+
+    @patch("winget_updater.winget.subprocess.run")
+    def test_check_upgrades_exclude_unknown(self, mock_run: unittest.mock.Mock) -> None:
+        """显式不含未知版本：命令不带 --include-unknown。"""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, ENGLISH_SAMPLE, "")
+        check_upgrades(include_unknown=False)
+        self.assertNotIn("--include-unknown", mock_run.call_args[0][0])
+
+    @patch("winget_updater.winget.subprocess.run")
+    def test_check_upgrades_includes_unknown_by_default(self, mock_run: unittest.mock.Mock) -> None:
+        """默认含未知版本：命令追加 --include-unknown，版本 Unknown 行可解析。"""
+        unknown_sample = (
+            "名称                   ID                      版本    可用         源\n"
+            "--------------------------------------------------------------------------\n"
+            "Epson Scan 2           EPSON.EpsonScan2        Unknown 6.7.81.0     winget\n"
+        )
+        mock_run.return_value = subprocess.CompletedProcess([], 0, unknown_sample, "")
+        updates = check_upgrades()
+        self.assertIn("--include-unknown", mock_run.call_args[0][0])
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0].version, "Unknown")
 
     @patch("winget_updater.winget.subprocess.run")
     def test_check_upgrades_nonzero_raises(self, mock_run: unittest.mock.Mock) -> None:
@@ -660,6 +730,51 @@ class TestCliFlow(unittest.TestCase):
 
     @patch("winget_updater.cli.run_gui", return_value=0)
     @patch("winget_updater.winget.subprocess.run")
+    def test_show_skipped_keeps_skip_action(
+        self, mock_run: unittest.mock.Mock, mock_gui: unittest.mock.Mock
+    ) -> None:
+        """-s 把跳过项显示出来时，这些行的默认动作仍是跳过（不能变「更新」）。"""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, REAL_SAMPLE, "")
+        from winget_updater.cli import main
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text(
+                json.dumps(
+                    {"version": 1, "packages": {"Tencent.WeType": {"action": "permanent_skip"}}}
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(main(["--config", str(path), "--show-skipped"]), 0)
+            visible = mock_gui.call_args[0][0]
+            we_type = next(pkg for pkg in visible if pkg.package_id == "Tencent.WeType")
+            self.assertEqual(we_type.action, Action.PERMANENT_SKIP)
+
+    @patch("winget_updater.cli.run_gui", return_value=0)
+    @patch("winget_updater.winget.subprocess.run")
+    def test_include_unknown_by_default_and_exclude_flag(
+        self, mock_run: unittest.mock.Mock, mock_gui: unittest.mock.Mock
+    ) -> None:
+        """默认含未知版本；--exclude-unknown 时命令不带该参数并透传给 GUI。"""
+        mock_run.return_value = subprocess.CompletedProcess([], 0, REAL_SAMPLE, "")
+        from winget_updater.cli import main
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            self.assertEqual(main(["--config", str(path)]), 0)
+            self.assertIn("--include-unknown", mock_run.call_args[0][0])
+            self.assertTrue(mock_gui.call_args.kwargs["include_unknown"])
+
+        mock_run.reset_mock()
+        mock_gui.reset_mock()
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            self.assertEqual(main(["--config", str(path), "--exclude-unknown"]), 0)
+            self.assertNotIn("--include-unknown", mock_run.call_args[0][0])
+            self.assertFalse(mock_gui.call_args.kwargs["include_unknown"])
+
+    @patch("winget_updater.cli.run_gui", return_value=0)
+    @patch("winget_updater.winget.subprocess.run")
     def test_recorded_update_action_becomes_default(
         self, mock_run: unittest.mock.Mock, mock_gui: unittest.mock.Mock
     ) -> None:
@@ -752,8 +867,43 @@ class TestGuiSmoke(unittest.TestCase):
             self.assertIn(">>> Docker Desktop <<<", content)
             self.assertIn("Found 1 upgrades available", content)
 
+            # 左下角两个检查按钮存在，且重查后表格按新结果重建
+            self.assertEqual(app.btn_check.cget("text"), "检查更新")
+            self.assertEqual(app.btn_check_no_unknown.cget("text"), "检查更新（不含未知版本）")
+            reloaded = [
+                PackageUpdate(
+                    name="Notepad++ (64-bit x64)",
+                    package_id="Notepad++.Notepad++",
+                    version="8.9.9",
+                    available="8.9.9.1",
+                    source="winget",
+                )
+            ]
+            app._reload_packages(reloaded)
+            root.update()
+            self.assertEqual(app.tree.get_children(), ("Notepad++.Notepad++",))
+            self.assertFalse(app.tree.exists("Docker.DockerDesktop"))
+            self.assertEqual(len(app.packages), 1)
+            values = tuple(app.tree.item("Notepad++.Notepad++", "values"))
+            self.assertEqual(values[4], "●")  # 重建后回到默认动作
+            self.assertEqual(values[10], "等待")  # 状态列重置
+
             # 自动换行（长行按字符断行，无水平滚动条）
             self.assertEqual(app.log_text.cget("wrap"), "char")
+
+            # 左下角「显示已跳过项」开关：有完整结果时本地重过滤，不重跑 winget
+            self.assertEqual(app.chk_skipped.cget("text"), "显示已跳过项")
+            skipped = _pkg("B.Pkg")
+            kept = _pkg("A.Pkg")
+            app.records["B.Pkg"] = {"action": "permanent_skip"}
+            app.raw_updates = [kept, skipped]
+            app.show_skipped_var.set(True)
+            app.show_skipped = True
+            app._apply_filter(app.raw_updates)
+            self.assertEqual(set(app.tree.get_children()), {"A.Pkg", "B.Pkg"})
+            app.show_skipped = False  # 取消勾选：隐藏已跳过项
+            app._apply_filter(app.raw_updates)
+            self.assertEqual(app.tree.get_children(), ("A.Pkg",))
 
             # 完成统计写入详情面板：汇总行 + 失败明细（红色 error 标签）
             failed_pkg = PackageUpdate(

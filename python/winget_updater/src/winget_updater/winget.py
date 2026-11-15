@@ -29,8 +29,15 @@ PROXY_URL = "http://192.168.31.50:7890"
 # winget upgrade 表格固定 5 列：名称 / ID / 版本 / 可用 / 源
 _EXPECTED_COLUMNS = 5
 
-# 包 ID：字母开头的点分串（Publisher.Product），行内无空白
-_ID_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)+")
+# 包 ID：字母开头的点分串（Publisher.Product），行内无空白。
+# 字符集须含 "+"：winget 源里真实存在 Notepad++.Notepad++、
+# Microsoft.VCRedist.2015+.x64 这类带加号的 ID，漏掉会让整行被丢弃
+# （表现为「winget 命令行能发现更新、本程序一条都解析不到」）。
+_ID_RE = re.compile(r"[A-Za-z][A-Za-z0-9_+-]*(?:\.[A-Za-z0-9_+-]+)+")
+
+# 无点 ID（msstore 的 9NBLGGH4NNS1 之类）只能用右锚定兜底解析；
+# 该形态与版本号易混淆，纯数字点分串（8.9.9.1）一律不认作 ID
+_VERSIONISH_RE = re.compile(r"[0-9][0-9.]*")
 
 # 管道降级路径的读取块大小
 _READ_CHUNK = 65536
@@ -40,9 +47,17 @@ class WingetError(RuntimeError):
     """winget 调用失败。"""
 
 
-def check_upgrades(use_proxy: bool = True) -> list[PackageUpdate]:
-    """执行 winget upgrade，返回可升级包列表（无更新时为空列表）。"""
+def check_upgrades(use_proxy: bool = True, include_unknown: bool = True) -> list[PackageUpdate]:
+    """执行 winget upgrade，返回可升级包列表（无更新时为空列表）。
+
+    默认 include_unknown=True，即追加 --include-unknown：连「本地版本无法
+    确定」的包一并列出（winget 输出末尾提示「N 程序包的版本号无法确定，
+    使用 --include-unknown 查看所有结果」）。传 False 得到不含未知版本的
+    结果。运行时检查自动携带代理参数。
+    """
     cmd = ["winget", "upgrade"]
+    if include_unknown:
+        cmd.append("--include-unknown")
     cmd += ["--proxy", PROXY_URL] if use_proxy else ["--no-proxy"]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
@@ -420,27 +435,72 @@ def _parse_row(line: str) -> PackageUpdate | None:
     - version / available / source = ID 右侧空白分词；
     - version 含内部空格仅出现在 "< 174.2.0.13389"（版本无法确定）
       这一种形态，此时右侧为 4 个 token 且首 token 为 "<"。
+
+    ID 不带点（msstore 的 9NBLGGH4NNS1）时锚定失败，退回右锚定解析
+    （见 _parse_row_anchored）。
     """
     for match in _ID_RE.finditer(line):
         name = line[: match.start()].strip()
         if not name:
             continue
-        tokens = line[match.end() :].split()
-        if len(tokens) == 3:
-            version, available, source = tokens
-        elif len(tokens) == 4 and tokens[0] == "<":
-            version = f"< {tokens[1]}"
-            available, source = tokens[2], tokens[3]
-        else:
-            continue
-        return PackageUpdate(
-            name=name,
-            package_id=match.group(),
-            version=version,
-            available=available,
-            source=source,
-        )
-    return None
+        pkg = _build_update(name, match.group(), line[match.end() :])
+        if pkg is not None:
+            return pkg
+    return _parse_row_anchored(line)
+
+
+def _build_update(name: str, package_id: str, tail: str) -> PackageUpdate | None:
+    """由「名称 / ID / ID 之后的分词」拼一个条目；列数不符返回 None。"""
+    tokens = tail.split()
+    if len(tokens) == 3:
+        version, available, source = tokens
+    elif len(tokens) == 4 and tokens[0] == "<":
+        version = f"< {tokens[1]}"
+        available, source = tokens[2], tokens[3]
+    else:
+        return None
+    return PackageUpdate(
+        name=name,
+        package_id=package_id,
+        version=version,
+        available=available,
+        source=source,
+    )
+
+
+def _parse_row_anchored(line: str) -> PackageUpdate | None:
+    """右锚定解析：从行尾倒推 源 / 可用 / 版本，其左侧一词为 ID。
+
+    仅用于 ID 不含点、正则锚定不到的行（msstore 的 Store ID）。版本列
+    可能是 "< x.y" 两个 token，此时 ID 再左移一位。ID 必须含字母且不是
+    纯数字点分串，避免把版本号误认成 ID。
+    """
+    tokens = line.split()
+    if len(tokens) < 4:
+        return None
+    source = tokens[-1]
+    available = tokens[-2]
+    if len(tokens) >= 6 and tokens[-4] == "<":
+        version = f"< {tokens[-3]}"
+        id_index = len(tokens) - 5
+    else:
+        version = tokens[-3]
+        id_index = len(tokens) - 4
+    if id_index < 1:
+        return None
+    package_id = tokens[id_index]
+    if _VERSIONISH_RE.fullmatch(package_id) or not any(c.isalpha() for c in package_id):
+        return None
+    name = " ".join(tokens[:id_index])
+    if not name:
+        return None
+    return PackageUpdate(
+        name=name,
+        package_id=package_id,
+        version=version,
+        available=available,
+        source=source,
+    )
 
 
 def last_error_line(proc: subprocess.CompletedProcess[str]) -> str:

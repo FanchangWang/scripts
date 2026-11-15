@@ -63,12 +63,25 @@ def forget_package(records: dict[str, dict], package_id: str) -> None:
 
 
 def default_action(pkg: PackageUpdate, records: dict[str, dict]) -> Action:
-    """该包本次的默认动作：有更新类记录用记录，否则「更新(使用代理)」。"""
+    """该包本次的默认动作：沿用记录里用户上次的选择。
+
+    - 更新类记录（使用代理 / 不用代理）：直接沿用；
+    - permanent_skip：沿用「永久跳过」——用 --show-skipped 或窗口开关把
+      跳过项显示出来时，行必须仍是跳过状态，否则点「开始更新」会把用户
+      明确不想装的包装上去；
+    - skip_version：仅当记录的版本仍是当前可用版本时沿用，出现新版本后
+      回到「更新(使用代理)」重新提示（与 visible_updates 的重新提示一致）。
+    """
     record = records.get(pkg.package_id)
-    if record is not None:
-        action = record.get("action")
-        if action in {a.value for a in _UPDATE_ACTIONS}:
-            return Action(action)
+    if record is None:
+        return Action.UPDATE_WITH_PROXY
+    action = record.get("action")
+    if action in {a.value for a in _UPDATE_ACTIONS}:
+        return Action(action)
+    if action == Action.PERMANENT_SKIP.value:
+        return Action.PERMANENT_SKIP
+    if action == Action.SKIP_VERSION.value and record.get("version") == pkg.available:
+        return Action.SKIP_VERSION
     return Action.UPDATE_WITH_PROXY
 
 

@@ -27,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="检查更新时不使用代理（默认使用代理）",
     )
     parser.add_argument(
+        "--exclude-unknown",
+        action="store_true",
+        help="检查时不包含「本地版本无法确定」的包（默认包含，即默认带 --include-unknown）",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -40,13 +45,14 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     config_path = args.config if args.config else config_mod.default_config_path()
 
-    if args.no_proxy:
-        print("正在检查 winget 更新（不使用代理）...")
-    else:
-        print(f"正在检查 winget 更新（代理 {PROXY_URL}）...")
+    scope = "不使用代理" if args.no_proxy else f"代理 {PROXY_URL}"
+    scope += "，不含未知版本" if args.exclude_unknown else "，含未知版本"
+    print(f"正在检查 winget 更新（{scope}）...")
 
     try:
-        updates = check_upgrades(use_proxy=not args.no_proxy)
+        updates = check_upgrades(
+            use_proxy=not args.no_proxy, include_unknown=not args.exclude_unknown
+        )
     except WingetError as exc:
         print(f"检查失败：{exc}", file=sys.stderr)
         return 1
@@ -68,7 +74,15 @@ def main(argv: list[str] | None = None) -> int:
     for pkg in visible:
         pkg.action = config_mod.default_action(pkg, records)
 
-    return run_gui(visible, config_path, records)
+    return run_gui(
+        visible,
+        config_path,
+        records,
+        use_proxy=not args.no_proxy,
+        show_skipped=args.show_skipped,
+        raw_updates=updates,
+        include_unknown=not args.exclude_unknown,
+    )
 
 
 if __name__ == "__main__":

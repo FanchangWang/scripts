@@ -32,6 +32,7 @@ from winget_updater import theme as theme_mod
 from winget_updater.models import Action, PackageUpdate
 from winget_updater.winget import (
     PROXY_URL,
+    check_upgrades,
     fetch_installer_url,
     parse_progress,
     upgrade_package,
@@ -51,6 +52,11 @@ _DONE_STATUS = frozenset({"成功", "失败", "已取消"})
 _MSG_ROW = "row"
 _MSG_LOG = "log"
 _MSG_PROG = "prog"
+
+# 「检查更新」结果队列：("ok", 完整结果列表) / ("error", 错误摘要)
+_CHECK_OK = "ok"
+_CHECK_ERROR = "error"
+_CheckPayload = list[PackageUpdate] | str
 
 _COLUMNS = (
     "name",
@@ -249,6 +255,10 @@ class UpdaterApp:
         packages: list[PackageUpdate],
         config_path: Path,
         records: dict[str, dict],
+        use_proxy: bool = True,
+        show_skipped: bool = False,
+        raw_updates: list[PackageUpdate] | None = None,
+        include_unknown: bool = True,
     ) -> None:
         self.root = root
         self.packages = packages
@@ -256,13 +266,27 @@ class UpdaterApp:
         self.records = records
         self.stop_event = threading.Event()
         self.result_queue: queue.Queue[tuple[str, PackageUpdate, str] | None] = queue.Queue()
+        # 窗口内「检查更新」的结果队列：(kind, payload)
+        self.check_queue: queue.Queue[tuple[str, _CheckPayload]] = queue.Queue()
         self.worker: threading.Thread | None = None
         self.running = False
+        # 「检查更新」进行中：与更新互斥，期间禁用所有动作按钮
+        self.checking = False
+        # 窗口内重查须沿用启动时的口径（--no-proxy / --show-skipped）
+        self.use_proxy = use_proxy
+        self.show_skipped = show_skipped
+        # 最近一次检查的完整结果（未按「跳过」记录过滤）。切换「显示已跳过项」
+        # 时用它本地重过滤，不必再跑一次 winget；启动时由 CLI 一并传入
+        self.raw_updates: list[PackageUpdate] | None = (
+            list(raw_updates) if raw_updates is not None else None
+        )
+        # 上次检查是否带了 --include-unknown；窗口内「检查更新」沿用同一口径
+        self._last_include_unknown = include_unknown
         # 安装详情 label 的当前状态：进行中的包 + 最近一次下载进度 (MB, MB)
         self._current_pkg: PackageUpdate | None = None
         self._progress: tuple[float, float] | None = None
 
-        root.title(f"winget 更新 — 共 {len(packages)} 项（代理 {PROXY_URL}）")
+        self._update_title()
         # geometry 使用物理像素、不随 tk scaling 转换，需按缩放系数手动放大，
         # 与内部控件（列宽等，同样不随 scaling 转换）保持一致
         self.scale = _display_scale(root)
@@ -378,17 +402,43 @@ class UpdaterApp:
         bar = ttk.Frame(parent)
         bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
+        # 左下角：先「检查」再「更新」，两组按钮同在左贴排列
+        # 默认即「含未知版本」（等价于 winget --include-unknown）
+        self.btn_check = ttk.Button(
+            bar, text="检查更新", command=lambda: self._start_check(include_unknown=True)
+        )
+        self.btn_check_no_unknown = ttk.Button(
+            bar,
+            text="检查更新（不含未知版本）",
+            command=lambda: self._start_check(include_unknown=False),
+        )
         self.btn_default = ttk.Button(bar, text="全部默认(使用代理)", command=self._reset_all)
         self.btn_start = ttk.Button(bar, text="开始更新", command=self._start_updates)
         self.btn_stop = ttk.Button(bar, text="停止", command=self._stop, state="disabled")
         self.btn_cancel = ttk.Button(bar, text="取消", command=self._on_close)
-        self.btn_default.pack(side="left")
+        # 视图开关：等价于命令行的 --show-skipped（显示「跳过本版本 / 永久跳过」的条目）
+        self.show_skipped_var = tk.BooleanVar(value=self.show_skipped)
+        self.chk_skipped = ttk.Checkbutton(
+            bar,
+            text="显示已跳过项",
+            variable=self.show_skipped_var,
+            command=self._on_toggle_skipped,
+        )
+        self.btn_check.pack(side="left")
+        self.btn_check_no_unknown.pack(side="left", padx=(8, 0))
+        self.btn_default.pack(side="left", padx=(16, 0))
         self.btn_start.pack(side="left", padx=(8, 0))
         self.btn_stop.pack(side="left", padx=(8, 0))
         self.btn_cancel.pack(side="left", padx=(8, 0))
+        self.chk_skipped.pack(side="left", padx=(16, 0))
 
         self.progress = ttk.Label(bar, text="")
         self.progress.pack(side="right")
+
+    def _update_title(self) -> None:
+        """窗口标题：条目数 + 本次检查的代理口径。"""
+        proxy = f"代理 {PROXY_URL}" if self.use_proxy else "不使用代理"
+        self.root.title(f"winget 更新 — 共 {len(self.packages)} 项（{proxy}）")
 
     def _row_values(self, pkg: PackageUpdate) -> tuple[str, ...]:
         """生成 Treeview 一行的显示值。"""
@@ -458,7 +508,7 @@ class UpdaterApp:
 
     def _on_click(self, event: tk.Event) -> None:
         """点击选项列单元格：把该行切换为对应动作。"""
-        if self.running:
+        if self.running or self.checking:
             return
         if self.tree.identify_region(event.x, event.y) != "cell":
             return
@@ -473,7 +523,7 @@ class UpdaterApp:
 
     def _reset_all(self) -> None:
         """全部恢复默认：更新(使用代理)。"""
-        if self.running:
+        if self.running or self.checking:
             return
         for pkg in self.packages:
             pkg.action = Action.UPDATE_WITH_PROXY
@@ -481,6 +531,8 @@ class UpdaterApp:
 
     def _start_updates(self) -> None:
         """写配置并启动工作线程执行更新。"""
+        if self.running or self.checking:
+            return
         todo = [pkg for pkg in self.packages if pkg.action in _UPDATE_ACTIONS]
 
         # 5 个选项中 4 个落盘；「本次不更新」= 删除记录（下次仍提示）
@@ -513,6 +565,111 @@ class UpdaterApp:
         self.stop_event.set()
         self._cancel_polling()
         self.root.destroy()
+
+    # ---------- 检查更新（工作线程 + 队列刷新） ----------
+
+    def _start_check(self, include_unknown: bool) -> None:
+        """窗口内重新检查更新；检查期间禁用全部动作按钮。
+
+        默认 include_unknown=True（等价 winget --include-unknown），把
+        「本地版本无法确定（Unknown）」的包一并列出；False 对应「不含未知
+        版本」按钮。
+        """
+        if self.running or self.checking:
+            return
+        self.checking = True
+        self._last_include_unknown = include_unknown
+        self._update_button_states()
+        self.progress.config(text="正在检查…")
+        self._append_status_line(
+            "正在检查更新（含未知版本）…" if include_unknown else "正在检查更新（不含未知版本）…"
+        )
+        threading.Thread(target=self._run_check, args=(include_unknown,), daemon=True).start()
+
+    def _run_check(self, include_unknown: bool) -> None:
+        """工作线程：调用 winget，把完整结果投递回 GUI 线程再过滤。"""
+        try:
+            updates = check_upgrades(self.use_proxy, include_unknown=include_unknown)
+            self.check_queue.put((_CHECK_OK, updates))
+        except Exception as exc:  # winget 缺失 / 网络失败 / 远端异常
+            self.check_queue.put((_CHECK_ERROR, str(exc)))
+
+    def _on_check_done(self, kind: str, payload: _CheckPayload) -> None:
+        """GUI 线程处理检查结果：重建表格或提示失败。"""
+        self.checking = False
+        self._update_button_states()
+        if kind != _CHECK_OK or not isinstance(payload, list):
+            message = str(payload)
+            self._update_progress()
+            self._append_status_line(f"检查失败：{message}")
+            messagebox.showerror("检查更新", message, parent=self.root)
+            return
+
+        self.raw_updates = payload
+        self._apply_filter(payload)
+        if self.packages:
+            self._append_status_line(f"发现 {len(self.packages)} 个可更新条目。")
+        else:
+            self._append_status_line("所有软件均已是最新版本，无需更新。")
+        hidden = len(payload) - len(self.packages)
+        if hidden:
+            self._append_status_line(f"{hidden} 个更新已被跳过（勾选「显示已跳过项」可查看）。")
+
+    def _apply_filter(self, updates: list[PackageUpdate]) -> None:
+        """按当前 records + show_skipped 重算可见集并重建表格。
+
+        已在表格里的条目复用原对象，保留用户已点选的动作与运行状态。
+        """
+        visible = config_mod.visible_updates(updates, self.records, self.show_skipped)
+        existing = {pkg.package_id: pkg for pkg in self.packages}
+        merged: list[PackageUpdate] = []
+        for pkg in visible:
+            kept = existing.get(pkg.package_id)
+            if kept is None:
+                pkg.action = config_mod.default_action(pkg, self.records)
+                merged.append(pkg)
+            else:
+                merged.append(kept)
+        self._reload_packages(merged)
+
+    def _on_toggle_skipped(self) -> None:
+        """左下角开关：显示/隐藏「跳过本版本」「永久跳过」的条目。
+
+        有完整检查结果时本地重过滤（不重跑 winget）；只有启动那一份被
+        CLI 过滤过的列表时，按上次口径重查一次补齐完整结果。
+        """
+        if self.running or self.checking:
+            return
+        self.show_skipped = bool(self.show_skipped_var.get())
+        if self.raw_updates is not None:
+            self._apply_filter(self.raw_updates)
+            self._append_status_line(
+                "已显示被跳过的更新。" if self.show_skipped else "已隐藏被跳过的更新。"
+            )
+        else:
+            self._start_check(self._last_include_unknown)
+
+    def _reload_packages(self, packages: list[PackageUpdate]) -> None:
+        """用新检查结果重建表格（旧状态/选择全部丢弃）。"""
+        self.packages = packages
+        self._pkg_by_row.clear()
+        children = self.tree.get_children()
+        if children:
+            self.tree.delete(*children)
+        for pkg in packages:
+            self.tree.insert("", "end", iid=pkg.package_id, values=self._row_values(pkg))
+            self._pkg_by_row[pkg.package_id] = pkg
+        self._update_title()
+        self._update_progress()
+
+    def _append_status_line(self, text: str) -> None:
+        """向详情面板写一行工具自身的状态（不带包名前缀）。"""
+        self.log_text.configure(state="normal")
+        try:
+            self.log_text.insert("end", f"{text}\n")
+        finally:
+            self.log_text.configure(state="disabled")
+        self.log_text.yview_moveto(1.0)
 
     # ---------- 更新执行（工作线程 + 队列刷新） ----------
 
@@ -607,6 +764,12 @@ class UpdaterApp:
                 self._update_progress()
         except queue.Empty:
             pass
+        try:
+            while True:
+                kind, payload = self.check_queue.get_nowait()
+                self._on_check_done(kind, payload)
+        except queue.Empty:
+            pass
         self._after_id = self.root.after(100, self._poll_queue)
 
     def _cancel_polling(self) -> None:
@@ -669,11 +832,25 @@ class UpdaterApp:
     # ---------- 辅助 ----------
 
     def _set_buttons_running(self, running: bool) -> None:
-        state = "disabled" if running else "normal"
-        self.btn_default.config(state=state)
-        self.btn_start.config(state=state)
-        self.btn_cancel.config(state=state)
-        self.btn_stop.config(state="normal" if running else "disabled")
+        """更新开始/结束时刷新按钮（兼容旧调用点，语义同 _update_button_states）。"""
+        self.running = running
+        self._update_button_states()
+
+    def _update_button_states(self) -> None:
+        """按「更新中 / 检查中」统一刷新按钮可用性（两者互斥）。"""
+        busy = self.running or self.checking
+        state = "disabled" if busy else "normal"
+        for btn in (
+            self.btn_check,
+            self.btn_check_no_unknown,
+            self.btn_default,
+            self.btn_start,
+        ):
+            btn.config(state=state)
+        self.chk_skipped.config(state=state)
+        # 检查中仍可取消（关闭窗口）；更新中沿用旧行为：取消禁用、停止可用
+        self.btn_cancel.config(state="disabled" if self.running else "normal")
+        self.btn_stop.config(state="normal" if self.running else "disabled")
 
     def _update_progress(self) -> None:
         total = sum(1 for pkg in self.packages if pkg.action in _UPDATE_ACTIONS)
@@ -703,11 +880,30 @@ def run_gui(
     packages: list[PackageUpdate],
     config_path: Path,
     records: dict[str, dict],
+    use_proxy: bool = True,
+    show_skipped: bool = False,
+    raw_updates: list[PackageUpdate] | None = None,
+    include_unknown: bool = False,
 ) -> int:
-    """打开 GUI 主窗口，阻塞至关闭。"""
+    """打开 GUI 主窗口，阻塞至关闭。
+
+    use_proxy / show_skipped / include_unknown 供窗口内「检查更新」沿用与
+    启动时相同的代理、跳过过滤与 --include-unknown 口径；raw_updates 为
+    未过滤的完整结果，仅供「显示已跳过项」开关本地重过滤（缺省时开关会
+    先重查一次）。
+    """
     _enable_dpi_awareness()
     root = tk.Tk()
     _apply_tk_scaling(root)  # 须在构建界面前：覆盖 Tk 默认的 dpi/72 scaling
-    UpdaterApp(root, packages, config_path, records)
+    UpdaterApp(
+        root,
+        packages,
+        config_path,
+        records,
+        use_proxy,
+        show_skipped,
+        raw_updates,
+        include_unknown,
+    )
     root.mainloop()
     return 0
