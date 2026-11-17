@@ -280,6 +280,20 @@ class TestConfig(unittest.TestCase):
         visible = config_mod.visible_updates(updates, self.records, show_skipped=True)
         self.assertEqual(len(visible), 2)
 
+    def test_is_skipped(self) -> None:
+        """is_skipped 与隐藏判定同源：永久跳过、版本未变的跳过本版本。"""
+        pkg = _pkg("A.B", available="1.0.0")
+        self.assertFalse(config_mod.is_skipped(pkg, {}))
+        self.assertTrue(config_mod.is_skipped(pkg, {"A.B": {"action": "permanent_skip"}}))
+        self.assertTrue(
+            config_mod.is_skipped(pkg, {"A.B": {"action": "skip_version", "version": "1.0.0"}})
+        )
+        # 记录的版本已过期 → 不再算跳过
+        self.assertFalse(
+            config_mod.is_skipped(pkg, {"A.B": {"action": "skip_version", "version": "0.9.0"}})
+        )
+        self.assertFalse(config_mod.is_skipped(pkg, {"A.B": {"action": "update_no_proxy"}}))
+
 
 class TestWingetCommands(unittest.TestCase):
     """winget 子进程命令构造。"""
@@ -900,7 +914,8 @@ class TestGuiSmoke(unittest.TestCase):
             app.show_skipped_var.set(True)
             app.show_skipped = True
             app._apply_filter(app.raw_updates)
-            self.assertEqual(set(app.tree.get_children()), {"A.Pkg", "B.Pkg"})
+            self.assertEqual(app.tree.get_children(), ("A.Pkg", "B.Pkg"))  # 跳过项排最后
+            self.assertIn("（1 项）", app.chk_skipped.cget("text"))  # 勾选框带数量
             app.show_skipped = False  # 取消勾选：隐藏已跳过项
             app._apply_filter(app.raw_updates)
             self.assertEqual(app.tree.get_children(), ("A.Pkg",))
@@ -975,6 +990,81 @@ class TestGuiSmoke(unittest.TestCase):
             with patch("winget_updater.theme.is_system_dark", return_value=before[0]):
                 app._poll_theme()
             self.assertEqual((app._dark, app.log_text.cget("background")), before)
+        finally:
+            app._cancel_polling()
+            if root.winfo_exists():
+                root.destroy()
+
+    def test_skipped_rows_style_and_count(self) -> None:
+        """跳过项显示出来后：勾选框带数量、行排最后、带 tag 区分。"""
+        try:
+            import tkinter as tk
+
+            from winget_updater.gui import UpdaterApp
+
+            root = tk.Tk()
+        except Exception:
+            self.skipTest("当前环境无法创建 Tk 窗口")
+
+        try:
+            root.withdraw()
+            records = {"B.Pkg": {"action": "permanent_skip"}}
+            pkgs = [_pkg("B.Pkg"), _pkg("A.Pkg")]  # 原始顺序把跳过项排在前面
+            raw = [_pkg("B.Pkg"), _pkg("A.Pkg")]
+            app = UpdaterApp(
+                root, pkgs, Path("config.json"), records, show_skipped=True, raw_updates=raw
+            )
+            root.update()
+
+            self.assertEqual(app.tree.get_children(), ("A.Pkg", "B.Pkg"))  # 跳过项挪到最后
+            self.assertIn("skipped-row", str(app.tree.item("B.Pkg", "tags")))
+            self.assertEqual(str(app.tree.item("A.Pkg", "tags")), "")
+            self.assertIn("（1 项）", app.chk_skipped.cget("text"))
+
+            app.show_skipped_var.set(False)
+            app._on_toggle_skipped()
+            self.assertEqual(app.tree.get_children(), ("A.Pkg",))
+            self.assertIn("（1 项）", app.chk_skipped.cget("text"))  # 隐藏后数量仍显示
+        finally:
+            app._cancel_polling()
+            if root.winfo_exists():
+                root.destroy()
+
+    def test_action_persisted_immediately_and_kept_after_update(self) -> None:
+        """选完即写盘；成功更新后不再清除该偏好（Trae 类包需记住「不用代理」）。"""
+        try:
+            import tkinter as tk
+
+            from winget_updater.gui import UpdaterApp
+
+            root = tk.Tk()
+        except Exception:
+            self.skipTest("当前环境无法创建 Tk 窗口")
+
+        try:
+            root.withdraw()
+            with TemporaryDirectory() as tmp:
+                cfg = Path(tmp) / "config.json"
+                pkg = _pkg("ByteDance.Trae.CN", available="3.4.20")
+                app = UpdaterApp(root, [pkg], cfg, {})
+                root.update()
+
+                pkg.action = Action.UPDATE_NO_PROXY
+                app._save_action(pkg)  # 不点「开始更新」也应已落盘
+                data = json.loads(cfg.read_text(encoding="utf-8"))
+                self.assertEqual(data["packages"]["ByteDance.Trae.CN"]["action"], "update_no_proxy")
+
+                # 重启后默认动作沿用「不用代理」
+                fresh = _pkg("ByteDance.Trae.CN", available="3.4.20")
+                self.assertEqual(
+                    config_mod.default_action(fresh, app.records), Action.UPDATE_NO_PROXY
+                )
+
+                # 更新成功后记录仍保留（版本变化由 visible_updates 自己判断）
+                pkg.status = "成功"
+                with patch("winget_updater.gui.messagebox"):
+                    app._on_finished()
+                self.assertEqual(app.records["ByteDance.Trae.CN"]["action"], "update_no_proxy")
         finally:
             app._cancel_polling()
             if root.winfo_exists():

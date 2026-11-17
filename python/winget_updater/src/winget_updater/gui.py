@@ -41,6 +41,9 @@ from winget_updater.winget import (
 _SELECTED = "●"
 _UNSELECTED = "○"
 
+# Treeview tag：被记录跳过（默认隐藏）的行，用不同底色 + 灰字区分
+_TAG_SKIPPED = "skipped-row"
+
 _UPDATE_ACTIONS = frozenset({Action.UPDATE_WITH_PROXY, Action.UPDATE_NO_PROXY})
 _DONE_STATUS = frozenset({"成功", "失败", "已取消"})
 
@@ -304,6 +307,7 @@ class UpdaterApp:
         theme_mod.apply_titlebar(root, self._dark, self._palette)
 
         self._build_widgets()
+        self._update_skipped_label()
         root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._after_id: str | None = root.after(100, self._poll_queue)
         # 每秒轮询注册表，跟随系统深浅色切换（tkinter 收不到 WM_SETTINGCHANGE）
@@ -343,10 +347,9 @@ class UpdaterApp:
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.tree.bind("<Button-1>", self._on_click)
 
+        self._style_skipped_tag()
         self._pkg_by_row: dict[str, PackageUpdate] = {}
-        for pkg in self.packages:
-            self.tree.insert("", "end", iid=pkg.package_id, values=self._row_values(pkg))
-            self._pkg_by_row[pkg.package_id] = pkg
+        self._fill_rows(self.packages)
 
     def _build_log(self, parent: ttk.Frame) -> None:
         """安装详情面板：终端风格的只读文本区，实时显示 winget 输出。
@@ -387,6 +390,13 @@ class UpdaterApp:
             insertbackground=palette.log_fg,
         )
         self.log_text.tag_configure("error", foreground=palette.error)
+        self._style_skipped_tag()
+
+    def _style_skipped_tag(self) -> None:
+        """跳过行样式：比正常行略深的底色 + 灰字（深浅主题都贴合）。"""
+        self.tree.tag_configure(
+            _TAG_SKIPPED, background=self._palette.bg, foreground=self._palette.fg_dim
+        )
 
     def _poll_theme(self) -> None:
         """每秒检查系统主题，切换到深浅色时重新应用主题与配色。"""
@@ -456,7 +466,12 @@ class UpdaterApp:
 
     def _refresh_row(self, pkg: PackageUpdate) -> None:
         if self.tree.exists(pkg.package_id):
-            self.tree.item(pkg.package_id, values=self._row_values(pkg))
+            skipped = config_mod.is_skipped(pkg, self.records)
+            self.tree.item(
+                pkg.package_id,
+                values=self._row_values(pkg),
+                tags=(_TAG_SKIPPED,) if skipped else (),
+            )
 
     def _append_log(self, pkg: PackageUpdate, line: str, carriage_return: bool = False) -> None:
         """向详情面板追加一行（只读 Text 临时解锁写入）。
@@ -504,10 +519,40 @@ class UpdaterApp:
         self._progress = None
         self._update_log_label()
 
+    def _fill_rows(self, packages: list[PackageUpdate]) -> None:
+        """把条目写入表格：被记录跳过（默认隐藏）的行排在最后并加底色。
+
+        这两点都是为了「点开显示已跳过项」后能一眼看出多出来的行，不必
+        逐条比对；样式用 Treeview tag，随主题切换由 _apply_palette 刷新。
+        """
+        skipped_last = sorted(
+            packages, key=lambda pkg: 1 if config_mod.is_skipped(pkg, self.records) else 0
+        )
+        for pkg in skipped_last:
+            skipped = config_mod.is_skipped(pkg, self.records)
+            self.tree.insert(
+                "",
+                "end",
+                iid=pkg.package_id,
+                values=self._row_values(pkg),
+                tags=(_TAG_SKIPPED,) if skipped else (),
+            )
+            self._pkg_by_row[pkg.package_id] = pkg
+        self.packages = skipped_last
+
+    def _update_skipped_label(self) -> None:
+        """「显示已跳过项」勾选框带出被记录跳过的条目数。"""
+        count = None
+        if self.raw_updates is not None:
+            count = sum(1 for pkg in self.raw_updates if config_mod.is_skipped(pkg, self.records))
+        text = "显示已跳过项" if count is None else f"显示已跳过项（{count} 项）"
+        if self.chk_skipped.cget("text") != text:
+            self.chk_skipped.configure(text=text)
+
     # ---------- 交互 ----------
 
     def _on_click(self, event: tk.Event) -> None:
-        """点击选项列单元格：把该行切换为对应动作。"""
+        """点击选项列单元格：把该行切换为对应动作，并立即写入配置。"""
         if self.running or self.checking:
             return
         if self.tree.identify_region(event.x, event.y) != "cell":
@@ -519,15 +564,33 @@ class UpdaterApp:
         if pkg is None:
             return
         pkg.action = action
+        # 选完就落盘：不必等「开始更新」，关窗口/取消也不会丢选择
+        self._save_action(pkg)
+        # 记录已更新，再刷行——跳过类动作会同时带上/去掉跳过行的 tag
         self._refresh_row(pkg)
+        self._update_skipped_label()
+
+    def _save_action(self, pkg: PackageUpdate) -> None:
+        """把单行的当前选择写入 config.json（下次启动据此恢复默认动作）。"""
+        config_mod.record_action(self.records, pkg)
+        try:
+            config_mod.save_records(self.config_path, self.records)
+        except OSError as exc:
+            self._append_status_line(f"写入配置失败：{exc}")
 
     def _reset_all(self) -> None:
-        """全部恢复默认：更新(使用代理)。"""
+        """全部恢复默认：按记录恢复各自默认动作（无记录则为「更新(使用代理)」）。"""
         if self.running or self.checking:
             return
         for pkg in self.packages:
-            pkg.action = Action.UPDATE_WITH_PROXY
+            pkg.action = config_mod.default_action(pkg, self.records)
             self._refresh_row(pkg)
+            config_mod.record_action(self.records, pkg)
+        try:
+            config_mod.save_records(self.config_path, self.records)
+        except OSError as exc:
+            self._append_status_line(f"写入配置失败：{exc}")
+        self._update_skipped_label()
 
     def _start_updates(self) -> None:
         """写配置并启动工作线程执行更新。"""
@@ -651,16 +714,14 @@ class UpdaterApp:
 
     def _reload_packages(self, packages: list[PackageUpdate]) -> None:
         """用新检查结果重建表格（旧状态/选择全部丢弃）。"""
-        self.packages = packages
-        self._pkg_by_row.clear()
         children = self.tree.get_children()
         if children:
             self.tree.delete(*children)
-        for pkg in packages:
-            self.tree.insert("", "end", iid=pkg.package_id, values=self._row_values(pkg))
-            self._pkg_by_row[pkg.package_id] = pkg
+        self._pkg_by_row.clear()
+        self._fill_rows(packages)
         self._update_title()
         self._update_progress()
+        self._update_skipped_label()
 
     def _append_status_line(self, text: str) -> None:
         """向详情面板写一行工具自身的状态（不带包名前缀）。"""
@@ -714,7 +775,9 @@ class UpdaterApp:
 
                 if proc.returncode == 0:
                     pkg.status = "成功"
-                    config_mod.forget_package(self.records, pkg.package_id)
+                    # 不再删除记录：更新选项是对「这个包怎么更新」的偏好，
+                    # 留着下次启动才能记住「不用代理」这类选择；版本变化后
+                    # visible_updates / default_action 自会判断是否仍适用
                 else:
                     pkg.status = "失败"
                     pkg.error = _last_nonempty(log_lines) or f"退出码 {proc.returncode}"
@@ -788,6 +851,7 @@ class UpdaterApp:
         self.running = False
         self._set_buttons_running(False)
         config_mod.save_records(self.config_path, self.records)
+        self._update_skipped_label()
 
         ok = [pkg for pkg in self.packages if pkg.status == "成功"]
         failed = [pkg for pkg in self.packages if pkg.status == "失败"]
