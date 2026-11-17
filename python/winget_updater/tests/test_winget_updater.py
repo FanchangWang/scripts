@@ -356,6 +356,8 @@ class TestWingetCommands(unittest.TestCase):
         self.assertIn("--accept-package-agreements", cmd)
         self.assertIn("--accept-source-agreements", cmd)
         self.assertIn("--disable-interactivity", cmd)
+        # 版本号未知的包（Epson Scan 2）不带 --include-unknown 会被 winget 拒绝
+        self.assertIn("--include-unknown", cmd)
         self.assertIn("--proxy", cmd)
         self.assertEqual(proc.returncode, 0)
 

@@ -24,7 +24,7 @@ uv run winget-updater
 
 1. 检查更新：`winget upgrade --include-unknown --proxy http://192.168.31.50:7890`（默认就带 `--include-unknown`，`--exclude-unknown` 可关闭）；无更新时打印提示并退出。
 2. 有更新时弹出 GUI，每行右侧 5 个选项列，点击单元格即选中：
-   - **更新(使用代理)**：默认全部选中。执行 `winget upgrade --id <pkg> --silent ... --proxy <uri>`
+   - **更新(使用代理)**：默认全部选中。执行 `winget upgrade --id <pkg> --silent --include-unknown ... --proxy <uri>`——升级阶段也固定带 `--include-unknown`：本地版本号无法确定的包（如 `EPSON.EpsonScan2`）不带它会被 winget 直接拒绝（`无法确定此包的版本号`，exit `0x8A15002B`）
    - **更新(不用代理)**：同上但不带代理（`--no-proxy`）
    - **本次不更新**：不记录，下次运行仍会提示
    - **跳过本版本**：记录跳过的版本号，该版本一直不提示；发布新版本后自动重新提示

@@ -131,6 +131,9 @@ def upgrade_package(
 ) -> subprocess.CompletedProcess[str]:
     """升级指定包；use_proxy 决定是否走代理。
 
+    命令固定带 --include-unknown：本地版本号无法确定的包（如
+    EPSON.EpsonScan2）不带它会被 winget 直接拒绝。
+
     输出为流式：winget 输出经 _FrameFeeder 分帧后通过
     on_line(line, carriage_return) 实时流出，供 GUI 详情面板展示。
     下载进度帧（spinner / 进度条）以 carriage_return=True 发出，
@@ -149,6 +152,11 @@ def upgrade_package(
         "--accept-package-agreements",
         "--accept-source-agreements",
         "--disable-interactivity",
+        # 本地版本号无法确定的包（如 EPSON.EpsonScan2），用 --id 单独升级时
+        # winget 会拒绝并提示「请将参数--include-unknown添加到上一命令」
+        # （exit 0x8A15002B）；检查阶段本来就默认带该参数，升级阶段同样带上，
+        # 否则这类包每次都会白跑一趟
+        "--include-unknown",
     ]
     cmd += ["--proxy", PROXY_URL] if use_proxy else ["--no-proxy"]
 
