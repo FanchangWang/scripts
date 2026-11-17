@@ -22,6 +22,7 @@ import ctypes.wintypes
 import queue
 import sys
 import threading
+import time
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
@@ -43,6 +44,9 @@ _UNSELECTED = "○"
 
 # Treeview tag：被记录跳过（默认隐藏）的行，用不同底色 + 灰字区分
 _TAG_SKIPPED = "skipped-row"
+
+# 「检查更新」最长等待：超过则复位按钮（winget 挂住时的自救兜底）
+_CHECK_TIMEOUT = 150
 
 _UPDATE_ACTIONS = frozenset({Action.UPDATE_WITH_PROXY, Action.UPDATE_NO_PROXY})
 _DONE_STATUS = frozenset({"成功", "失败", "已取消"})
@@ -275,6 +279,9 @@ class UpdaterApp:
         self.running = False
         # 「检查更新」进行中：与更新互斥，期间禁用所有动作按钮
         self.checking = False
+        # 检查超时看门狗（monotonic 时刻）与轮询重入守卫
+        self._check_deadline: float | None = None
+        self._polling = False
         # 窗口内重查须沿用启动时的口径（--no-proxy / --show-skipped）
         self.use_proxy = use_proxy
         self.show_skipped = show_skipped
@@ -641,6 +648,7 @@ class UpdaterApp:
         if self.running or self.checking:
             return
         self.checking = True
+        self._check_deadline = time.monotonic() + _CHECK_TIMEOUT
         self._last_include_unknown = include_unknown
         self._update_button_states()
         self.progress.config(text="正在检查…")
@@ -660,6 +668,7 @@ class UpdaterApp:
     def _on_check_done(self, kind: str, payload: _CheckPayload) -> None:
         """GUI 线程处理检查结果：重建表格或提示失败。"""
         self.checking = False
+        self._check_deadline = None
         self._update_button_states()
         if kind != _CHECK_OK or not isinstance(payload, list):
             message = str(payload)
@@ -810,30 +819,85 @@ class UpdaterApp:
             self.result_queue.put((_MSG_LOG, pkg, f"SHA256: {sha}"))
 
     def _poll_queue(self) -> None:
-        """GUI 线程轮询队列，刷新状态列、详情面板与进度。"""
+        """GUI 线程轮询队列，刷新状态列、详情面板与进度。
+
+        必须保证每次调用都重新调度下一次（末尾 finally）：早先在收到更新
+        结束哨兵时直接 return，跳过了重新调度，轮询链就此断裂——之后再点
+        「检查更新」，结果只会堆在队列里没人取，界面表现为「按钮点了没
+        反应」、按钮永久禁用。
+
+        _polling 守卫用于防重入：_on_finished 里弹模态框时会嵌套跑事件
+        循环，可能再次触发本回调；嵌套这次直接返回，由外层统一续调。
+        进入时先取消已排定的 after，保证任何时刻只有一条轮询链（否则旧
+        定时器会在窗口销毁后触发 Tcl「invalid command name」）。
+        """
+        if self._after_id is not None:
+            try:
+                self.root.after_cancel(self._after_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._after_id = None
+        if self._polling:
+            return
+        self._polling = True
         try:
-            while True:
+            self._drain_result_queue()
+            self._drain_check_queue()
+            self._check_watchdog()
+        except Exception as exc:  # 界面刷新异常不能吞掉轮询链
+            try:
+                self._append_status_line(f"界面更新异常：{exc}")
+            except tk.TclError:
+                pass
+        finally:
+            self._polling = False
+            self._after_id = self.root.after(100, self._poll_queue)
+
+    def _drain_result_queue(self) -> None:
+        """排空更新工作线程的队列（拾取结束哨兵后转为收尾，不中断轮询）。"""
+        while True:
+            try:
                 item = self.result_queue.get_nowait()
-                if item is None:
-                    self._on_finished()
-                    return
-                kind, pkg, text = item
-                if kind == _MSG_LOG:
-                    self._append_log(pkg, text)
-                elif kind == _MSG_PROG:
-                    self._append_log(pkg, text, carriage_return=True)
-                else:
-                    self._refresh_row(pkg)
-                self._update_progress()
-        except queue.Empty:
-            pass
-        try:
-            while True:
+            except queue.Empty:
+                return
+            if item is None:
+                self._on_finished()
+                continue
+            kind, pkg, text = item
+            if kind == _MSG_LOG:
+                self._append_log(pkg, text)
+            elif kind == _MSG_PROG:
+                self._append_log(pkg, text, carriage_return=True)
+            else:
+                self._refresh_row(pkg)
+            self._update_progress()
+
+    def _drain_check_queue(self) -> None:
+        """排空检查线程的队列。"""
+        while True:
+            try:
                 kind, payload = self.check_queue.get_nowait()
-                self._on_check_done(kind, payload)
-        except queue.Empty:
-            pass
-        self._after_id = self.root.after(100, self._poll_queue)
+            except queue.Empty:
+                return
+            self._on_check_done(kind, payload)
+
+    def _check_watchdog(self) -> None:
+        """检查线程超时兜底：winget 挂住时复位按钮，允许重新检查。
+
+        check_upgrades 自带 subprocess 超时，但万一进程卡在不可杀的状态，
+        界面不能一直停在「正在检查…」且按钮全禁用。
+        """
+        if not self.checking or self._check_deadline is None:
+            return
+        if time.monotonic() < self._check_deadline:
+            return
+        self._check_deadline = None
+        self.checking = False
+        self._update_button_states()
+        self._update_progress()
+        self._append_status_line(
+            f"检查更新超时（超过 {_CHECK_TIMEOUT} 秒未返回），已复位，可重新检查。"
+        )
 
     def _cancel_polling(self) -> None:
         """取消队列轮询（窗口关闭时调用，避免 destroy 后回调触发）。"""

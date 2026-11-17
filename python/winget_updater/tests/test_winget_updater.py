@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import time
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -340,6 +341,15 @@ class TestWingetCommands(unittest.TestCase):
         mock_run.return_value = subprocess.CompletedProcess([], 1, "", "network error")
         with self.assertRaises(WingetError):
             check_upgrades()
+
+    @patch("winget_updater.winget.subprocess.run")
+    def test_check_upgrades_timeout_raises(self, mock_run: unittest.mock.Mock) -> None:
+        """winget 挂住：超时转成 WingetError，不把调用方永远吊住。"""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=["winget"], timeout=120)
+        with self.assertRaises(WingetError) as ctx:
+            check_upgrades(timeout=120)
+        self.assertIn("超时", str(ctx.exception))
+        self.assertEqual(mock_run.call_args.kwargs["timeout"], 120)
 
     @patch("winget_updater.winget.run_in_pty")
     def test_upgrade_package_with_proxy(self, mock_pty: unittest.mock.Mock) -> None:
@@ -1070,6 +1080,93 @@ class TestGuiSmoke(unittest.TestCase):
         finally:
             app._cancel_polling()
             if root.winfo_exists():
+                root.destroy()
+
+    def _make_app(self, tmp: str):
+        """建一个最小 GUI（隐藏窗口），返回 (root, app)。"""
+        import tkinter as tk
+
+        from winget_updater.gui import UpdaterApp
+
+        root = tk.Tk()
+        root.withdraw()
+        app = UpdaterApp(root, [], Path(tmp) / "config.json", {})
+        root.update()
+        return root, app
+
+    def test_poll_chain_survives_update_finished(self) -> None:
+        """更新结束哨兵到达后必须继续轮询。
+
+        回归：早先 _poll_queue 收到 None 直接 return，跳过重新调度，轮询链
+        断裂 → 之后点「检查更新」结果堆在队列里没人取，界面表现为没反应。
+        """
+        try:
+            import tkinter as tk
+
+            root = tk.Tk()
+            root.destroy()
+        except Exception:
+            self.skipTest("当前环境无法创建 Tk 窗口")
+
+        app = None
+        root = None
+        try:
+            with TemporaryDirectory() as tmp:
+                root, app = self._make_app(tmp)
+                app.running = True
+                app._set_buttons_running(True)
+                app.result_queue.put(None)  # 模拟更新线程结束
+                with patch("winget_updater.gui.messagebox"):
+                    app._poll_queue()  # 模态框被 patch，模拟用户点「确定」
+
+                self.assertFalse(app.running)
+                self.assertIsNotNone(app._after_id)  # 轮询仍被重新调度
+
+                # 随后点「检查更新」：结果必须能被拾取并刷新表格
+                app.checking = True
+                app._check_deadline = time.monotonic() + 150
+                app._update_button_states()
+                app.check_queue.put(("ok", [_pkg("A.Pkg")]))
+                app._poll_queue()
+                self.assertEqual(app.tree.get_children(), ("A.Pkg",))
+                self.assertFalse(app.checking)
+                self.assertFalse(app.btn_check.instate(["disabled"]))
+        finally:
+            if app is not None:
+                app._cancel_polling()
+            if root is not None and root.winfo_exists():
+                root.destroy()
+
+    def test_check_watchdog_resets_stuck_check(self) -> None:
+        """winget 挂住时看门狗复位「检查中」，按钮恢复可用。"""
+        try:
+            import tkinter as tk
+
+            root = tk.Tk()
+            root.destroy()
+        except Exception:
+            self.skipTest("当前环境无法创建 Tk 窗口")
+
+        app = None
+        root = None
+        try:
+            with TemporaryDirectory() as tmp:
+                root, app = self._make_app(tmp)
+                app.checking = True
+                app._check_deadline = time.monotonic() - 1  # 已过期
+                app._update_button_states()
+                self.assertTrue(app.btn_check.instate(["disabled"]))
+
+                app._check_watchdog()
+
+                self.assertFalse(app.checking)
+                self.assertIsNone(app._check_deadline)
+                self.assertFalse(app.btn_check.instate(["disabled"]))
+                self.assertIn("检查更新超时", app.log_text.get("1.0", "end-1c"))
+        finally:
+            if app is not None:
+                app._cancel_polling()
+            if root is not None and root.winfo_exists():
                 root.destroy()
 
 

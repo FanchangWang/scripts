@@ -47,22 +47,32 @@ class WingetError(RuntimeError):
     """winget 调用失败。"""
 
 
-def check_upgrades(use_proxy: bool = True, include_unknown: bool = True) -> list[PackageUpdate]:
+def check_upgrades(
+    use_proxy: bool = True, include_unknown: bool = True, timeout: int = 120
+) -> list[PackageUpdate]:
     """执行 winget upgrade，返回可升级包列表（无更新时为空列表）。
 
     默认 include_unknown=True，即追加 --include-unknown：连「本地版本无法
     确定」的包一并列出（winget 输出末尾提示「N 程序包的版本号无法确定，
     使用 --include-unknown 查看所有结果」）。传 False 得到不含未知版本的
     结果。运行时检查自动携带代理参数。
+
+    timeout 秒内不返回就按超时处理（超时抛 WingetError）：winget 偶发
+    挂住（源无响应 / 残留进程占锁），没超时兜底会让调用方永久停在「检查
+    中」，界面按钮全禁用。
     """
     cmd = ["winget", "upgrade"]
     if include_unknown:
         cmd.append("--include-unknown")
     cmd += ["--proxy", PROXY_URL] if use_proxy else ["--no-proxy"]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", timeout=timeout
+        )
     except FileNotFoundError as exc:
         raise WingetError("未找到 winget 命令，请确认已安装 App Installer") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise WingetError(f"检查更新超时（{timeout} 秒未返回），请重试") from exc
     if proc.returncode != 0:
         raise WingetError(last_error_line(proc) or f"winget upgrade 退出码 {proc.returncode}")
     return parse_upgrade_table(proc.stdout)
