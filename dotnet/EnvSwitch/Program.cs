@@ -84,35 +84,29 @@ switch (argv[0].ToLowerInvariant())
         return batch.Ok ? 0 : 1;
     }
 
-    // PATH 整理：系统 + 用户两侧一起算、一起写。env 是 path 的别名（同一个实现），
-    // 因为本项目处理的「环境变量」就只有 PATH。
-    case "path" or "env":
+    // PATH 整理：系统 + 用户两侧一起算、一起写（只写一侧会让条目错位，所以没有 --scope）
+    case "path":
     {
-        // 只改一侧会让两侧条目重复或错位，所以 --scope 已被移除，出现就直接报错而不是静默忽略
-        if (argv.Any(a => a.StartsWith("--scope", StringComparison.OrdinalIgnoreCase)))
-        {
-            Console.Error.WriteLine(
-                $"{argv[0]} 不再支持 --scope：系统与用户两侧总是一起计算、一起写入（只写一侧会造成条目错位）。");
+        if (RejectScope("path", argv))
             return 1;
-        }
-
-        // env 以前有 list / get / set / delete 子命令，现在只剩「查看 / --apply 写入」两件事
-        var extra = argv.Skip(1)
-            .Where(a => !a.StartsWith("--", StringComparison.Ordinal))
-            .ToList();
-        if (extra.Count > 0)
-        {
-            Console.Error.WriteLine(
-                $"多余的参数：{string.Join(" ", extra)}。{argv[0]} 只有 --no-sort / --no-dedup / --apply，"
-                + "不带参数是查看两侧处理结果，加 --apply 才写入。");
+        if (RejectUnknownOptions("path", argv, "--no-sort", "--no-dedup", "--apply"))
             return 1;
-        }
-
         return RunPathBoth(
             configPath,
             sort: !argv.Any(a => string.Equals(a, "--no-sort", StringComparison.OrdinalIgnoreCase)),
             dedup: !argv.Any(a => string.Equals(a, "--no-dedup", StringComparison.OrdinalIgnoreCase)),
             apply: argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    // 环境变量：打印系统 + 用户两侧的全部变量，以及「应用当前激活版本后会改成什么」；
+    // --apply 时把激活版本的环境变量连同 PATH 一起写下去（只写变量会让 PATH 与变量对不上）。
+    case "env":
+    {
+        if (RejectScope("env", argv))
+            return 1;
+        if (RejectUnknownOptions("env", argv, "--apply"))
+            return 1;
+        return RunEnvPreview(configPath, apply: argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)));
     }
 
     case "serve":
@@ -307,12 +301,15 @@ static void PrintHelp()
           EnvSwitch all [--dry-run]          把每套「生效且有激活版本」的工具链一次性应用，
                                              环境变量与 PATH 一起写（等同网页「立即应用全部」）
           EnvSwitch path [--no-sort] [--no-dedup] [--apply]
-          EnvSwitch env  [--no-sort] [--no-dedup] [--apply]
-                                             查看系统 + 用户两侧 PATH 的处理结果
+                                             打印系统 + 用户两侧 PATH 的「当前 → 处理后」
                                              （失效条目剔除、与系统重复的用户条目移除、
                                               同目录多写法合并、可选排序去重）
-                                             默认只预览；--apply 把两侧一起写回注册表
-                                             写系统侧需要管理员权限，两侧要么一起成功要么不动
+                                             默认只预览；--apply 把两侧 PATH 一起写回
+
+          EnvSwitch env  [--apply]
+                                             打印系统 + 用户两侧的环境变量，
+                                             并列出应用当前激活版本后会改动哪些变量
+                                             默认只预览；--apply 把环境变量与 PATH 一起写入
 
           EnvSwitch config                   显示配置文件路径与内容
 
@@ -321,8 +318,80 @@ static void PrintHelp()
         """);
 }
 
+/// <summary>拒绝已移除的 --scope：系统与用户必须一起处理。</summary>
+static bool RejectScope(string cmd, List<string> argv)
+{
+    if (!argv.Any(a => a.StartsWith("--scope", StringComparison.OrdinalIgnoreCase)))
+        return false;
+    Console.Error.WriteLine(
+        $"{cmd} 不再支持 --scope：系统与用户两侧总是一起处理、一起写入（只处理一侧会造成条目错位）。");
+    return true;
+}
+
+/// <summary>只允许列出的长选项；裸参数和其它 --xxx 一律拒绝，避免把旧子命令当成别的东西静默执行。</summary>
+static bool RejectUnknownOptions(string cmd, List<string> argv, params string[] allowed)
+{
+    var bad = argv.Skip(1)
+        .Where(a => allowed.All(x => !string.Equals(a, x, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
+    if (bad.Count == 0)
+        return false;
+    Console.Error.WriteLine($"多余的参数：{string.Join(" ", bad)}。{cmd} 只支持：{string.Join(" / ", allowed)}。");
+    return true;
+}
+
 /// <summary>
-/// path / env 共用实现：先把系统、用户两侧的「当前 → 处理后」都算出来并打印；
+/// env：打印系统 + 用户两侧的全部环境变量，并列出「应用当前激活版本后会改动哪些变量」；
+/// --apply 时执行 ApplyAll（环境变量与 PATH 一起写，避免变量写了、PATH 还停在旧版本）。
+/// </summary>
+static int RunEnvPreview(string configPath, bool apply)
+{
+    var cfg = ConfigStore.Load(configPath);
+
+    PrintEnvSide("系统", EnvScope.Machine);
+    PrintEnvSide("用户", EnvScope.User);
+
+    var plan = EnvService.PlanEnvWrites(cfg);
+    Console.WriteLine();
+    if (plan.Count == 0)
+        Console.WriteLine("应用当前激活版本：环境变量无需改动。");
+    else
+    {
+        Console.WriteLine($"应用当前激活版本会改动 {plan.Count} 个环境变量（加 --apply 才写入）：");
+        foreach (var item in plan)
+            Console.WriteLine($"    {(item.Scope == EnvScope.Machine ? "系统" : "用户")}  {item.Name}"
+                + $"：{(item.Before is null ? "（未设置）" : item.Before)}"
+                + (item.After is null ? " → 删除" : $" → {item.After}")
+                + $"   〔{item.Toolchain}〕");
+    }
+
+    if (!apply)
+    {
+        Console.WriteLine();
+        Console.WriteLine("未写入。加 --apply 才会把上面的改动连同 PATH 一起落盘。");
+        return 0;
+    }
+
+    var batch = EnvService.ApplyAll(cfg, dryRun: false, configPath);
+    Console.WriteLine();
+    Console.WriteLine($"[{(batch.Ok ? "OK" : "有失败")}] {batch.Message}");
+    foreach (var item in batch.Items)
+        Console.WriteLine($"  {(item.Ok ? "✔" : "✘")} {item.Toolchain} → {item.Version}：{item.Message}");
+    return batch.Ok ? 0 : 1;
+}
+
+static void PrintEnvSide(string label, EnvScope scope)
+{
+    var items = EnvService.GetAllDetailed(scope)
+        .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    Console.WriteLine($"\n{label}环境变量：{items.Count} 个");
+    foreach (var kv in items)
+        Console.WriteLine($"    {kv.Key} = {kv.Value.Value}" + (kv.Value.Invalid ? "   [已失效]" : ""));
+}
+
+/// <summary>
+/// path：先把系统、用户两侧 PATH 的「当前 → 处理后」都算出来并打印；
 /// 加 --apply 时把两侧一起写回。只写一侧会让两侧条目重复或错位，所以这里不提供单侧写入。
 /// </summary>
 static int RunPathBoth(string configPath, bool sort, bool dedup, bool apply)

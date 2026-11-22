@@ -100,6 +100,16 @@ public sealed class BatchApplyResult
     public List<ApplyItem> Items { get; set; } = [];
 }
 
+/// <summary>`env` 预览：应用当前激活版本后，某个变量会被改成什么（After=null 表示删除另一侧）。</summary>
+public sealed class EnvPlanItem
+{
+    public string Toolchain { get; set; } = "";
+    public EnvScope Scope { get; set; } = EnvScope.User;
+    public string Name { get; set; } = "";
+    public string? Before { get; set; }
+    public string? After { get; set; }
+}
+
 /// <summary>PATH 工具网页视图中的一行。</summary>
 public sealed class PathEntryView
 {
