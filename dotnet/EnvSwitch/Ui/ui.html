@@ -62,12 +62,18 @@
   .kv .ctl { display:flex; gap:8px; align-items:center; min-width:0; }
   .kv .ctl input, .kv .ctl select { width:100%; }
   .kv .note { grid-column:2; margin:0; padding:0; background:none; border:0; font-size:12px; color:var(--muted); line-height:1.6; }
-  .ver-table { margin-top:4px; }
-  .ver-table th { font-size:12px; }
-  .ver-table td { padding:6px; }
+  .ver-table { margin-top:4px; min-width:640px; }
+  .table-wrap { overflow-x:auto; }
+  .ver-table th { font-size:12px; white-space:nowrap; }
+  .ver-table td { padding:6px; vertical-align:top; }
   .ver-table td input[type=radio] { margin:0; }
-  .pv { display:block; width:100%; margin-bottom:5px; }
-  .ver-table .pvcell button { padding:3px 9px; font-size:12px; }
+  .ver-table td > input:not([type=radio]):not([type=checkbox]) { width:100%; }
+  .ver-table .pvcell { min-width:200px; }
+  .pu-row { display:flex; gap:6px; align-items:center; margin-bottom:5px; }
+  .pu-row .pv { flex:1; min-width:0; width:auto; margin:0; }
+  .pu-row button { flex:none; padding:3px 8px; }
+  .ver-table .pvcell > button { padding:3px 9px; font-size:12px; }
+  .kv .ctl .check { flex:none; white-space:nowrap; }
 
   .versions { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin:12px 0; }
   .ver { padding:10px 12px; text-align:left; background:#fafbfc; border-radius:8px; }
@@ -384,11 +390,11 @@ function renderToolchain() {
         <button class="danger" data-act="del-path" data-j="${j}" data-pi="${pi}" title="删除此条">×</button>
       </div>`).join('');
     return `<tr>
+      <td style="text-align:center"><button class="danger" data-act="del-ver" data-j="${j}" title="删除此版本">×</button></td>
       <td style="text-align:center"><input type="radio" name="active-ver" data-activate="${j}" ${v.name && v.name === t.active ? 'checked' : ''}></td>
       <td><input data-v="${j}.name" value="${esc(v.name)}" placeholder="如 17"></td>
       <td><input data-v="${j}.home" value="${esc(v.home)}" placeholder="Home 路径 / 变量值"></td>
-      <td>${pathInputs}<button data-act="add-path" data-j="${j}">+ 添加 PATH 条目</button></td>
-      <td style="text-align:right"><button class="danger" data-act="del-ver" data-j="${j}" title="删除此版本">×</button></td>
+      <td class="pvcell">${pathInputs}<button data-act="add-path" data-j="${j}">+ 添加 PATH 条目</button></td>
     </tr>`;
   }).join('');
 
@@ -421,13 +427,15 @@ function renderToolchain() {
       </div>
       <div class="card">
         <h2>版本列表</h2>
+        <div class="table-wrap">
         <table class="ver-table">
           <thead><tr>
-            <th style="width:52px">激活</th><th style="width:110px">版本名</th>
-            <th style="width:28%">Home（环境变量值）</th><th>PATH 条目</th><th style="width:44px"></th>
+            <th style="width:52px">删除</th><th style="width:52px">激活</th><th style="width:110px">版本名</th>
+            <th style="width:30%">Home（环境变量值）</th><th>PATH 条目</th>
           </tr></thead>
           <tbody>${rows || '<tr><td colspan="5" class="hint" style="margin:0">还没有版本，点下方按钮添加。</td></tr>'}</tbody>
         </table>
+        </div>
         <button id="add-ver" style="margin-top:12px">+ 添加版本</button>
       </div>
       <div class="row">
