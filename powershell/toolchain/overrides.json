@@ -34,7 +34,6 @@
       "8-java8path=C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\java8path",
       "11-zulu-jre=C:\\Program Files\\Zulu\\zulu-11-jre",
       "25-rea-active=C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot",
-      "25-local-zip=C:\\Users\\guyue\\code-tools\\runtimes\\jdk-25.0.5.1\\jdk-25.0.5.1+2",
       "25-android-studio-jbr=C:\\Users\\guyue\\AppData\\Local\\Programs\\Android Studio\\jbr"
     ],
     "excluded_tool_root": "D:\\Tools",
@@ -195,7 +194,7 @@
       "value": "C:\\Program Files\\Java\\latest\\jdk-21; C:\\Program Files\\Java\\latest\\jre-1.8; C:\\Program Files (x86)\\Java\\latest\\jre-1.8; C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\java8path",
       "scope": "user",
       "usage": "When a command or script needs a Java home, prefer these stable junctions instead of versioned directories such as jdk-21.0.13.0.2 or jre1.8.0_513. All four were verified to resolve to the current installs (21.0.13.0.2 and 1.8.0_513).",
-      "notes": "JDK 17 (C:\\Program Files\\Java\\jdk-17) and Zulu 11 JRE are already version-free. Java 25 has no junction; the REA-active JDK 25 is the winget Microsoft install at C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot. Java 8 JDK was removed in 2026-11; a retained ZIP copy of JDK 25 remains under code-tools but is not the REA default."
+      "notes": "JDK 17 (C:\\Program Files\\Java\\jdk-17) and Zulu 11 JRE are already version-free. Java 25 has no junction; the only installed JDK 25 is the winget Microsoft install at C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot. The Java 8 JDK and the earlier code-tools JDK 25 ZIP copy were both removed in 2026-11."
     }
   ]
 }
