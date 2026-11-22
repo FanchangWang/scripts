@@ -1,5 +1,5 @@
 ---
-name: Local Toolchain
+name: local-toolchain
 description: Report which programming languages, runtimes, package managers, CLIs, Git/GitHub tools, proxy/registry settings, and REA providers are installed on this Windows machine. Use before claiming a tool is missing, choosing a tool command, or scanning the filesystem. This generated skill contains the machine-readable inventory and configuration facts.
 metadata:
   version: "1"
