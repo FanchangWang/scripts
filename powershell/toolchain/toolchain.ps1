@@ -1,11 +1,12 @@
 param(
   [Parameter(Position = 0)]
-  [ValidateSet('list', 'find', 'refresh', 'doctor', 'config', 'raw', 'md', 'help')]
+  [ValidateSet('list', 'find', 'refresh', 'doctor', 'config', 'raw', 'md', 'rea-check', 'help')]
   [string]$Command = 'list',
   [Parameter(Position = 1)]
   [string]$Query = '',
   [switch]$Json,
-  [string]$OutputDirectory = 'C:\Users\guyue\.agents\skills\local-toolchain'
+  [string]$OutputDirectory = 'C:\Users\guyue\.agents\skills\local-toolchain',
+  [string]$WrapperPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,7 @@ $OverridesPath = Join-Path $ScriptRoot 'overrides.json'
 $TemplatePath = Join-Path $ScriptRoot 'skill-template.md'
 $QueryTemplatePath = Join-Path $ScriptRoot 'query-template.ps1'
 $QueryPath = Join-Path $OutputDirectory 'query.ps1'
+$ReaCheckPath = Join-Path $ScriptRoot 'rea-env.json'
 $Today = (Get-Date).ToString('yyyy-MM-dd')
 $RunHint = 'pwsh.exe -NoProfile -File "' + $PSCommandPath + '"'
 
@@ -301,6 +303,172 @@ function Show-ToolTable {
   $Tools | Sort-Object category, id | Select-Object id, name, category, version, status, path | Format-Table -AutoSize -Wrap
 }
 
+function Add-ReaCheckResult {
+  param(
+    [string]$Level,
+    [string]$Check,
+    [string]$Message,
+    [System.Collections.Generic.List[object]]$Results
+  )
+  $Results.Add([pscustomobject][ordered]@{ level = $Level; check = $Check; message = $Message })
+}
+
+function Test-PathAtLeastEqual {
+  param([string]$Base, [string]$Target)
+  if (-not $Base -or -not $Target) { return $false }
+  $b = $Base.TrimEnd([char[]]@('\', '/')).Replace('/', '\').ToLowerInvariant()
+  $t = $Target.TrimEnd([char[]]@('\', '/')).Replace('/', '\').ToLowerInvariant()
+  return ($t -eq $b -or $t.StartsWith($b + '\'))
+}
+
+function Test-PathExactlyEqual {
+  param([string]$Left, [string]$Right)
+  if (-not $Left -or -not $Right) { return $false }
+  $l = $Left.TrimEnd([char[]]@('\', '/')).Replace('/', '\').ToLowerInvariant()
+  $r = $Right.TrimEnd([char[]]@('\', '/')).Replace('/', '\').ToLowerInvariant()
+  return ($l -eq $r)
+}
+
+function Find-ToolByPath {
+  param([array]$Tools, [string]$Value)
+  foreach ($t in $Tools) {
+    if ($t.path -and (Test-PathAtLeastEqual $Value $t.path)) { return $t }
+  }
+  return $null
+}
+
+function Complete-ReaCheck {
+  param(
+    [System.Collections.Generic.List[object]]$Results,
+    [switch]$Json
+  )
+  if ($Json) {
+    $Results | ConvertTo-Json -Depth 6
+  } else {
+    foreach ($r in $Results) {
+      Write-Host ("{0,-5} {1,-22} {2}" -f $r.level, $r.check, $r.message)
+    }
+    Write-Host ''
+    $errors = @($Results | Where-Object level -eq 'ERROR').Count
+    $warnings = @($Results | Where-Object level -eq 'WARN').Count
+    $oks = @($Results | Where-Object level -eq 'OK').Count
+    Write-Host ("REA wrapper check: {0} error(s), {1} warning(s), {2} OK" -f $errors, $warnings, $oks)
+  }
+  $problems = @($Results | Where-Object { $_.level -in @('ERROR', 'WARN') }).Count
+  exit $(if ($problems -gt 0) { 1 } else { 0 })
+}
+
+function Invoke-ReaCheck {
+  param(
+    [switch]$Json,
+    [string]$WrapperPath = ''
+  )
+
+  if (-not (Test-Path -LiteralPath $ReaCheckPath)) {
+    throw "Missing REA check config: $ReaCheckPath"
+  }
+  $cfg = Get-Content -LiteralPath $ReaCheckPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $wrapper = if ($WrapperPath) { $WrapperPath } else { $cfg.wrapper_path }
+  $results = [System.Collections.Generic.List[object]]::new()
+
+  $inventory = Get-Inventory
+  $toolMap = @{}
+  foreach ($t in $inventory.tools) { $toolMap[$t.id] = $t }
+
+  if (-not (Test-Path -LiteralPath $wrapper)) {
+    Add-ReaCheckResult 'ERROR' 'wrapper' "Wrapper not found: $wrapper" $results
+    Complete-ReaCheck -Results $results -Json:$Json
+  }
+
+  $bytes = [System.IO.File]::ReadAllBytes($wrapper)
+  if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+    Add-ReaCheckResult 'ERROR' 'encoding' 'Wrapper has a UTF-8 BOM; expected CP936/GBK with no BOM' $results
+  } else {
+    Add-ReaCheckResult 'OK' 'encoding' 'No BOM (CP936/GBK expected)' $results
+  }
+
+  try {
+    $encoding = [System.Text.Encoding]::GetEncoding(936)
+  } catch {
+    [void][System.Text.Encoding]::RegisterProvider([System.Text.CodePagesEncodingProvider]::Instance)
+    $encoding = [System.Text.Encoding]::GetEncoding(936)
+  }
+  $text = $encoding.GetString($bytes)
+  $lines = $text -split "`r?`n"
+
+  $bareLf = [regex]::Matches($text, "(?<!`r)`n").Count
+  if ($bareLf -gt 0) {
+    Add-ReaCheckResult 'WARN' 'line-endings' "Found $bareLf bare LF line ending(s); expected CRLF" $results
+  } else {
+    Add-ReaCheckResult 'OK' 'line-endings' 'CRLF' $results
+  }
+
+  $launchOk = @($lines | Where-Object { $_ -notmatch '^\s*REM' -and $_.Contains($cfg.expected_launch) }).Count -gt 0
+  if ($launchOk) {
+    Add-ReaCheckResult 'OK' 'launch' 'npx.cmd -y rea-agents@latest mcp' $results
+  } else {
+    Add-ReaCheckResult 'ERROR' 'launch' "Expected launch command not found: $($cfg.expected_launch)" $results
+  }
+
+  $active = @{}
+  $commented = @{}
+  foreach ($line in $lines) {
+    if ($line -match '^\s*REM\s+set\s+"([A-Za-z_][A-Za-z0-9_]*)=(.*?)"') {
+      $commented[$Matches[1]] = $Matches[2]
+    } elseif ($line -match '^\s*set\s+"([A-Za-z_][A-Za-z0-9_]*)=(.*?)"') {
+      $active[$Matches[1]] = $Matches[2]
+    }
+  }
+
+  foreach ($m in $cfg.env_map) {
+    $name = $m.env
+    $tool = $toolMap[$m.tool]
+    if (-not $tool) {
+      Add-ReaCheckResult 'ERROR' $name "Mapping references unknown tool id '$($m.tool)'" $results
+      continue
+    }
+
+    $activeValue = if ($active.ContainsKey($name)) { $active[$name] } else { $null }
+    $commentValue = if ($commented.ContainsKey($name)) { $commented[$name] } else { $null }
+
+    if ($null -ne $activeValue) {
+      if ($tool.status -ne 'installed') {
+        Add-ReaCheckResult 'ERROR' $name "$($m.tool) is not installed in the inventory" $results
+        continue
+      }
+      if (-not (Test-Path -LiteralPath $activeValue)) {
+        Add-ReaCheckResult 'ERROR' $name "Path does not exist: $activeValue" $results
+        continue
+      }
+      $matched = if ($m.kind -eq 'ancestor') {
+        Test-PathAtLeastEqual $activeValue $tool.path
+      } else {
+        Test-PathExactlyEqual $activeValue $tool.path
+      }
+      if ($matched) {
+        $versionText = if ($tool.version) { $tool.version } else { $tool.path }
+        Add-ReaCheckResult 'OK' $name "$($m.tool) -> $versionText" $results
+      } else {
+        $candidate = Find-ToolByPath $inventory.tools $activeValue
+        $detail = if ($candidate -and $candidate.id -ne $m.tool) {
+          "；该路径更接近 $($candidate.id) ($($candidate.version))"
+        } else { '' }
+        Add-ReaCheckResult 'ERROR' $name "Points to '$activeValue' but $($m.tool) is at '$($tool.path)'$detail" $results
+      }
+    } elseif ($null -ne $commentValue) {
+      if ($tool.status -eq 'installed') {
+        Add-ReaCheckResult 'WARN' $name "$($m.tool) is installed but still a REM placeholder ($($tool.path))" $results
+      } else {
+        Add-ReaCheckResult 'OK' $name "REM placeholder is correct; $($m.tool) is not installed" $results
+      }
+    } else {
+      Add-ReaCheckResult 'ERROR' $name 'Missing: not an active set and not a REM set' $results
+    }
+  }
+
+  Complete-ReaCheck -Results $results -Json:$Json
+}
+
 switch ($Command) {
   'refresh' {
     Refresh-Inventory
@@ -357,6 +525,9 @@ switch ($Command) {
     if (-not (Test-Path -LiteralPath $MarkdownPath)) { Refresh-Inventory | Out-Null }
     Get-Content -LiteralPath $MarkdownPath -Raw -Encoding UTF8
   }
+  'rea-check' {
+    Invoke-ReaCheck -Json:$Json -WrapperPath $WrapperPath
+  }
   'help' {
     @"
 Usage:
@@ -364,13 +535,15 @@ Usage:
   $RunHint find <query>     Filter by id/name/category/path/tag/notes
   $RunHint config           Show important machine-specific configuration
   $RunHint doctor           Check core tools
-  $RunHint refresh          Regenerate inventory.json / inventory.md / SKILL.md
+  $RunHint rea-check        Read-only validation of rea-mcp.cmd against the inventory
+  $RunHint refresh          Regenerate inventory.json / inventory.md / query.ps1 / SKILL.md
   $RunHint raw              Output full JSON manifest
   $RunHint md               Output Markdown mirror
   $RunHint help             Show this help
 
-Add -Json to list/find/config for JSON output.
+Add -Json to list/find/config/rea-check for JSON output.
 Add -OutputDirectory <path> to write generated files elsewhere; default is C:\Users\guyue\.agents\skills\local-toolchain.
+Add -WrapperPath <path> to rea-check a copy instead of the live rea-mcp.cmd.
 "@ | Write-Host
   }
 }

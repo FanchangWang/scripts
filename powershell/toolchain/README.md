@@ -20,6 +20,7 @@ The `scripts` repository keeps source only.
 - `toolchain.ps1` - scanner, refresh queries, Markdown generator, skill generator
 - `refresh.ps1` - compatibility wrapper for `refresh`
 - `overrides.json` - durable conventions and configuration facts
+- `rea-env.json` - read-only REA wrapper validation config (env var -> tool id mapping)
 - `query-template.ps1` - template for the generated skill-local `query.ps1`
 - `skill-template.md` - template for the generated `SKILL.md`
 - `AGENTS.md` - project instructions for agents working in this directory
@@ -33,6 +34,27 @@ pwsh.exe -NoProfile -File "C:\Users\guyue\.agents\skills\local-toolchain\query.p
 pwsh.exe -NoProfile -File "C:\Users\guyue\.agents\skills\local-toolchain\query.ps1" config
 pwsh.exe -NoProfile -File "C:\Users\guyue\.agents\skills\local-toolchain\query.ps1" doctor
 ```
+
+## REA wrapper read-only check
+
+`rea-check` validates `C:\Users\guyue\.local\bin\rea-mcp.cmd` against `inventory.json`. It never writes to the wrapper.
+
+```powershell
+pwsh.exe -NoProfile -File "C:\Users\guyue\code\scripts\powershell\toolchain\toolchain.ps1" rea-check
+pwsh.exe -NoProfile -File "C:\Users\guyue\code\scripts\powershell\toolchain\toolchain.ps1" rea-check -Json
+pwsh.exe -NoProfile -File "C:\Users\guyue\code\scripts\powershell\toolchain\toolchain.ps1" rea-check -WrapperPath <copy.cmd>
+```
+
+It checks:
+
+- no UTF-8 BOM and CRLF line endings (wrapper is CP936/GBK, no BOM, CRLF)
+- active launch command `npx.cmd -y rea-agents@latest mcp`
+- every mapped env var is either an active `set` or a `REM set` placeholder
+- active paths exist and match the active tool path in the inventory (directories may be parents of executable paths)
+- a mapped env var left as `REM` while its tool is installed
+- version drift (for example apktool pointing at the retained 2.9.3 instead of active 3.0.3)
+
+The env-var-to-tool-id mapping, wrapper path, and expected launch command live in `rea-env.json`. Returns exit code 1 if there is any error or warning, 0 when all checks pass.
 
 ## Run
 

@@ -1,0 +1,22 @@
+{
+  "wrapper_path": "C:\\Users\\guyue\\.local\\bin\\rea-mcp.cmd",
+  "expected_launch": "\"C:\\Program Files\\nodejs\\npx.cmd\" -y rea-agents@latest mcp",
+  "notes": "Read-only validation config for the hand-maintained REA wrapper. Maps REA environment variables to local-toolchain tool ids. This file does not generate or modify the wrapper.",
+  "env_map": [
+    { "env": "JAVA_HOME", "tool": "java-jdk25", "kind": "ancestor" },
+    { "env": "REA_IDA_MCP_CONFIG", "tool": "ida-mcp-config", "kind": "exact" },
+    { "env": "IDADIR", "tool": "ida-pro", "kind": "ancestor" },
+    { "env": "GHIDRA_INSTALL_DIR", "tool": "ghidra", "kind": "ancestor" },
+    { "env": "REA_KUNA_COMMAND", "tool": "kuna", "kind": "exact" },
+    { "env": "REA_OBJDUMP_COMMAND", "tool": "objdump", "kind": "exact" },
+    { "env": "REA_RIZIN_COMMAND", "tool": "rizin", "kind": "exact" },
+    { "env": "REA_WABT_BIN_DIRECTORY", "tool": "wabt", "kind": "ancestor" },
+    { "env": "REA_TSHARK_COMMAND", "tool": "tshark", "kind": "exact" },
+    { "env": "REA_CAPINFOS_COMMAND", "tool": "capinfos", "kind": "exact" },
+    { "env": "REA_JADX_MCP_JAR", "tool": "jadx-headless-mcp", "kind": "exact" },
+    { "env": "REA_APKTOOL_COMMAND", "tool": "apktool-3", "kind": "exact" },
+    { "env": "REA_ADB_PATH", "tool": "adb", "kind": "exact" },
+    { "env": "REA_ILSPY_CMD_PATH", "tool": "ilspycmd", "kind": "exact" },
+    { "env": "REA_BROWSER_EXECUTABLE", "tool": "chrome", "kind": "exact" }
+  ]
+}

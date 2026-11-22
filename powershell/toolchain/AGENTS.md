@@ -5,6 +5,7 @@
 - There is no `toolchain.cmd` launcher. Use:
   `pwsh.exe -NoProfile -File "C:\Users\guyue\code\scripts\powershell\toolchain\toolchain.ps1" refresh`
 - `overrides.json` holds durable conventions and configuration facts.
+- `rea-env.json` holds the read-only REA wrapper validation mapping; `rea-check` never modifies `rea-mcp.cmd`.
 - `query-template.ps1` holds the AI-facing `query.ps1` generated into the skill.
 - `skill-template.md` holds the generated `SKILL.md` wording.
 - `toolchain.ps1` holds tool probes, refresh queries, and generation logic.
