@@ -31,17 +31,35 @@ internal static class ConfigStore
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[警告] 配置读取失败（{file}）：{ex.Message}，已使用默认配置。");
-            return DetectDefaultConfig();
+            Console.Error.WriteLine($"[警告] 配置读取失败（{file}）：{ex.Message}");
+            // 读不懂的配置先另存一份：否则下面的 Save 会把用户原来的内容永久覆盖掉
+            try
+            {
+                var backup = $"{file}.bad-{DateTime.Now:yyyyMMdd-HHmmss}";
+                File.Copy(file, backup, overwrite: true);
+                Console.Error.WriteLine($"[警告] 原配置已备份为：{backup}");
+            }
+            catch { /* 备份失败也要继续，至少程序还能启动 */ }
+
+            var fallback = DetectDefaultConfig();
+            try { Save(fallback, file); } catch { /* 落盘失败时内存里仍可用 */ }
+            Console.Error.WriteLine("[警告] 已使用默认配置继续运行。");
+            return fallback;
         }
     }
 
     /// <summary>旧配置补齐新字段：工具链没有作用域时继承全局 pathScope（再默认 User）。</summary>
     internal static void Migrate(AppConfig config)
     {
+        // JSON 里写 null 的字段反序列化后会是 null，这里统一补成空集合，避免后续 NRE
+        config.Toolchains ??= [];
+        config.Settings ??= new ConfigSettings();
         var defaultScope = string.IsNullOrWhiteSpace(config.Settings.PathScope) ? "User" : config.Settings.PathScope;
         foreach (var t in config.Toolchains)
         {
+            t.Versions ??= [];
+            foreach (var v in t.Versions)
+                v.Paths ??= [];
             if (string.IsNullOrWhiteSpace(t.PathScope))
                 t.PathScope = defaultScope;
             if (string.IsNullOrWhiteSpace(t.EnvScope))
@@ -57,7 +75,12 @@ internal static class ConfigStore
         var dir = Path.GetDirectoryName(file);
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
-        File.WriteAllText(file, JsonSerializer.Serialize(config, JsonOptions));
+
+        // 先写临时文件再整体替换：中途出错 / 断电不会把已有配置截成半份 JSON
+        var text = JsonSerializer.Serialize(config, JsonOptions);
+        var tmp = file + ".tmp";
+        File.WriteAllText(tmp, text);
+        File.Move(tmp, file, overwrite: true);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

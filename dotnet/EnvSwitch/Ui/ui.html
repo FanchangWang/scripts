@@ -190,6 +190,7 @@ let curPage = 'switch';
 let selectedTc = 0;               // 工具链配置页当前选中的工具链下标
 let lastBatch = null;             // 最近一次「立即应用全部」的结果，常驻在页面顶部
 let configErrors = [];            // 上次保存被拒的逐条错误（用于描红对应输入框）
+let envEdit = null;               // 环境变量页正在编辑的行：{ scope, name }
 
 function toast(msg, kind = '') {
   const el = $('#toast');
@@ -255,6 +256,7 @@ async function navigate(key, push = true) {
 async function showPage(key) {
   curPage = key;
   dirty = false;
+  envEdit = null;   // 切页即放弃未保存的变量编辑，回来时不会还停在编辑态
   markMenu(key);
   $('#page-title').textContent = PAGES[key].title;
   $('#page-sub').textContent = PAGES[key].sub;
@@ -286,6 +288,7 @@ function renderPage() {
 
 /* ---------- 版本切换 ---------- */
 let lastSwitch = null;            // 最近一次切换的结果，常驻在页面顶部
+let switchDry = {};               // 每套工具链的「仅预览」勾选，重绘后要保留（默认预览）
 
 function renderSwitch() {
   const root = $('#content');
@@ -311,9 +314,12 @@ function renderSwitch() {
         <span class="badge">PATH：${scopeLabel(t.pathScope)}</span></h2>
       <div class="hint">当前 <code>${esc(t.envVar) || '(未配置)'}</code> = ${esc(cur)}</div>
       <div class="versions">${versions || '<div class="hint" style="margin:0">没有版本</div>'}</div>
-      <div class="row"><label class="check" style="margin:0" title="勾选时点版本只演练、不改系统；取消勾选才会真正写入环境变量与 PATH"><input type="checkbox" id="dry-${i}" checked> 仅预览，不写入</label></div>
+      <div class="row"><label class="check" style="margin:0" title="勾选时点版本只演练、不改系统；取消勾选才会真正写入环境变量与 PATH"><input type="checkbox" id="dry-${i}" data-dry="${esc(t.name)}" ${switchDry[t.name] !== false ? 'checked' : ''}> 仅预览，不写入</label></div>
     </div>`;
   }).join('');
+  root.querySelectorAll('[data-dry]').forEach(el => el.addEventListener('change', () => {
+    switchDry[el.dataset.dry] = el.checked;
+  }));
   root.querySelectorAll('[data-apply]').forEach(btn => btn.addEventListener('click', () => {
     const i = +btn.dataset.apply;
     const t = state.config.toolchains[i];
@@ -358,11 +364,14 @@ function renderProject() {
   if (!draft) draft = clone(state.config);
   const s = draft.settings || (draft.settings = {});
   const root = $('#content');
-  root.innerHTML = `
+  const errorPanel = configErrors.length
+    ? `<div class="res-banner err">${configErrors.length} 处配置有误，<b>未保存</b>：${configErrors.map(e => `<div class="item">❌ ${esc(e.message)}</div>`).join('')}</div>`
+    : '';
+  root.innerHTML = errorPanel + `
   <div class="card">
     <h2>运行设置</h2>
     <div class="settings-grid">
-      <label class="field"><span>服务端口（0 = 自动分配）</span>
+      <label class="field"><span>服务端口（0 = 自动分配，改端口需重启服务才生效）</span>
         <input id="set-port" type="number" min="0" max="65535" value="${esc(s.port ?? 0)}"></label>
     </div>
     <label class="check"><input type="checkbox" id="set-normalize" ${s.normalizePathOnApply ? 'checked' : ''}> 切换版本时自动对 PATH 排序去重</label>
@@ -401,6 +410,7 @@ async function persistDraft(silent = false) {
     configErrors = e.errors || [];
     toast(e.message, 'err');
     if (curPage === 'toolchain') renderToolchain();
+    else if (curPage === 'project') renderProject();
     return false;
   }
 }
@@ -480,7 +490,7 @@ function renderToolchain() {
   const batchPanel = lastBatch ? `<div class="res-banner ${lastBatch.ok ? 'ok' : 'err'}">${esc(lastBatch.message)
     }${(lastBatch.items || []).map(x => `<div class="item">${x.ok ? '✅' : '❌'} <b>${esc(x.toolchain)}</b> → ${esc(x.version || '')}：${esc(x.message)}</div>`).join('')}</div>` : '';
   const errorPanel = configErrors.length
-    ? `<div class="res-banner err">${configErrors.length} 处路径不存在，<b>未保存</b>（改好再点保存）：${configErrors.map(e => `<div class="item">❌ ${esc(e.message)}</div>`).join('')}</div>`
+    ? `<div class="res-banner err">${configErrors.length} 处配置有误，<b>未保存</b>（改好再点保存）：${configErrors.map(e => `<div class="item">❌ ${esc(e.message)}</div>`).join('')}</div>`
     : '';
   const tcName = String(t.name || '').trim() || '(未命名)';
   const tplErr = configErrors.find(e => e.field === 'template' && e.toolchain === tcName);
@@ -741,7 +751,6 @@ async function applyPath() {
 /* ---------- 环境变量：用户 + 系统双分组，可折叠，可编辑 / 删除 ---------- */
 let envData = { User: {}, Machine: {} };
 let envOpen = { User: true, Machine: true };
-let envEdit = null;           // { scope, name }
 let envFilterText = '';
 
 function renderEnv() {

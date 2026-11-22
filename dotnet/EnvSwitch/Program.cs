@@ -268,6 +268,7 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         var incoming = await JsonSerializer.DeserializeAsync<AppConfig>(ctx.Request.Body, jsonOptions);
         if (incoming is null)
             return Results.BadRequest(new { ok = false, message = "配置内容为空。" });
+        incoming.Toolchains ??= [];
 
         if (incoming.Toolchains.Any(t => string.IsNullOrWhiteSpace(t.Name)))
             return Results.BadRequest(new { ok = false, message = "工具链名称不能为空（环境变量名可以留空，表示不写环境变量）。" });
@@ -278,12 +279,20 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
             return Results.Json(new
             {
                 ok = false,
-                message = $"有 {errors.Count} 处路径不存在，未保存：{string.Join("；", errors.Select(e => e.Message))}",
+                message = $"有 {errors.Count} 处配置有误，未保存：{string.Join("；", errors.Select(e => e.Message))}",
                 errors,
             }, jsonOptions, statusCode: StatusCodes.Status400BadRequest);
 
         ConfigStore.Migrate(incoming);
-        ConfigStore.Save(incoming, configPath);
+        try
+        {
+            ConfigStore.Save(incoming, configPath);
+        }
+        catch (Exception ex)
+        {
+            return Results.Json(new { ok = false, message = $"配置保存失败：{ex.Message}" },
+                jsonOptions, statusCode: StatusCodes.Status500InternalServerError);
+        }
         return Results.Ok(new { ok = true, message = "配置已保存。" });
     });
 
@@ -328,8 +337,11 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         var req = await JsonSerializer.DeserializeAsync<PathApplyRequest>(ctx.Request.Body, jsonOptions);
         if (req is null)
             return Results.BadRequest(new { ok = false, message = "请求为空。" });
+        // 两侧都没给 = 不知道要改哪一侧，直接拒绝，避免把整条 PATH 写空
+        if (req.System is null && req.User is null)
+            return Results.BadRequest(new { ok = false, message = "请求里没有 system 或 user 列表，未做任何修改。" });
         return Results.Json(
-            EnvService.ApplyPathSelection(req.System ?? [], req.User ?? [], req.DryRun), jsonOptions);
+            EnvService.ApplyPathSelection(req.System, req.User, req.DryRun), jsonOptions);
     });
 
     // MapFallback 只匹配"像目录"的路径（nonfile），因此 /favicon.ico 之类的

@@ -33,10 +33,51 @@ internal static class EnvService
     internal static string? GetEnv(string name, EnvScope scope) =>
         Environment.GetEnvironmentVariable(name, Target(scope));
 
+    /// <summary>
+    /// PATH 的注册表原样值：REG_EXPAND_SZ 里的 %变量% 不展开。
+    /// 写入前后都用它比较 / 拼接，这样 PATH 里其它条目的原有写法不会被顺手改掉。
+    /// </summary>
+    internal static string GetPathRaw(EnvScope scope)
+    {
+        try
+        {
+            var raw = EnvStore.GetRaw("Path", scope);
+            if (raw is not null)
+                return raw;
+        }
+        catch
+        {
+            // 注册表读不到时退回进程可见值
+        }
+        return GetEnv("Path", scope) ?? "";
+    }
+
     /// <summary>网页「环境变量」页：读取全部变量，并标出值所指向的目录已不存在的项。</summary>
     internal static Dictionary<string, EnvVarView> GetAllDetailed(EnvScope scope)
     {
         var result = new Dictionary<string, EnvVarView>(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string>? raw = null;
+        try
+        {
+            raw = EnvStore.AllRaw(scope);
+        }
+        catch
+        {
+            // 注册表读不到（权限 / 异常）时退回进程环境枚举
+        }
+
+        if (raw is { Count: > 0 })
+        {
+            // 用注册表的原样值展示：编辑保存时不会把 %USERPROFILE% 这类写法固化成具体路径
+            foreach (var kv in raw)
+                result[kv.Key] = new EnvVarView
+                {
+                    Value = kv.Value,
+                    Invalid = IsProbablyInvalidPath(kv.Key, kv.Value),
+                };
+            return result;
+        }
+
         foreach (System.Collections.DictionaryEntry item in Environment.GetEnvironmentVariables(Target(scope)))
         {
             var name = item.Key.ToString() ?? "";
@@ -173,6 +214,18 @@ internal static class EnvService
         foreach (var tc in config.Toolchains)
         {
             var tcName = string.IsNullOrWhiteSpace(tc.Name) ? "(未命名)" : tc.Name.Trim();
+
+            // 同一工具链里版本重名，切换时按名字找不到唯一版本，先拦下来
+            foreach (var dup in tc.Versions
+                         .Where(v => !string.IsNullOrWhiteSpace(v.Name))
+                         .GroupBy(v => v.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                         .Where(g => g.Count() > 1))
+                errors.Add(new ConfigError
+                {
+                    Toolchain = tcName, Version = dup.Key, Field = "name", Value = dup.Key,
+                    Message = $"工具链「{tcName}」里有 {dup.Count()} 个版本都叫「{dup.Key}」，切换时无法区分，请改名。",
+                });
+
             foreach (var v in tc.Versions)
             {
                 var verName = string.IsNullOrWhiteSpace(v.Name) ? "(未命名版本)" : v.Name.Trim();
@@ -434,7 +487,7 @@ internal static class EnvService
         string? otherPathAfter = null;
         if (writePath)
         {
-            pathBefore = GetEnv("Path", pathTarget.Scope) ?? "";
+            pathBefore = GetPathRaw(pathTarget.Scope);
             var entries = PathUtil.Without(PathUtil.Split(pathBefore), stale);
             // 再按真实目录剔一遍：PATH 里若残留同一目录的别的写法（配置里没有的别名、
             // 历史遗留的 latest 写法等），一并删掉，只留上面选中的那一条
@@ -451,7 +504,7 @@ internal static class EnvService
             // 「唯一」模式：把本条工具链的条目从另一侧 PATH 里移除
             if (pathTarget.Unique)
             {
-                var otherPath = GetEnv("Path", pathTarget.Other) ?? "";
+                var otherPath = GetPathRaw(pathTarget.Other);
                 var otherEntries = PathUtil.Without(PathUtil.Split(otherPath), stale.Concat(toAdd));
                 if (config.Settings.NormalizePathOnApply)
                     otherEntries = PathUtil.Normalize(PathUtil.Join(otherEntries));
@@ -474,7 +527,7 @@ internal static class EnvService
                 {
                     EnvStore.Set("Path", pathAfter, pathTarget.Scope);
                     if (otherPathAfter is not null
-                        && !string.Equals(otherPathAfter, GetEnv("Path", pathTarget.Other), StringComparison.Ordinal))
+                        && !string.Equals(otherPathAfter, GetPathRaw(pathTarget.Other), StringComparison.Ordinal))
                         EnvStore.Set("Path", otherPathAfter, pathTarget.Other);
                 }
             }
@@ -488,7 +541,17 @@ internal static class EnvService
             }
 
             tc.Active = version.Name;
-            ConfigStore.Save(config, configPath);
+            try
+            {
+                ConfigStore.Save(config, configPath);
+            }
+            catch (Exception ex)
+            {
+                // 环境变量 / PATH 已经写进去了，只是「当前激活版本」没记下来，
+                // 这里要明确说清，避免用户以为整次切换都失败了
+                return Fail($"环境变量与 PATH 已写入，但保存配置失败：{ex.Message}"
+                            + "（激活版本未能记录，请检查配置文件所在目录是否可写）");
+            }
         }
 
         var parts = new List<string> { $"{tc.Name} → {version.Name}" };
@@ -573,7 +636,7 @@ internal static class EnvService
 
     internal static PathResult NormalizePath(EnvScope scope, bool sort, bool dedup, bool dryRun)
     {
-        var before = GetEnv("Path", scope) ?? "";
+        var before = GetPathRaw(scope);
         var expands = PathExpandsVariables(scope);
         var entries = PathUtil.Split(before).Select(p => PreparePathEntry(p, expands, null, null)).ToList();
         var after = PathUtil.Join(PathUtil.Normalize(PathUtil.Join(entries), sort, dedup));
@@ -630,9 +693,9 @@ internal static class EnvService
         var machineExpands = PathExpandsVariables(EnvScope.Machine);
         var userExpands = PathExpandsVariables(EnvScope.User);
 
-        var system = PathUtil.Split(GetEnv("Path", EnvScope.Machine))
+        var system = PathUtil.Split(GetPathRaw(EnvScope.Machine))
             .Select(v => new Marked(v, true)).ToList();
-        var user = PathUtil.Split(GetEnv("Path", EnvScope.User))
+        var user = PathUtil.Split(GetPathRaw(EnvScope.User))
             .Select(v => new Marked(v, false)).ToList();
 
         foreach (var item in system.Concat(user))
@@ -701,16 +764,21 @@ internal static class EnvService
 
     internal static ApplyResult ApplyPathSelection(List<string>? system, List<string>? user, bool dryRun)
     {
-        // 写回前把「靠 %变量% 才有意义、但这侧 PATH 不会展开」的条目换成具体路径
-        var systemEntries = (system ?? []).Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.Machine), null, null)).ToList();
-        var userEntries = (user ?? []).Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.User), null, null)).ToList();
+        // 传 null 表示「这一侧不动」：只改勾选过的那一侧，避免误清空另一半 PATH。
+        // 传空数组则是用户主动清空该侧（界面里取消勾选全部条目）。
+        var systemEntries = system?
+            .Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.Machine), null, null)).ToList();
+        var userEntries = user?
+            .Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.User), null, null)).ToList();
 
         if (!dryRun)
         {
             try
             {
-                EnvStore.Set("Path", string.Join(';', systemEntries), EnvScope.Machine);
-                EnvStore.Set("Path", string.Join(';', userEntries), EnvScope.User);
+                if (systemEntries is not null)
+                    EnvStore.Set("Path", string.Join(';', systemEntries), EnvScope.Machine);
+                if (userEntries is not null)
+                    EnvStore.Set("Path", string.Join(';', userEntries), EnvScope.User);
             }
             catch (UnauthorizedAccessException)
             {
@@ -722,13 +790,17 @@ internal static class EnvService
             }
         }
 
+        var parts = new List<string>
+        {
+            systemEntries is null ? "系统：未提供，保持原样" : $"系统 {systemEntries.Count} 条",
+            userEntries is null ? "用户：未提供，保持原样" : $"用户 {userEntries.Count} 条",
+        };
         return new ApplyResult
         {
             Ok = true,
             DryRun = dryRun,
-            Message = dryRun
-                ? $"预览：将写入 系统 {systemEntries.Count} 条、用户 {userEntries.Count} 条（未实际修改）"
-                : $"已写入 系统 {systemEntries.Count} 条、用户 {userEntries.Count} 条 PATH。",
+            Message = (dryRun ? "预览：将写入 " : "已写入 ") + string.Join('、', parts)
+                      + (dryRun ? "（未实际修改）" : " PATH。"),
         };
     }
 

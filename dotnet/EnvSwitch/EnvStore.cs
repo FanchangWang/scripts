@@ -87,6 +87,42 @@ internal static class EnvStore
         }
     }
 
+    /// <summary>
+    /// 读取注册表里的原样值：REG_EXPAND_SZ 的 %变量% 不展开。
+    /// 界面编辑 / 写回时用它，避免把「%USERPROFILE%\go」这种写法固化成展开后的绝对路径。
+    /// 值不存在时返回 null。
+    /// </summary>
+    internal static string? GetRaw(string name, EnvScope scope)
+    {
+        using var baseKey = RegistryKey.OpenBaseKey(HiveOf(scope), RegistryView.Default);
+        using var key = baseKey.OpenSubKey(SubKeyOf(scope), writable: false);
+        if (key is null)
+            return null;
+        return key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames)?.ToString();
+    }
+
+    /// <summary>枚举一侧的全部变量（原样值，不展开）。读不到时抛异常，由调用方回退。</summary>
+    internal static Dictionary<string, string> AllRaw(EnvScope scope)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        using var baseKey = RegistryKey.OpenBaseKey(HiveOf(scope), RegistryView.Default);
+        using var key = baseKey.OpenSubKey(SubKeyOf(scope), writable: false);
+        if (key is null)
+            return result;
+        foreach (var name in key.GetValueNames())
+        {
+            var value = key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+            result[name] = value?.ToString() ?? "";
+        }
+        return result;
+    }
+
+    private static RegistryHive HiveOf(EnvScope scope) =>
+        scope == EnvScope.Machine ? RegistryHive.LocalMachine : RegistryHive.CurrentUser;
+
+    private static string SubKeyOf(EnvScope scope) =>
+        scope == EnvScope.Machine ? MachineSubKey : UserSubKey;
+
     /// <summary>通知系统环境已变化；超时或失败都忽略，写入已经落盘。</summary>
     internal static void Broadcast()
     {
