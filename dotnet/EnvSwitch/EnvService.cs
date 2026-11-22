@@ -134,19 +134,42 @@ internal static class EnvService
 
                 var paths = v.Paths ?? [];
                 var explicitPaths = paths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+                // 同一版本里可能有多条指向同一目录的写法（例如 latest\jdk-21\bin 与
+                // jdk-21.0.13.0.2\bin，前者是指向后者目录的 junction）。写入时只保留
+                // 顺序最靠前且存在的那一条，所以这里按真实目录分组：组内只要有一条存在就算通过。
+                var groups = new List<(string Key, List<(int Index, string Raw)> Items)>();
+                var groupOf = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 for (var i = 0; i < paths.Count; i++)
                 {
                     var raw = (paths[i] ?? "").Trim();
                     if (raw.Length == 0)
                         continue;
                     var expanded = ExpandForCheck(raw, tc, v);
-                    if (!PathMissing(expanded))
-                        continue;
-                    errors.Add(new ConfigError
+                    var key = RealPath.Key(expanded);
+                    if (key.Length == 0)
+                        key = raw.ToLowerInvariant();
+                    if (groupOf.TryGetValue(key, out var g))
+                        groups[g].Items.Add((i, raw));
+                    else
                     {
-                        Toolchain = tcName, Version = verName, Field = "path", Index = i, Value = raw,
-                        Message = $"版本「{verName}」的 PATH 条目不存在：{raw}",
-                    });
+                        groupOf[key] = groups.Count;
+                        groups.Add((key, new List<(int, string)> { (i, raw) }));
+                    }
+                }
+
+                foreach (var group in groups)
+                {
+                    var anyExists = group.Items.Any(x => !PathMissing(ExpandForCheck(x.Raw, tc, v)));
+                    if (anyExists)
+                        continue;
+                    var sameDir = group.Items.Count > 1;
+                    foreach (var x in group.Items)
+                        errors.Add(new ConfigError
+                        {
+                            Toolchain = tcName, Version = verName, Field = "path", Index = x.Index, Value = x.Raw,
+                            Message = $"版本「{verName}」的 PATH 条目不存在：{x.Raw}"
+                                      + (sameDir ? "（同版本这几条指向同一目录，但都不存在）" : ""),
+                        });
                 }
 
                 // 模板只在该版本没有任何显式条目时才会被用到，所以也只在这时校验
@@ -176,6 +199,52 @@ internal static class EnvService
         if (!string.IsNullOrWhiteSpace(tc.EnvVar))
             replaced = replaced.Replace($"%{tc.EnvVar}%", v.Home ?? "", StringComparison.OrdinalIgnoreCase);
         return Environment.ExpandEnvironmentVariables(replaced);
+    }
+
+    /// <summary>展开后还有没展开的变量（判不了是否存在）时放行，避免误报。</summary>
+    private static bool MissingForCheck(string raw, Toolchain tc, VersionEntry v)
+    {
+        var expanded = ExpandForCheck(raw, tc, v);
+        if (expanded.Contains('%', StringComparison.Ordinal))
+            return false;
+        return PathMissing(expanded);
+    }
+
+    /// <summary>
+    /// 同一个版本里多条 PATH 若指向同一个真实目录（例如 latest\jdk-21\bin 与
+    /// jdk-21.0.13.0.2\bin，前者是指向后者目录的 junction），只保留一条：
+    /// 按配置顺序，第一条存在就留第一条；第一条不存在就留后面第一条存在的。
+    /// 其余写法视为同一项的重复写法，写入时会被删掉。
+    /// </summary>
+    internal static List<string> CollapseEquivalent(List<string> paths, Toolchain tc, VersionEntry v)
+    {
+        var result = new List<string>();
+        var exists = new List<bool>();
+        var slots = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in paths)
+        {
+            var trimmed = (raw ?? "").Trim();
+            if (trimmed.Length == 0)
+                continue;
+            var key = RealPath.Key(ExpandForCheck(trimmed, tc, v));
+            if (key.Length == 0)
+                key = trimmed.ToLowerInvariant();
+            var present = !MissingForCheck(trimmed, tc, v);
+            if (slots.TryGetValue(key, out var slot))
+            {
+                // 已经占位的写法不存在、现在这条存在 → 换成这条（顺序位置不变）
+                if (!exists[slot] && present)
+                {
+                    result[slot] = trimmed;
+                    exists[slot] = true;
+                }
+                continue;
+            }
+            slots[key] = result.Count;
+            result.Add(trimmed);
+            exists.Add(present);
+        }
+        return result;
     }
 
     /// <summary>网页「环境变量」页：写入单个变量的值（空串即置空，不当成删除）。</summary>
@@ -276,18 +345,23 @@ internal static class EnvService
         var pathTarget = ParseWriteScope(tc.PathScope);
 
         // 本版本要写入 PATH 的条目：显式条目优先，否则用模板展开 Home；都为空表示本工具链不写 PATH
-        var toAdd = version.Paths
+        var rawPaths = version.Paths
             .Where(p => !string.IsNullOrWhiteSpace(p))
             .Select(p => p.Trim())
             .ToList();
-        if (toAdd.Count == 0 && !string.IsNullOrWhiteSpace(tc.PathTemplate))
-            toAdd.Add(PathUtil.Expand(tc.PathTemplate, tc.EnvVar, version.Home));
+        if (rawPaths.Count == 0 && !string.IsNullOrWhiteSpace(tc.PathTemplate))
+            rawPaths.Add(PathUtil.Expand(tc.PathTemplate, tc.EnvVar, version.Home));
+
+        // 同一真实目录的多种写法只留一条（按配置顺序，取第一条存在的）
+        var toAdd = CollapseEquivalent(rawPaths, tc, version);
+        var mergedAway = Math.Max(0, rawPaths.Count - toAdd.Count);
+
         // 网页已移除「是否加入 PATH」开关：有条目就写，没有就不写
         var writePath = toAdd.Count > 0;
 
         // 保存时已经校验过；这里再挡一次旧配置里残留的不存在条目，
         // 免得把一堆指向空目录的路径写进 PATH（现象就是「只有其中一条能用」）
-        var missingEntries = toAdd.Where(PathMissing).ToList();
+        var missingEntries = toAdd.Where(p => MissingForCheck(p, tc, version)).ToList();
         if (missingEntries.Count > 0)
             return Fail($"PATH 条目不存在，未做任何修改：{string.Join("、", missingEntries)}");
 
@@ -305,6 +379,13 @@ internal static class EnvService
         {
             pathBefore = GetEnv("Path", pathTarget.Scope) ?? "";
             var entries = PathUtil.Without(PathUtil.Split(pathBefore), stale);
+            // 再按真实目录剔一遍：PATH 里若残留同一目录的别的写法（配置里没有的别名、
+            // 历史遗留的 latest 写法等），一并删掉，只留上面选中的那一条
+            var addKeys = new HashSet<string>(
+                toAdd.Select(p => RealPath.Key(ExpandForCheck(p, tc, version))), StringComparer.OrdinalIgnoreCase);
+            addKeys.Remove("");
+            if (addKeys.Count > 0)
+                entries = entries.Where(e => !addKeys.Contains(RealPath.Key(e))).ToList();
             entries.AddRange(toAdd);
             if (config.Settings.NormalizePathOnApply)
                 entries = PathUtil.Normalize(PathUtil.Join(entries));
@@ -359,6 +440,9 @@ internal static class EnvService
             : "未配置环境变量名，跳过环境变量");
         parts.Add(writePath
             ? $"PATH 写入{pathTarget.Label}（{toAdd.Count} 条）"
+              + (mergedAway > 0
+                  ? $"；同版本另外 {mergedAway} 条与它们指向同一目录，已按顺序合并（只留第 1 条存在的写法）"
+                  : "")
             : "没有 PATH 条目，PATH 未改动");
 
         return new ApplyResult
@@ -580,8 +664,9 @@ internal static class EnvService
         // 过滤：指向不存在目录的条目直接从「处理后」列表剔除（写入时也不会带上）
         var result = entries.Where(e => e.Exists && !removed.Contains(PathUtil.Canonical(e.Value))).ToList();
         if (dedup)
-            result = result.GroupBy(e => PathUtil.Canonical(e.Value), StringComparer.OrdinalIgnoreCase)
-                           .Select(g => Copy(g.First(), g.Key))
+            // 按真实目录去重：C:\...\latest\jdk-21\bin 与 C:\...\jdk-21.0.13.0.2\bin 是同一目录，只留前面那条
+            result = result.GroupBy(e => RealPath.Key(e.Value), StringComparer.OrdinalIgnoreCase)
+                           .Select(g => Copy(g.First(), PathUtil.Canonical(g.First().Value)))
                            .ToList();
         if (sort)
             result = result.OrderBy(e => e.Value, StringComparer.OrdinalIgnoreCase).ToList();

@@ -524,6 +524,7 @@ function renderToolchain() {
         </table>
         </div>
         <button id="add-ver" style="margin-top:12px">+ 添加版本</button>
+        <div class="hint" style="margin:10px 0 0">一个版本可以填多条 PATH。<b>若其中几条其实指向同一个目录</b>（典型是 <code>…\latest\jdk-21\bin</code> 这种软链别名和 <code>…\jdk-21.0.13.0.2\bin</code> 这种真实目录），切换写入时只保留最靠前、且目录存在的那一条，其余同目录写法会从 PATH 里删掉，不会重复堆积。</div>
       </div>
       <div class="row">
         <button class="primary" id="save-tc">保存工具链配置</button>
@@ -670,7 +671,7 @@ function renderPath() {
       </div>
       <div id="path-msg" class="hint"></div>
       <div id="path-grid" class="path-grid"></div>
-      <p class="hint">规则：系统与用户中完全相同的条目会从用户的「处理后」列表自动移除；同一工具链的不同版本会用徽标标注；<b>目录已不存在的条目会在「处理后」列表自动剔除，只在「当前」列表以「已失效」标出</b>；「处理后」列表可勾选要保留的条目。</p>
+      <p class="hint">规则：系统与用户中完全相同的条目会从用户的「处理后」列表自动移除；<b>同一个目录的不同写法（如 <code>…\latest\jdk-21\bin</code> 与 <code>…\jdk-21.0.13.0.2\bin</code> 这种软链别名）按真实目录算一条，只保留靠前的那条</b>；同一工具链的不同版本会用徽标标注；<b>目录已不存在的条目会在「处理后」列表自动剔除，只在「当前」列表以「已失效」标出</b>；「处理后」列表可勾选要保留的条目。</p>
       <p class="hint">右上角「仅预览，不写入」勾选着的时候，点「应用写入」只按你的勾选重新计算一遍并提示会写入多少条，<b>不会真的改 PATH</b>；想真正落盘就先取消这个勾选，再点「应用写入」。它的用途是：批量清理 / 排序前先看一眼结果，确认无误再写入。</p>
     </div>`;
   ['path-sort', 'path-dedup'].forEach(id => $('#' + id).addEventListener('change', loadPathView));
