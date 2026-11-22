@@ -8,7 +8,7 @@ internal static class ConfigStore
 {
     internal static string DefaultPath =>
         Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "EnvSwitch",
             "config.json");
 

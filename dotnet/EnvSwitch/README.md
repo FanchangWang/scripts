@@ -66,7 +66,7 @@ dotnet publish -c Release -o publish
 .\EnvSwitch.exe --config D:\envswitch.json list
 ```
 
-配置文件默认位于 `%APPDATA%\EnvSwitch\config.json`，可用 `--config` 覆盖。
+配置文件默认位于 `%LOCALAPPDATA%\EnvSwitch\config.json`（本机 `C:\Users\guyue\AppData\Local\EnvSwitch\config.json`），可用 `--config` 覆盖。
 
 ## 配置格式
 

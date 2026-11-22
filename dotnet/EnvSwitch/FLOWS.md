@@ -19,7 +19,7 @@
 | junction / 软链穿透求真实目录 | `RealPath.cs` |
 | 数据结构与 JSON 字段 | `Models.cs` |
 | 单文件内嵌网页 | `Ui/ui.html` → 嵌入资源 `EnvSwitch.Ui.ui.html` |
-| 配置文件 | `%APPDATA%\EnvSwitch\config.json`（本机 `C:\Users\guyue\AppData\Roaming\EnvSwitch\config.json`） |
+| 配置文件 | `%LOCALAPPDATA%\EnvSwitch\config.json`（本机 `C:\Users\guyue\AppData\Local\EnvSwitch\config.json`，由 `SpecialFolder.LocalApplicationData` 拼出） |
 
 ---
 
