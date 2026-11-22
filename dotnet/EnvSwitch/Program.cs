@@ -46,22 +46,31 @@ switch (argv[0].ToLowerInvariant())
     case "config":
     {
         Console.WriteLine($"配置文件：{configPath}");
+        if (!File.Exists(configPath))
+        {
+            if (ConfigStore.ClassifyMissing(configPath) == ConfigStore.MissingConfigKind.Unreachable)
+            {
+                Console.Error.WriteLine($"[失败] {configPath}（配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(configPath)}）");
+                return 1;
+            }
+            Console.WriteLine("（尚未生成，运行一次后自动生成）");
+            return 0;
+        }
+
         try
         {
             Console.WriteLine(ConfigStore.ReadText(configPath));
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            // 与 Load 同一口径：默认路径 / 所在目录可达 = 还没生成；目录不可达 = 这次读不了
-            var dir = Path.GetDirectoryName(configPath);
-            if (string.Equals(configPath, ConfigStore.DefaultPath, StringComparison.OrdinalIgnoreCase)
-                || string.IsNullOrEmpty(dir) || Directory.Exists(dir))
+            // 与 Load 同一份判定
+            if (ConfigStore.ClassifyMissing(configPath) == ConfigStore.MissingConfigKind.Unreachable)
             {
-                Console.WriteLine("（尚未生成，运行一次后自动生成）");
-                return 0;
+                Console.Error.WriteLine($"[失败] {configPath}（配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(configPath)}）");
+                return 1;
             }
-            Console.Error.WriteLine($"[失败] {configPath}（配置文件所在目录不存在或无法访问：{dir}）");
-            return 1;
+            Console.WriteLine("（尚未生成，运行一次后自动生成）");
+            return 0;
         }
         catch (ConfigUnreadableException ex)
         {
@@ -183,7 +192,8 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
     catch (ConfigUnreadableException ex)
     {
         Console.Error.WriteLine($"[失败] {ex.Message}");
-        Console.Error.WriteLine("配置文件只是暂时读不到（不是损坏），未做任何修改。请检查是否被其它程序占用或缺少读取权限后重试。");
+        Console.Error.WriteLine("配置文件只是暂时读不到（不是损坏），未做任何修改。"
+                                + "请检查该路径是否可访问（网络盘是否已连接、U 盘是否插着、是否有读取权限），是否被其它程序占用后重试。");
         return 1;
     }
     var port = portOverride ?? config.Settings.Port;
@@ -641,7 +651,7 @@ static AppConfig LoadConfigOrExit(string configPath)
     {
         Console.Error.WriteLine($"[失败] {ex.Message}");
         Console.Error.WriteLine("配置文件只是暂时读不到（不是损坏），已放弃本次操作，文件未被修改。"
-                                + "请检查是否被其它程序占用或缺少读取权限后重试。");
+                                + "请检查该路径是否可访问（网络盘是否已连接、U 盘是否插着、是否有读取权限），是否被其它程序占用后重试。");
         Console.Out.Flush();
         Console.Error.Flush();
         Environment.Exit(1);

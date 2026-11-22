@@ -4,11 +4,12 @@ using System.Text.RegularExpressions;
 namespace EnvSwitch;
 
 /// <summary>
-/// 配置文件存在、但暂时读不到（被其它进程占用 / 没有读权限）。
+/// 配置文件存在、但暂时读不到（被其它进程占用 / 没有读权限 / 所在目录不可达）。
 /// 与「内容损坏」严格区分：调用方应该报错并放弃本次操作，<b>绝不</b>写回默认配置。
+/// Message 只描述「哪个文件、为什么」，由调用方决定前缀（CLI / 中间件各有一句自己的说明）。
 /// </summary>
 internal sealed class ConfigUnreadableException(string file, Exception inner)
-    : Exception($"配置文件暂时读不到：{file}（{inner.Message}）", inner)
+    : Exception($"{file}（{inner.Message}）", inner)
 {
     internal string File { get; } = file;
 }
@@ -22,9 +23,75 @@ internal static class ConfigStore
             "EnvSwitch",
             "config.json");
 
+    /// <summary>「看不到配置」的两种原因：真的还没建，还是这个位置现在根本访问不了。</summary>
+    internal enum MissingConfigKind
+    {
+        FirstRun,
+        Unreachable,
+    }
+
+    /// <summary>
+    /// 判断一个配置路径「看不到」时该按哪种原因处理。`Load` 与 `config` 命令共用这一份判断，
+    /// 避免两处各写一遍又抄漏（默认路径的特判曾经只在 `config` 命令里有，`Load` 没跟上）。
+    /// 默认路径、裸文件名（没有目录成分 = 当前目录）一律算「还没建」；其它路径看所在目录是否可达。
+    /// </summary>
+    internal static MissingConfigKind ClassifyMissing(string file)
+    {
+        if (string.Equals(file, DefaultPath, StringComparison.OrdinalIgnoreCase))
+            return MissingConfigKind.FirstRun;
+        var dir = Path.GetDirectoryName(file);
+        if (string.IsNullOrEmpty(dir))
+            return MissingConfigKind.FirstRun;
+        return DirectoryReachable(dir) ? MissingConfigKind.FirstRun : MissingConfigKind.Unreachable;
+    }
+
+    /// <summary>
+    /// 目录可达性探测，上限 1.5 秒：断开的网络盘上 `Directory.Exists` 本身能卡十几秒。
+    /// 超时按**不可达**处理——宁可这次报错，也不拿一份默认配置往那个位置写。
+    /// </summary>
+    private static bool DirectoryReachable(string dir)
+    {
+        try
+        {
+            var probe = System.Threading.Tasks.Task.Run(() => Directory.Exists(dir));
+            if (!probe.Wait(1500))
+                return false;
+            return probe.Result;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     internal static AppConfig Load(string? path = null)
     {
         var file = path ?? DefaultPath;
+
+        // 先判「这个位置能不能访问」，再碰文件：默认路径与裸文件名不探测（前者目录本来就可能还没建，
+        // 后者就是当前目录）。探测上限 1.5 秒——`File.Exists` 与 `ReadAllText` 在断开的网络盘上要等
+        // SMB 超时（实测 21 秒），所以不可达时必须在这之前退出，否则每个 Web 请求都要付一次。
+        if (ClassifyMissing(file) == MissingConfigKind.Unreachable)
+            throw new ConfigUnreadableException(
+                file,
+                new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(file)}"));
+
+        if (!File.Exists(file))
+        {
+            if (ClassifyMissing(file) == MissingConfigKind.Unreachable)
+                throw new ConfigUnreadableException(
+                    file,
+                    new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(file)}"));
+
+            var config = DetectDefaultConfig();
+            // 首次运行落盘失败（目录不可写）时不要让程序崩掉，内存里还能用
+            try { Save(config, file); }
+            catch (Exception saveException)
+            {
+                Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{saveException.Message}");
+            }
+            return config;
+        }
 
         string json;
         try
@@ -33,17 +100,13 @@ internal static class ConfigStore
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            // 「看不到文件」有三种：真首次运行 / 目录不可达 / 没有权限（File.Exists 与 ReadAllText 在这里都可能
-            // 报成「不存在」）。显式 --config 指向的路径，只有所在目录确实可达时才敢认定是新建配置；
-            // 否则就是「这次做不了」——照默认配置继续干活会拿一份不是用户的配置去写注册表。
-            var dir = Path.GetDirectoryName(file);
-            if (path is not null && (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)))
+            // 刚判过存在、读取时却没了：同一份判定再来一次（这类竞态极少，但别退回「一律算首次运行」）
+            if (ClassifyMissing(file) == MissingConfigKind.Unreachable)
                 throw new ConfigUnreadableException(
                     file,
-                    new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{dir}"));
+                    new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(file)}"));
 
             var config = DetectDefaultConfig();
-            // 首次运行落盘失败（目录不可写）时不要让程序崩掉，内存里还能用
             try { Save(config, file); }
             catch (Exception saveException)
             {
