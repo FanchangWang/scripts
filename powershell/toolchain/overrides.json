@@ -28,12 +28,13 @@
     "android_cli_path": "C:\\Users\\guyue\\AppData\\Local\\Android\\Sdk\\cmdline-tools\\latest\\bin\\android.exe",
     "java_homes": [
       "17=C:\\Program Files\\Java\\jdk-17",
-      "21=C:\\Program Files\\Java\\jdk-21.0.13.0.2",
-      "8-jre-x64=C:\\Program Files\\Java\\jre1.8.0_513",
-      "8-jre-x86=C:\\Program Files (x86)\\Java\\jre1.8.0_513",
+      "21=C:\\Program Files\\Java\\latest\\jdk-21",
+      "8-jre-x64=C:\\Program Files\\Java\\latest\\jre-1.8",
+      "8-jre-x86=C:\\Program Files (x86)\\Java\\latest\\jre-1.8",
+      "8-java8path=C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\java8path",
       "11-zulu-jre=C:\\Program Files\\Zulu\\zulu-11-jre",
-      "25-system=C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot",
-      "25-rea-active=C:\\Users\\guyue\\code-tools\\runtimes\\jdk-25.0.5.1\\jdk-25.0.5.1+2",
+      "25-rea-active=C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot",
+      "25-local-zip=C:\\Users\\guyue\\code-tools\\runtimes\\jdk-25.0.5.1\\jdk-25.0.5.1+2",
       "25-android-studio-jbr=C:\\Users\\guyue\\AppData\\Local\\Programs\\Android Studio\\jbr"
     ],
     "excluded_tool_root": "D:\\Tools",
@@ -61,7 +62,8 @@
     "git_bash_note": "Get-Command bash resolves to C:\\WINDOWS\\system32\\bash.exe (WSL/Windows launcher), not Git Bash. Use C:\\Program Files\\Git\\bin\\bash.exe for Git Bash.",
     "tshark_note": "TShark was installed without Npcap. It can parse offline pcap/pcapng files but cannot do native live capture. Use Reqable for live traffic.",
     "rea_note": "REA MCP is disabled by default. Connect/disconnect temporarily through the OpenCode experimental MCP API. Do not run rea-agents setup --client; skill-only updates are safe.",
-    "java_home_note": "Process JAVA_HOME is C:\\Program Files\\Java\\jdk-17, but rea-mcp.cmd overrides JAVA_HOME to the JDK 25 install required by Ghidra 12.2.",
+    "java_home_note": "Process JAVA_HOME is C:\\Program Files\\Java\\jdk-17, but rea-mcp.cmd overrides JAVA_HOME to the winget-installed Microsoft JDK 25 at C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot, required by Ghidra 12.2.",
+    "java_alias_note": "Prefer non-versioned Java junctions when a path is needed: C:\\Program Files\\Java\\latest\\jdk-21, C:\\Program Files\\Java\\latest\\jre-1.8, C:\\Program Files (x86)\\Java\\latest\\jre-1.8, and C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\java8path. They track the installed patch version automatically; JDK 17 and Zulu 11 paths are already version-free.",
     "encoding_note": "rea-mcp.cmd is GBK/CP936 with CRLF and no BOM. This toolchain JSON/Markdown is UTF-8 no BOM."
   },
   "config_facts": [
@@ -186,6 +188,14 @@
       "scope": "user",
       "usage": "Android CLI is 1.1.16919734 and replaces sdkmanager (`android sdk ...`). The SDK contains NDK 29/30, emulator 37.3.10.0, build-tools 19.1.0/35/36/36.1/37, platforms through android-37.2, and system images. REA only uses platform-tools\\adb.exe.",
       "notes": "Android Studio is AI-262.10968.63.2622.16975389 and bundles JBR 25.0.4. sdkmanager.bat is deprecated but still present."
+    },
+    {
+      "id": "java-path-aliases",
+      "title": "Use non-versioned Java home junctions",
+      "value": "C:\\Program Files\\Java\\latest\\jdk-21; C:\\Program Files\\Java\\latest\\jre-1.8; C:\\Program Files (x86)\\Java\\latest\\jre-1.8; C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\java8path",
+      "scope": "user",
+      "usage": "When a command or script needs a Java home, prefer these stable junctions instead of versioned directories such as jdk-21.0.13.0.2 or jre1.8.0_513. All four were verified to resolve to the current installs (21.0.13.0.2 and 1.8.0_513).",
+      "notes": "JDK 17 (C:\\Program Files\\Java\\jdk-17) and Zulu 11 JRE are already version-free. Java 25 has no junction; the REA-active JDK 25 is the winget Microsoft install at C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot. Java 8 JDK was removed in 2026-11; a retained ZIP copy of JDK 25 remains under code-tools but is not the REA default."
     }
   ]
 }
