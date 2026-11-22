@@ -120,7 +120,7 @@
 1. **旧条目集合 `stale`**：模板原写法 + 该工具链**所有版本**的显式条目 + 模板展开值 + `Home` + `Home\bin`。
 2. 取目标侧 PATH 的**注册表原样值** → 去掉 `stale`（字符串级，忽略大小写与结尾 `\`）。
 3. 再按真实目录剔一遍：凡与 `toAdd` 任一目录同属一个真实目录的写法（含历史遗留别名），也删掉。
-4. 追加 `toAdd`；若 `normalizePathOnApply` 开启则去重，**只有** `sortPathOnApply` 也为 `true` 才按字典序重排整条 PATH（默认 false：排序会改变命令解析优先级）。
+4. 追加 `toAdd`；若 `normalizePathOnApply` 开启则整体排序 + 去重（`sortPathOnApply` 默认 `true`，设为 `false` 则只去重、保留原顺序）。
 5. **唯一模式**：另一侧 PATH 同样去掉 `stale + toAdd`，只有结果与当前不同才写。
 6. 结果写入 `ApplyResult.PathAfter`，CLI 会逐条打印，网页横幅里给条数统计。
 
@@ -230,8 +230,8 @@
 | 项 | 含义 | 生效时机 |
 | --- | --- | --- |
 | 服务端口（0=自动分配） | 下次启动监听的端口 | 保存配置后**重启服务**才生效 |
-| 切换版本时整理 PATH（去重） | `NormalizePathOnApply` | 每次 `Apply` / 立即应用全部时 |
-| 整理 PATH 时按字典序重排 | `SortPathOnApply` | 同上；默认 `false`，排序会改变命令解析优先级 |
+| 切换版本时整理 PATH（排序 + 去重） | `NormalizePathOnApply` | 每次 `Apply` / 立即应用全部时 |
+| 整理时是否排序（关掉则只去重） | `SortPathOnApply` | 同上；默认 `true`，与 `path` 命令默认一致 |
 | 启动服务时自动打开浏览器 | `OpenBrowserOnStart` | 下次启动 |
 
 保存失败同样在页面顶部列出逐条原因（与工具链页共用同一套错误面板）。
@@ -363,7 +363,7 @@
 5. 非管理员会话无法在本机验证系统侧真实写入，只能验证 dry-run 结果与「被拒」路径。
 6. PATH 条目很多时保存较慢（每条存在性探测最多等 1.5 秒，PATH 视图已并发探测，52 条约 100ms）。
 7. 环境变量页对「值本身就是另一套 PATH 字符串」的变量不做拆条展示。
-8. **应用版本时的 PATH 整理默认只去重不排序**（`sortPathOnApply=false`）：整条 PATH 的顺序（即命令解析优先级）保持不变；需要旧行为要显式把 `sortPathOnApply` 设为 `true`。`path` 命令的整理仍默认排序，可用 `--no-sort` 关。
+8. **应用版本时的 PATH 整理默认排序 + 去重**（`sortPathOnApply=true`，与 `path` 命令默认一致）；担心同名 exe 从别的目录命中时，可把它设为 `false`，此时只去重、保留原有顺序。`path` 命令的整理仍默认排序，可用 `--no-sort` 关。
 9. **多入口丢失更新**：网页打开期间用 CLI `use` 改了激活版本，网页再保存会用它手里的旧草稿整体覆盖。单机单用户、风险低，暂未加「保存前比对 mtime」。
 
 ---
@@ -413,7 +413,7 @@
 | A9 | 低 | ✔ 已改 | `Migrate` 不剔 `null`、不归一字符串 | `RemoveAll(x => x is null)` + `Name/EnvVar/PathTemplate/Active/Home` 归一为 `""`；`/api/config` 先 `Migrate` 再校验 |
 | A10 | 低 | ✔ 已改 | `Identify` 要求 `EnvVar` 非空，纯 PATH 工具链无归属 | 去掉该前置条件，只要求名称非空 |
 | A11 | 低 | ✔ 已实测 | 非字符串注册表值被 `ToString()` 显示并写坏 | `AllRaw` 只收字符串类型 + `NonStringKinds` 只读展示 + `SetEnv` 拒绝改写 + `DeleteEnv` 用 `KindOf` 判存在。实测 `REG_DWORD` 探测变量只读、拒绝改写、可删除 |
-| A12 | 低 | ✔ 已改（默认值变更） | 默认排序去重会重排整条 PATH，改变命令解析优先级 | `NormalizePathOnApply` 仍去重，新增 `SortPathOnApply` 默认 `false`；实测应用后 PATH 顺序未变 |
+| A12 | 低 | ✔ 已改（保留开关） | 默认排序去重会重排整条 PATH，改变命令解析优先级 | 按你的要求**保留默认排序 + 去重**（与 `path` 命令一致），新增 `SortPathOnApply`（默认 `true`）作为可选开关：设为 `false` 时只去重、保留原顺序 |
 | A13 | 低 | ⚠ 部分修复（4/6） | 小问题合集 | 已修：`use` 漏版本名、删不存在变量文案、首启 `Save` 保护、`C:/` 规范化；保留：多入口覆盖（见 §17-9）、无自动化测试 |
 | B1 | 中 | ✔ 已实测 | `Home` 的 `%变量%` 写进 `REG_SZ` 不展开，校验却按展开后放行 | 写入前算 `envValue`，非 `ExpandString` 时展开、残留 `%` 直接拒绝；实测写入值为展开后的绝对路径 |
 | B2 | 中 | ✔ 已实测 | 未处理异常是空 500，无日志无响应体 | `AddSimpleConsole` + `LogError` + 500 JSON；`JsonException` 单列 400。实测坏 JSON → 400、异常 → 500 JSON |

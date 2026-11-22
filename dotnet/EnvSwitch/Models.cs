@@ -10,16 +10,16 @@ public sealed class AppConfig
 public sealed class ConfigSettings
 {
     /// <summary>
-    /// 应用版本时是否顺带整理 PATH（默认只去重、保持原顺序）。
-    /// 去重是安全的；排序会改变命令解析优先级（先命中先执行），所以必须显式打开 <see cref="SortPathOnApply"/>。
+    /// 应用版本时是否顺带整理 PATH（默认排序 + 去重，与 `path` 命令默认一致）。
+    /// 关掉则按「原有条目 + 新版本条目」原样拼接。
     /// </summary>
     public bool NormalizePathOnApply { get; set; } = true;
 
     /// <summary>
-    /// 整理 PATH 时是否按字典序重排整条 PATH。默认关闭：排序会把常用目录挪到后面，
-    /// 同名 exe（python/java/git）就可能从另一个目录被命中。
+    /// 整理 PATH 时是否按字典序重排整条 PATH。默认开启（保持原来的整理效果）；
+    /// 若不想改变命令解析优先级，可设为 false：此时只去重、保留原有顺序。
     /// </summary>
-    public bool SortPathOnApply { get; set; }
+    public bool SortPathOnApply { get; set; } = true;
 
     /// <summary>PATH 修改作用范围：User 或 Machine（Machine 需管理员权限）。</summary>
     public string PathScope { get; set; } = "User";
