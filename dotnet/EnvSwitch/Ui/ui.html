@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EnvSwitch · 多版本环境变量切换器</title>
+<style>
+  :root { color-scheme:light; --bg:#f5f6f8; --card:#fff; --line:#e2e5ea; --txt:#22262b; --muted:#6b7280; --accent:#2563eb; --ok:#16834b; --warn:#b45309; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; display:flex; min-height:100vh; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+
+  /* 左侧菜单 */
+  .sidebar { flex:0 0 224px; display:flex; flex-direction:column; background:#1b2432; color:#e5e7eb; }
+  .brand { padding:16px 18px 12px; font-size:16px; font-weight:600; color:#fff; }
+  .brand small { display:block; margin-top:3px; font-size:11px; font-weight:400; color:#93a1b3; }
+  .menu { flex:1; display:flex; flex-direction:column; gap:2px; padding:4px 10px 12px; }
+  .menu a { display:block; padding:9px 12px; border-radius:7px; color:#cbd5e1; text-decoration:none; font-size:13.5px; }
+  .menu a:hover { background:#26313f; color:#fff; }
+  .menu a.active { background:var(--accent); color:#fff; font-weight:600; }
+  .side-meta { padding:10px 16px 16px; margin-top:8px; border-top:1px solid #2c3a4b; font-size:11px; color:#8b98a9; word-break:break-all; }
+
+  /* 右侧内容 */
+  .shell { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .topbar { display:flex; align-items:baseline; gap:12px; padding:14px 24px; background:#fff; border-bottom:1px solid var(--line); }
+  .topbar h1 { margin:0; font-size:18px; font-weight:600; }
+  .topbar .sub { color:var(--muted); font-size:12px; }
+  main { flex:1; min-width:0; padding:20px 24px 48px; overflow:auto; }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:16px; }
+  .card h2 { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:15px; margin:0 0 12px; }
+  .badge { padding:2px 8px; border-radius:999px; background:#eef2ff; color:#4338ca; font-size:11px; font-weight:600; }
+  .badge.on { background:#dcfce7; color:var(--ok); }
+  .badge.warn { background:#fef3c7; color:#92400e; }
+  .badge.muted { background:#f3f4f6; color:#6b7280; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; }
+  button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:6px; padding:7px 13px; cursor:pointer; color:var(--txt); }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary:hover { background:#1d4ed8; color:#fff; }
+  button.danger { color:#b91c1c; }
+  button.danger:hover { border-color:#b91c1c; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  input, select, textarea { font:inherit; border:1px solid var(--line); border-radius:6px; padding:7px 9px; background:#fff; color:var(--txt); }
+  label { color:var(--muted); }
+  .check { display:flex; align-items:center; gap:7px; margin:10px 0 0; color:var(--txt); }
+  .note { margin:8px 0 4px; padding:9px 12px; background:#f8fafc; border-left:3px solid #c7d2fe; border-radius:0 6px 6px 0; color:#475569; font-size:12px; line-height:1.65; }
+  .note b { color:#1f2937; }
+  .hint { color:var(--muted); font-size:12px; margin:6px 0 12px; }
+  .settings-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+  .field { display:flex; flex-direction:column; gap:4px; }
+  .field span { font-size:12px; color:var(--muted); }
+  .field input, .field select { width:100%; }
+
+  .versions { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin:12px 0; }
+  .ver { padding:10px 12px; text-align:left; background:#fafbfc; border-radius:8px; }
+  .ver b { font-size:15px; }
+  .ver small { display:block; margin-top:3px; font-size:11px; color:var(--muted); word-break:break-all; }
+  .ver.active { border-color:var(--ok); background:#f0fdf4; }
+  .ver.active b::after { content:" ✓"; color:var(--ok); }
+
+  /* 工具链配置：左列表 + 右详情 */
+  .tc-layout { display:flex; gap:16px; align-items:flex-start; }
+  .tc-list { flex:0 0 216px; padding:8px; background:#fff; border:1px solid var(--line); border-radius:10px; position:sticky; top:0; }
+  .tc-item { display:flex; flex-direction:column; gap:2px; padding:9px 11px; border-radius:7px; cursor:pointer; }
+  .tc-item:hover { background:#f3f6fb; }
+  .tc-item.active { background:#eef2ff; box-shadow:inset 3px 0 0 var(--accent); }
+  .tc-item .nm { font-size:13px; font-weight:600; }
+  .tc-item .ev { font-family:ui-monospace,Consolas,monospace; font-size:11px; color:var(--muted); }
+  .tc-detail { flex:1; min-width:0; }
+  .version-block { border:1px dashed var(--line); border-radius:7px; padding:9px 10px; margin-bottom:9px; }
+  .version-row { display:flex; gap:8px; align-items:center; }
+  .version-row .vname { flex:0 0 110px; }
+  .version-row .vhome { flex:1; min-width:0; }
+  .version-row button { padding:4px 10px; }
+  .path-entry { display:flex; gap:6px; align-items:center; margin-top:6px; margin-left:118px; }
+  .path-entry input { flex:1; min-width:0; }
+  .path-entry button { padding:3px 9px; }
+  .path-entry .hint { margin:0; }
+  .ver-actions { margin-left:118px; margin-top:6px; }
+  .ver-actions button { padding:3px 9px; font-size:12px; }
+
+  /* 表格（环境变量 / 其它） */
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; vertical-align:top; padding:7px 10px; border-bottom:1px solid var(--line); }
+  thead th { background:#fbfcfd; font-size:12px; font-weight:600; color:var(--muted); }
+  .env-group { margin-bottom:14px; border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+  .env-head { display:flex; align-items:center; gap:8px; padding:10px 14px; background:#f8fafc; border-bottom:1px solid var(--line); cursor:pointer; user-select:none; }
+  .env-head b { font-size:14px; }
+  .env-head .caret { font-size:12px; color:var(--muted); transition:transform .15s; display:inline-block; }
+  .env-body { display:block; }
+  .env-group.collapsed .env-head { border-bottom:0; }
+  .env-group.collapsed .env-body { display:none; }
+  .env-group.collapsed .caret { transform:rotate(-90deg); }
+  .env-name { font-family:ui-monospace,Consolas,monospace; color:#374151; width:30%; word-break:break-all; }
+  .env-val { word-break:break-all; white-space:pre-wrap; color:#111827; }
+  .act-col { width:148px; text-align:right; white-space:nowrap; }
+  .act-col button { margin-left:6px; padding:4px 10px; }
+  .env-edit { width:100%; }
+  .env-edit.multi { min-height:72px; font-family:ui-monospace,Consolas,monospace; font-size:12px; resize:vertical; }
+
+  /* PATH 工具 */
+  .path-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:820px) { .path-grid { grid-template-columns:1fr; } }
+  .path-col { padding:12px 14px; background:#fafbfc; border:1px solid var(--line); border-radius:8px; }
+  .path-col h3 { font-size:14px; margin:0 0 10px; }
+  .path-col h4 { font-size:12px; margin:16px 0 6px; padding-bottom:5px; border-bottom:1px solid var(--line); color:var(--muted); }
+  .path-col h4:first-of-type { margin-top:0; }
+  .path-list { list-style:none; margin:0; padding:0; }
+  .path-list li { display:flex; align-items:center; gap:8px; padding:5px 4px; border-bottom:1px dashed var(--line); font-size:12px; }
+  .path-list li:last-child { border-bottom:0; }
+  .path-list .content { flex:1; font-family:ui-monospace,Consolas,monospace; word-break:break-all; }
+  .path-list input[type=checkbox] { flex:none; margin:0; }
+  .path-list li.removed .content { text-decoration:line-through; color:#9ca3af; }
+
+  #toast { position:fixed; right:20px; bottom:20px; z-index:10; display:none; max-width:420px; padding:11px 16px; border-radius:8px; background:#111827; color:#fff; box-shadow:0 6px 24px #0003; font-size:13px; white-space:pre-wrap; }
+  #toast.ok { background:var(--ok); } #toast.err { background:#b91c1c; }
+  code { padding:1px 5px; border-radius:4px; background:#eef1f5; font-size:12px; }
+
+  @media (max-width:900px) {
+    body { flex-direction:column; }
+    .sidebar { flex:none; }
+    .menu { flex-direction:row; flex-wrap:wrap; }
+    .side-meta { border-top:0; margin-top:0; }
+    .tc-layout { flex-direction:column; }
+    .tc-list { flex:none; width:100%; position:static; }
+  }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">EnvSwitch<small>多版本环境变量切换器</small></div>
+  <nav class="menu" id="menu">
+    <a href="/switch" data-page="switch">版本切换</a>
+    <a href="/project" data-page="project">项目配置</a>
+    <a href="/toolchain" data-page="toolchain">工具链配置</a>
+    <a href="/path" data-page="path">PATH 工具</a>
+    <a href="/env" data-page="env">环境变量</a>
+  </nav>
+  <div class="side-meta" id="meta">加载中…</div>
+</aside>
+<div class="shell">
+  <div class="topbar">
+    <h1 id="page-title">版本切换</h1>
+    <span class="sub" id="page-sub"></span>
+  </div>
+  <main id="content"></main>
+</div>
+<div id="toast"></div>
+
+<script>
+const PAGES = {
+  switch:    { title: '版本切换',   sub: '选中版本即可切换环境变量与 PATH' },
+  project:   { title: '项目配置',   sub: 'PATH 作用范围、端口与启动行为' },
+  toolchain: { title: '工具链配置', sub: '左侧选工具链，右侧编辑基础配置与版本' },
+  path:      { title: 'PATH 工具',  sub: '查看、排序、去重并写入 PATH' },
+  env:       { title: '环境变量',   sub: '用户与系统变量，可直接编辑值或删除' },
+};
+
+const $ = s => document.querySelector(s);
+let state = { config: { toolchains: [], settings: {} }, configPath: '', current: {}, userPath: '', machinePath: '' };
+let draft = null;                 // 项目配置 / 工具链配置的编辑副本
+let dirty = false;                // 编辑副本是否有未保存修改
+let curPage = 'switch';
+let selectedTc = 0;               // 工具链配置页当前选中的工具链下标
+
+function toast(msg, kind = '') {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.className = kind;
+  el.style.display = 'block';
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => el.style.display = 'none', 5000);
+}
+
+async function api(url, options) {
+  const res = await fetch(url, options);
+  let data;
+  try { data = await res.json(); } catch { data = { ok: false, message: res.statusText }; }
+  if (!res.ok || (data && data.ok === false)) throw new Error(data?.message || res.statusText);
+  return data;
+}
+
+const clone = o => JSON.parse(JSON.stringify(o));
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ---------- 路由：/switch /project /toolchain /path /env ---------- */
+function pageFromUrl() {
+  const seg = location.pathname.replace(/^\/+|\/+$/g, '').split('/')[0].toLowerCase();
+  if (PAGES[seg]) return seg;
+  const q = (new URLSearchParams(location.search).get('page') || '').toLowerCase();
+  if (PAGES[q]) return q;
+  const h = location.hash.replace(/^#\/?/, '').toLowerCase();
+  if (PAGES[h]) return h;
+  return 'switch';
+}
+
+async function navigate(key, push = true) {
+  if (!PAGES[key]) key = 'switch';
+  if (dirty && (curPage === 'project' || curPage === 'toolchain')
+      && !confirm('有未保存的修改，切换页面会丢弃，继续？')) {
+    if (push) history.replaceState({ page: curPage }, '', '/' + curPage);
+    return;
+  }
+  if (push && (location.pathname + location.search + location.hash).toLowerCase() !== ('/' + key)) {
+    history.pushState({ page: key }, '', '/' + key);
+  }
+  await showPage(key);
+}
+
+async function showPage(key) {
+  curPage = key;
+  dirty = false;
+  markMenu(key);
+  $('#page-title').textContent = PAGES[key].title;
+  $('#page-sub').textContent = PAGES[key].sub;
+  // 每次切页都重新拉一次状态：别的页面改了配置，进来就能看到最新值
+  try { await loadState(); }
+  catch (e) { toast('读取状态失败：' + e.message, 'err'); }
+  if (key === 'project' || key === 'toolchain') draft = clone(state.config);
+  renderPage();
+  if (key === 'path') loadPathView();
+  if (key === 'env') loadEnvAll();
+}
+
+function markMenu(key) {
+  document.querySelectorAll('#menu a').forEach(a => a.classList.toggle('active', a.dataset.page === key));
+}
+
+async function loadState() {
+  state = await api('/api/state');
+  $('#meta').textContent = '配置：' + state.configPath;
+}
+
+function renderPage() {
+  if (curPage === 'switch') return renderSwitch();
+  if (curPage === 'project') return renderProject();
+  if (curPage === 'toolchain') return renderToolchain();
+  if (curPage === 'path') return renderPath();
+  if (curPage === 'env') return renderEnv();
+}
+
+/* ---------- 版本切换 ---------- */
+function renderSwitch() {
+  const root = $('#content');
+  if (!state.config.toolchains.length) {
+    root.innerHTML = '<div class="card">还没有工具链，请到「工具链配置」页添加。</div>';
+    return;
+  }
+  root.innerHTML = state.config.toolchains.map((t, i) => {
+    const cur = state.current[t.name] || '(未设置)';
+    const versions = t.versions.map(v => `
+      <button class="ver ${v.name === t.active ? 'active' : ''}" data-apply="${i}" data-ver="${esc(v.name)}">
+        <b>${esc(v.name)}</b><small>${esc(v.home)}${v.paths && v.paths.length ? ' · ' + v.paths.length + ' 条 PATH' : ''}</small>
+      </button>`).join('');
+    return `<div class="card">
+      <h2>${esc(t.name)}
+        <span class="badge">${esc(t.envVar)}</span>
+        <span class="badge ${t.addToPath ? 'on' : ''}">PATH：${t.addToPath ? '加入' : '不加入'}</span></h2>
+      <div class="hint">当前 <code>${esc(t.envVar)}</code> = ${esc(cur)}</div>
+      <div class="versions">${versions || '<div class="hint" style="margin:0">没有版本</div>'}</div>
+      <div class="row"><label class="check" style="margin:0"><input type="checkbox" id="dry-${i}" checked> 仅预览，不写入</label></div>
+    </div>`;
+  }).join('');
+  root.querySelectorAll('[data-apply]').forEach(btn => btn.addEventListener('click', () => {
+    const i = +btn.dataset.apply;
+    applyVersion(state.config.toolchains[i].name, btn.dataset.ver, $('#dry-' + i).checked);
+  }));
+}
+
+async function applyVersion(toolchain, version, dryRun) {
+  try {
+    const r = await api('/api/apply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toolchain, version, dryRun })
+    });
+    toast(r.message + (dryRun ? '\n（预览模式，未修改系统）' : ''), 'ok');
+    await loadState();
+    renderSwitch();
+  } catch (e) { toast('切换失败：' + e.message, 'err'); }
+}
+
+/* ---------- 项目配置（全局设置） ---------- */
+function renderProject() {
+  if (!draft) draft = clone(state.config);
+  const s = draft.settings || (draft.settings = {});
+  const root = $('#content');
+  root.innerHTML = `
+  <div class="card">
+    <h2>环境变量写入</h2>
+    <div class="settings-grid">
+      <label class="field"><span>PATH 作用范围</span>
+        <select id="set-scope">
+          <option value="User" ${s.pathScope === 'Machine' ? '' : 'selected'}>用户（User，无需管理员）</option>
+          <option value="Machine" ${s.pathScope === 'Machine' ? 'selected' : ''}>系统（Machine，需管理员）</option>
+        </select></label>
+      <label class="field"><span>服务端口（0 = 自动分配）</span>
+        <input id="set-port" type="number" min="0" max="65535" value="${esc(s.port ?? 0)}"></label>
+    </div>
+    <div class="note"><b>「PATH 作用范围」是干嘛的：</b>决定切换版本、写入 PATH 时改的是<b>用户变量</b>还是<b>系统变量</b>。选「用户」只影响当前账号，不需要管理员；选「系统」对所有账号生效，写入一般要以管理员身份运行本程序，否则会被拒绝（提示权限不足）。</div>
+    <label class="check"><input type="checkbox" id="set-normalize" ${s.normalizePathOnApply ? 'checked' : ''}> 切换版本时自动对 PATH 排序去重</label>
+    <div class="note"><b>这一项是什么意思：</b>开启后每次切换版本都会把整条 PATH 重新排序并去掉重复条目（去重不区分大小写，并忽略结尾的 <code>\\</code>），避免反复切换后同一个目录越堆越多、顺序越来越乱。关闭则只按「原有条目 + 新版本条目」原样拼接。</div>
+    <label class="check"><input type="checkbox" id="set-openbrowser" ${s.openBrowserOnStart ? 'checked' : ''}> 启动服务时自动打开浏览器</label>
+  </div>
+  <div class="row">
+    <button class="primary" id="save-project">保存项目配置</button>
+    <button id="reset-project">放弃修改</button>
+  </div>`;
+
+  $('#set-scope').addEventListener('change', e => { s.pathScope = e.target.value; dirty = true; });
+  $('#set-port').addEventListener('input', e => { s.port = Number(e.target.value || 0); dirty = true; });
+  $('#set-normalize').addEventListener('change', e => { s.normalizePathOnApply = e.target.checked; dirty = true; });
+  $('#set-openbrowser').addEventListener('change', e => { s.openBrowserOnStart = e.target.checked; dirty = true; });
+  $('#save-project').addEventListener('click', saveConfigDraft);
+  $('#reset-project').addEventListener('click', async () => { dirty = false; await showPage('project'); toast('已重新载入', 'ok'); });
+}
+
+async function saveConfigDraft() {
+  const payload = clone(draft);
+  payload.toolchains.forEach(t => (t.versions || []).forEach(v => {
+    if (Array.isArray(v.paths)) v.paths = v.paths.filter(p => String(p).trim());
+  }));
+  try {
+    await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    dirty = false;
+    toast('配置已保存', 'ok');
+    await showPage(curPage);
+  } catch (e) { toast('保存失败：' + e.message, 'err'); }
+}
+
+/* ---------- 工具链配置（左列表 + 右详情） ---------- */
+function renderToolchain() {
+  if (!draft) draft = clone(state.config);
+  const tcs = draft.toolchains;
+  const root = $('#content');
+  if (selectedTc >= tcs.length) selectedTc = Math.max(0, tcs.length - 1);
+
+  if (!tcs.length) {
+    root.innerHTML = `<div class="card"><h2>还没有工具链</h2>
+      <div class="hint" style="margin:0 0 12px">先新建一个，再在右侧填写环境变量名、PATH 模板和各版本。</div>
+      <button class="primary" id="new-tc">+ 新建工具链</button></div>`;
+    $('#new-tc').addEventListener('click', addToolchain);
+    return;
+  }
+
+  const t = tcs[selectedTc];
+  const cur = state.current[t.name] || '(未设置)';
+  const activeOptions = (t.versions || []).map(v => v.name).filter(Boolean);
+  const list = tcs.map((x, i) => `<div class="tc-item ${i === selectedTc ? 'active' : ''}" data-tc="${i}">
+      <span class="nm">${esc(x.name) || '(未命名)'}</span>
+      <span class="ev">${esc(x.envVar) || '(未设置变量)'}${x.active ? ' · ' + esc(x.active) : ''}</span>
+    </div>`).join('');
+
+  const versions = (t.versions || []).map((v, j) => `<div class="version-block">
+      <div class="version-row">
+        <input class="vname" data-v="${j}.name" value="${esc(v.name)}" placeholder="版本名，如 17">
+        <input class="vhome" data-v="${j}.home" value="${esc(v.home)}" placeholder="Home 路径 / 该版本的环境变量值">
+        <button class="danger" data-act="del-ver" data-j="${j}" title="删除此版本">×</button>
+      </div>
+      ${(v.paths || []).map((p, pi) => `<div class="path-entry">
+        <input data-p="${j}.${pi}" value="${esc(p)}" placeholder="PATH 条目，如 %JAVA_HOME%\\bin">
+        <button class="danger" data-act="del-path" data-j="${j}" data-pi="${pi}" title="删除此条目">×</button>
+      </div>`).join('')}
+      <div class="ver-actions"><button data-act="add-path" data-j="${j}">+ 添加 PATH 条目</button></div>
+    </div>`).join('');
+
+  root.innerHTML = `<div class="tc-layout">
+    <aside class="tc-list">
+      ${list}
+      <div style="padding:6px 4px 2px"><button id="new-tc" style="width:100%">+ 新建工具链</button></div>
+    </aside>
+    <div class="tc-detail">
+      <div class="card">
+        <h2>基础配置 <span class="badge">${esc(t.name) || '未命名'}</span></h2>
+        <div class="settings-grid">
+          <label class="field"><span>工具链名称</span><input data-f="name" value="${esc(t.name)}" placeholder="如 Java"></label>
+          <label class="field"><span>环境变量名</span><input data-f="envVar" value="${esc(t.envVar)}" placeholder="如 JAVA_HOME"></label>
+          <label class="field"><span>PATH 条目模板</span><input data-f="pathTemplate" value="${esc(t.pathTemplate)}" placeholder="如 %JAVA_HOME%\\bin"></label>
+          <label class="field"><span>激活版本</span>
+            <select data-f="active">
+              <option value="">（无）</option>
+              ${activeOptions.map(n => `<option value="${esc(n)}" ${n === t.active ? 'selected' : ''}>${esc(n)}</option>`).join('')}
+            </select></label>
+        </div>
+        <div class="note">PATH 条目模板只在版本没有单独填写 PATH 条目时生效，可用 <code>%变量名%</code> 引用该版本的环境变量值。</div>
+        <label class="check"><input type="checkbox" data-f="addToPath" ${t.addToPath ? 'checked' : ''}> 切换版本时把它的 PATH 条目写入 PATH</label>
+        <div class="hint" style="margin-bottom:0">当前 <code>${esc(t.envVar) || '(未设置)'}</code> = ${esc(cur)}</div>
+      </div>
+      <div class="card">
+        <h2>版本列表 <button id="add-ver" style="padding:3px 10px;font-size:12px">+ 添加版本</button></h2>
+        ${versions || '<div class="hint" style="margin:0">还没有版本。</div>'}
+      </div>
+      <div class="row">
+        <button class="primary" id="save-tc">保存工具链配置</button>
+        <button id="reset-tc">放弃修改</button>
+        <span class="grow"></span>
+        <button class="danger" id="del-tc">删除此工具链</button>
+      </div>
+    </div>
+  </div>`;
+
+  root.querySelectorAll('[data-tc]').forEach(el => el.addEventListener('click', () => {
+    selectedTc = +el.dataset.tc;
+    renderToolchain();
+  }));
+  $('#new-tc').addEventListener('click', addToolchain);
+  $('#add-ver').addEventListener('click', () => {
+    t.versions.push({ name: '', home: '', paths: [] });
+    dirty = true;
+    renderToolchain();
+  });
+  $('#save-tc').addEventListener('click', saveConfigDraft);
+  $('#reset-tc').addEventListener('click', async () => { dirty = false; await showPage('toolchain'); toast('已重新载入', 'ok'); });
+  $('#del-tc').addEventListener('click', () => {
+    if (!confirm(`删除工具链「${t.name || '未命名'}」及其所有版本？保存后生效。`)) return;
+    draft.toolchains.splice(selectedTc, 1);
+    dirty = true;
+    selectedTc = Math.max(0, selectedTc - 1);
+    renderToolchain();
+  });
+
+  root.querySelectorAll('[data-f]').forEach(el => el.addEventListener('input', e => {
+    const el2 = e.target, k = el2.dataset.f;
+    t[k] = el2.type === 'checkbox' ? el2.checked : el2.value;
+    dirty = true;
+    if (k === 'name') {
+      const item = root.querySelector(`.tc-item[data-tc="${selectedTc}"] .nm`);
+      if (item) item.textContent = el2.value || '(未命名)';
+    }
+    if (k === 'envVar') {
+      const item = root.querySelector(`.tc-item[data-tc="${selectedTc}"] .ev`);
+      if (item) item.textContent = (el2.value || '(未设置变量)') + (t.active ? ' · ' + t.active : '');
+    }
+    if (k === 'active') {
+      const item = root.querySelector(`.tc-item[data-tc="${selectedTc}"] .ev`);
+      if (item) item.textContent = (t.envVar || '(未设置变量)') + (el2.value ? ' · ' + el2.value : '');
+    }
+  }));
+  root.querySelectorAll('[data-v]').forEach(el => el.addEventListener('input', e => {
+    const [j, k] = e.target.dataset.v.split('.');
+    t.versions[+j][k] = e.target.value;
+    dirty = true;
+  }));
+  root.querySelectorAll('[data-p]').forEach(el => el.addEventListener('input', e => {
+    const [j, pi] = e.target.dataset.p.split('.');
+    t.versions[+j].paths[+pi] = e.target.value;
+    dirty = true;
+  }));
+  root.querySelectorAll('[data-act]').forEach(el => el.addEventListener('click', () => {
+    const j = +el.dataset.j;
+    if (el.dataset.act === 'add-path') t.versions[j].paths.push('');
+    if (el.dataset.act === 'del-path') t.versions[j].paths.splice(+el.dataset.pi, 1);
+    if (el.dataset.act === 'del-ver') t.versions.splice(j, 1);
+    dirty = true;
+    renderToolchain();
+  }));
+}
+
+function addToolchain() {
+  draft.toolchains.push({ name: '', envVar: '', pathTemplate: '', addToPath: true, active: '', versions: [] });
+  selectedTc = draft.toolchains.length - 1;
+  dirty = true;
+  renderToolchain();
+}
+
+/* ---------- PATH 工具 ---------- */
+let pathView = null;
+
+function renderPath() {
+  $('#content').innerHTML = `
+    <div class="card">
+      <div class="row">
+        <label class="check" style="margin:0"><input type="checkbox" id="path-sort" checked> 排序</label>
+        <label class="check" style="margin:0"><input type="checkbox" id="path-dedup" checked> 去重</label>
+        <button id="path-refresh">刷新列表</button>
+        <span class="grow"></span>
+        <label class="check" style="margin:0"><input type="checkbox" id="path-dry" checked> 仅预览，不写入</label>
+        <button id="path-apply" class="primary">应用写入</button>
+      </div>
+      <div id="path-msg" class="hint"></div>
+      <div id="path-grid" class="path-grid"></div>
+      <p class="hint">规则：系统与用户中完全相同的条目会从用户的「处理后」列表自动移除；同一工具链的不同版本会用徽标标注；「处理后」列表可勾选要保留的条目。</p>
+    </div>`;
+  ['path-sort', 'path-dedup'].forEach(id => $('#' + id).addEventListener('change', loadPathView));
+  $('#path-refresh').addEventListener('click', loadPathView);
+  $('#path-apply').addEventListener('click', applyPath);
+}
+
+async function loadPathView() {
+  try {
+    pathView = await api('/api/path/view', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sort: $('#path-sort').checked, dedup: $('#path-dedup').checked })
+    });
+    drawPathView();
+  } catch (e) { toast('读取失败：' + e.message, 'err'); }
+}
+
+function pathList(items, name) {
+  const editable = !!name;
+  return `<ul class="path-list">${items.map(it => {
+    const badge = it.badge
+      ? `<span class="badge ${it.removed ? 'muted' : (it.badge.includes('冲突') ? 'warn' : '')}">${esc(it.badge)}</span>`
+      : '';
+    const box = editable
+      ? `<input type="checkbox" data-list="${name}" data-value="${esc(it.value)}" ${it.removed ? 'disabled' : 'checked'}>`
+      : '';
+    return `<li class="${it.removed ? 'removed' : ''}"><span class="content">${esc(it.value)}</span>${badge}${box}</li>`;
+  }).join('')}</ul>`;
+}
+
+function drawPathView() {
+  const grid = $('#path-grid');
+  if (!grid || !pathView) return;
+  $('#path-msg').textContent = pathView.message;
+  grid.innerHTML = `
+    <div class="path-col">
+      <h3>当前</h3>
+      <h4>系统</h4>${pathList(pathView.systemCurrent, '')}
+      <h4>用户</h4>${pathList(pathView.userCurrent, '')}
+    </div>
+    <div class="path-col">
+      <h3>处理后</h3>
+      <h4>系统</h4>${pathList(pathView.systemProcessed, 'system')}
+      <h4>用户</h4>${pathList(pathView.userProcessed, 'user')}
+    </div>`;
+}
+
+async function applyPath() {
+  const collect = name => Array.from(document.querySelectorAll(`input[data-list="${name}"]:checked`))
+    .map(el => el.dataset.value);
+  const body = { system: collect('system'), user: collect('user'), dryRun: $('#path-dry').checked };
+  try {
+    const r = await api('/api/path/apply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    toast(r.message, 'ok');
+    if (!body.dryRun) { await loadState(); await loadPathView(); }
+  } catch (e) { toast('应用失败：' + e.message, 'err'); }
+}
+
+/* ---------- 环境变量：用户 + 系统双分组，可折叠，可编辑 / 删除 ---------- */
+let envData = { User: {}, Machine: {} };
+let envOpen = { User: true, Machine: true };
+let envEdit = null;           // { scope, name }
+let envFilterText = '';
+
+function renderEnv() {
+  $('#content').innerHTML = `
+    <div class="card">
+      <div class="row">
+        <input id="env-filter" class="grow" placeholder="筛选变量名或值…">
+        <button id="env-refresh">重新读取</button>
+        <span class="hint" id="env-count" style="margin:0"></span>
+      </div>
+      <p class="hint">保存或删除后会立即作用于当前进程与新启动的程序（已运行的窗口需重启才能读到新值）。系统变量一般需要以管理员身份运行才能写入或删除。</p>
+      <div id="env-groups"></div>
+    </div>`;
+  $('#env-filter').value = envFilterText;
+  $('#env-filter').addEventListener('input', e => { envFilterText = e.target.value; drawEnvGroups(); });
+  $('#env-refresh').addEventListener('click', loadEnvAll);
+  drawEnvGroups();
+}
+
+async function loadEnvAll() {
+  try {
+    const [u, m] = await Promise.all([api('/api/env?scope=User'), api('/api/env?scope=Machine')]);
+    envData = { User: u, Machine: m };
+    drawEnvGroups();
+  } catch (e) { toast('读取环境变量失败：' + e.message, 'err'); }
+}
+
+function envRow(scope, k, v) {
+  const editing = envEdit && envEdit.scope === scope && envEdit.name === k;
+  if (editing) {
+    const multiline = v.length > 60 || v.includes(';');
+    const field = multiline
+      ? `<textarea class="env-edit multi" id="env-edit-input" rows="3">${esc(v)}</textarea>`
+      : `<input class="env-edit" id="env-edit-input" value="${esc(v)}">`;
+    return `<tr><td class="env-name">${esc(k)}</td><td class="env-val">${field}</td>
+      <td class="act-col"><button class="primary" data-save="${esc(k)}" data-scope="${scope}">保存</button><button data-cancel="1">取消</button></td></tr>`;
+  }
+  return `<tr><td class="env-name">${esc(k)}</td>
+    <td class="env-val">${v ? esc(v) : '<span class="hint" style="margin:0">（空）</span>'}</td>
+    <td class="act-col"><button data-edit="${esc(k)}" data-scope="${scope}">编辑</button><button class="danger" data-del="${esc(k)}" data-scope="${scope}">删除</button></td></tr>`;
+}
+
+function drawEnvGroups() {
+  const g = $('#env-groups');
+  if (!g) return;
+  const f = envFilterText.trim().toLowerCase();
+  let total = 0;
+  g.innerHTML = ['User', 'Machine'].map(scope => {
+    const title = scope === 'User' ? '👤 用户变量' : '🖥 系统变量';
+    const items = Object.entries(envData[scope] || {})
+      .filter(([k, v]) => !f || k.toLowerCase().includes(f) || String(v).toLowerCase().includes(f))
+      .sort((a, b) => a[0].localeCompare(b[0], 'zh-CN'));
+    total += items.length;
+    const open = envOpen[scope];
+    return `<section class="env-group ${open ? '' : 'collapsed'}">
+      <div class="env-head" data-toggle="${scope}">
+        <span class="caret">▾</span><b>${title}</b><span class="badge">${items.length}</span>
+        <span class="hint" style="margin:0">${open ? '点击标题收起' : '点击标题展开'}</span>
+      </div>
+      <div class="env-body">
+        <table><thead><tr><th>变量</th><th>值</th><th class="act-col">操作</th></tr></thead>
+        <tbody>${items.map(([k, v]) => envRow(scope, k, v)).join('') ||
+          `<tr><td colspan="3" class="hint" style="margin:0">${f ? '没有匹配的变量' : '读取不到变量'}</td></tr>`}</tbody></table>
+      </div>
+    </section>`;
+  }).join('');
+  $('#env-count').textContent = f ? `匹配 ${total} 个变量` : `共 ${total} 个变量`;
+
+  g.querySelectorAll('[data-toggle]').forEach(h => h.addEventListener('click', () => {
+    const s = h.dataset.toggle;
+    envOpen[s] = !envOpen[s];
+    drawEnvGroups();
+  }));
+  g.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
+    envEdit = { scope: b.dataset.scope, name: b.dataset.edit };
+    drawEnvGroups();
+    const input = $('#env-edit-input');
+    if (input) { input.focus(); input.select && input.select(); }
+  }));
+  g.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => {
+    envEdit = null;
+    drawEnvGroups();
+  }));
+  g.querySelectorAll('[data-save]').forEach(b => b.addEventListener('click', () => {
+    const input = $('#env-edit-input');
+    saveEnv(b.dataset.scope, b.dataset.save, input ? input.value : '');
+  }));
+  g.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => delEnv(b.dataset.scope, b.dataset.del)));
+}
+
+async function saveEnv(scope, name, value) {
+  try {
+    const r = await api('/api/env/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope, name, value })
+    });
+    toast(r.message, 'ok');
+    envEdit = null;
+    await loadEnvAll();
+    await loadState();
+  } catch (e) { toast('写入失败：' + e.message, 'err'); }
+}
+
+async function delEnv(scope, name) {
+  const label = scope === 'Machine' ? '系统' : '用户';
+  if (!confirm(`确定删除${label}变量「${name}」？\n删除后不可恢复${scope === 'Machine' ? '，系统变量还可能影响其它程序' : ''}。`)) return;
+  try {
+    const r = await api('/api/env/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope, name })
+    });
+    toast(r.message, 'ok');
+    envEdit = null;
+    await loadEnvAll();
+    await loadState();
+  } catch (e) { toast('删除失败：' + e.message, 'err'); }
+}
+
+/* ---------- 启动 ---------- */
+document.querySelectorAll('#menu a').forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  navigate(a.dataset.page, true);
+}));
+window.addEventListener('popstate', () => showPage(pageFromUrl()));
+// 浏览器把 /switch 直接刷新时，服务端返回同一页面，这里按地址渲染对应菜单
+showPage(pageFromUrl()).catch(e => toast('加载失败：' + e.message, 'err'));
+</script>
+</body>
+</html>
