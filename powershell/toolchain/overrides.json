@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "scope": "user-global-windows",
+  "generated_by": "manual; merged by toolchain.ps1 refresh",
+  "conventions": {
+    "tool_root": "C:\\Users\\guyue\\code-tools",
+    "programming_roots": [
+      "C:\\Program Files\\nodejs",
+      "C:\\Program Files\\Go",
+      "C:\\Program Files\\dotnet",
+      "C:\\Program Files\\Git",
+      "C:\\Program Files\\GitHub CLI",
+      "C:\\Program Files\\Rizin",
+      "C:\\Program Files\\Wireshark",
+      "C:\\Program Files\\CMake",
+      "C:\\Program Files\\LLVM",
+      "C:\\Users\\guyue\\.cargo\\bin",
+      "C:\\Users\\guyue\\AppData\\Local\\Microsoft\\WinGet\\Links",
+      "C:\\Users\\guyue\\AppData\\Roaming\\npm",
+      "C:\\Users\\guyue\\scoop\\shims",
+      "C:\\Users\\guyue\\code-tools",
+      "C:\\Users\\guyue\\.local\\bin",
+      "C:\\Users\\guyue\\AppData\\Local\\Android\\Sdk",
+      "C:\\Users\\guyue\\AppData\\Local\\Programs\\Android Studio"
+    ],
+    "android_sdk_root": "C:\\Users\\guyue\\AppData\\Local\\Android\\Sdk",
+    "android_studio_path": "C:\\Users\\guyue\\AppData\\Local\\Programs\\Android Studio\\bin\\studio64.exe",
+    "android_cli_path": "C:\\Users\\guyue\\AppData\\Local\\Android\\Sdk\\cmdline-tools\\latest\\bin\\android.exe",
+    "java_homes": [
+      "17=C:\\Program Files\\Java\\jdk-17",
+      "21=C:\\Program Files\\Java\\jdk-21.0.13.0.2",
+      "8-jdk=C:\\Program Files\\Java\\jdk1.8.0_211",
+      "8-jre-x64=C:\\Program Files\\Java\\jre1.8.0_513",
+      "8-jre-x86=C:\\Program Files (x86)\\Java\\jre1.8.0_513",
+      "11-zulu-jre=C:\\Program Files\\Zulu\\zulu-11-jre",
+      "25-system=C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot",
+      "25-rea-active=C:\\Users\\guyue\\code-tools\\runtimes\\jdk-25.0.5.1\\jdk-25.0.5.1+2",
+      "25-android-studio-jbr=C:\\Users\\guyue\\AppData\\Local\\Programs\\Android Studio\\jbr"
+    ],
+    "excluded_tool_root": "D:\\Tools",
+    "boundary_tools_remaining_in_excluded_root": [
+      "MIO-KITCHEN",
+      "HashCalculator",
+      "高通工具箱",
+      "搞机工具箱",
+      "无界"
+    ],
+    "install_preference": [
+      "winget",
+      "choco",
+      "official ZIP"
+    ],
+    "proxy": "http://192.168.31.50:7890",
+    "proxy_targets": [
+      "github.com",
+      "google.com",
+      "raw.githubusercontent.com"
+    ],
+    "github_release_raw_accelerator": "https://github.allproxy.dpdns.org",
+    "github_accelerator_rule": "For GitHub release assets and raw.githubusercontent.com URLs, replace the original host with the accelerator host. Keep normal github.com for GitHub API and git clone unless the user says otherwise.",
+    "windows_shell_note": "On Windows automation, prefer .cmd launchers for node-family tools: npm.cmd, npx.cmd, pnpm.cmd, bun.cmd. PowerShell .ps1 shims work interactively but some external launchers only handle .cmd.",
+    "git_bash_note": "Get-Command bash resolves to C:\\WINDOWS\\system32\\bash.exe (WSL/Windows launcher), not Git Bash. Use C:\\Program Files\\Git\\bin\\bash.exe for Git Bash.",
+    "tshark_note": "TShark was installed without Npcap. It can parse offline pcap/pcapng files but cannot do native live capture. Use Reqable for live traffic.",
+    "rea_note": "REA MCP is disabled by default. Connect/disconnect temporarily through the OpenCode experimental MCP API. Do not run rea-agents setup --client; skill-only updates are safe.",
+    "java_home_note": "Process JAVA_HOME is C:\\Program Files\\Java\\jdk-17, but rea-mcp.cmd overrides JAVA_HOME to the JDK 25 install required by Ghidra 12.2.",
+    "encoding_note": "rea-mcp.cmd is GBK/CP936 with CRLF and no BOM. This toolchain JSON/Markdown is UTF-8 no BOM."
+  },
+  "config_facts": [
+    {
+      "id": "npm-registry",
+      "title": "npm registry mirror",
+      "value": "https://registry.npmmirror.com/",
+      "scope": "user",
+      "config_file": "C:\\Users\\guyue\\.npmrc",
+      "usage": "npm install / npx use the npmmirror registry; no proxy is configured in npm itself.",
+      "notes": "npm and npx report version 12.2.3."
+    },
+    {
+      "id": "pnpm-registry",
+      "title": "pnpm registry mirror",
+      "value": "https://registry.npmmirror.com/",
+      "scope": "user",
+      "usage": "pnpm install uses the same npmmirror registry as npm.",
+      "notes": "pnpm 12.21.0; store-dir was not explicitly configured."
+    },
+    {
+      "id": "go-proxy",
+      "title": "Go module proxy",
+      "value": "https://goproxy.cn,direct",
+      "scope": "user",
+      "usage": "go env GOPROXY is already set; Go 1.27.4 modules download through goproxy.cn with direct fallback.",
+      "notes": "GOMODCACHE=C:\\Users\\guyue\\go\\pkg\\mod; GOPATH=C:\\Users\\guyue\\go; GOROOT=C:\\Program Files\\Go."
+    },
+    {
+      "id": "python-uv",
+      "title": "Python is uv-managed; no global python/pip",
+      "value": "uv run python script.py  |  uvx <tool>  |  uv tool install <tool>",
+      "scope": "user",
+      "usage": "Do not assume `python`, `python3`, or `pip` are on PATH. They are absent. Use uv run python <file>.py for scripts, uvx <tool> for one-off tool CLIs, and uv tool install <tool> for reusable tool commands.",
+      "notes": "uv-managed CPython 3.12.15 installed under C:\\Users\\guyue\\AppData\\Roaming\\uv\\python; uv also exposes C:\\Users\\guyue\\.local\\bin\\python3.12.exe. uv pip is only for active virtual environments."
+    },
+    {
+      "id": "git-proxy-and-identity",
+      "title": "Git proxy, identity, and helpers",
+      "value": "http.proxy=https.proxy=http://192.168.31.50:7890; user.name=FanchangWang; user.email=2651919937@qq.com; core.autocrlf=true",
+      "scope": "global",
+      "config_file": "C:\\Users\\guyue\\.gitconfig",
+      "usage": "Git clone/fetch already use the local proxy. core.editor is VS Code with --wait. GitHub and Gist credentials use gh.exe auth git-credential.",
+      "notes": "Git LFS 3.8.1 is installed. safe.directory=* is set. HTTP_PROXY/HTTPS_PROXY environment variables are NOT globally set."
+    },
+    {
+      "id": "gh-cli",
+      "title": "GitHub CLI",
+      "value": "C:\\Program Files\\GitHub CLI\\gh.exe",
+      "scope": "user",
+      "usage": "Use gh for GitHub API/auth operations. It is also configured as the Git credential helper for github.com and gist.github.com.",
+      "notes": "gh 2.105.0. If a non-Git tool needs the proxy, set HTTP_PROXY/HTTPS_PROXY explicitly; gh does not read git http.proxy for API calls."
+    },
+    {
+      "id": "github-accelerator",
+      "title": "GitHub release/raw accelerator",
+      "value": "https://github.allproxy.dpdns.org",
+      "scope": "manual convention",
+      "usage": "Use this host for GitHub release assets and raw.githubusercontent.com content. Example: rewrite https://github.com/OWNER/REPO/releases/... to https://github.allproxy.dpdns.org/OWNER/REPO/releases/...",
+      "notes": "Do not use this accelerator for github.com API calls or git clone unless the user explicitly asks."
+    },
+    {
+      "id": "general-proxy",
+      "title": "General HTTP(S) proxy",
+      "value": "http://192.168.31.50:7890",
+      "scope": "manual convention",
+      "usage": "Use for GitHub, Google, and other blocked network access. Git is already configured. For tools that only read environment variables, export HTTP_PROXY/HTTPS_PROXY in that command session.",
+      "notes": "NO_PROXY=127.0.0.1,localhost,::1 is present in the current process; no persistent User/Machine HTTP_PROXY was found."
+    },
+    {
+      "id": "install-order",
+      "title": "Install preference",
+      "value": "winget -> choco -> official ZIP",
+      "scope": "manual convention",
+      "usage": "Prefer winget first, then Chocolatey, then an official ZIP from the vendor/accelerated GitHub release.",
+      "notes": "winget download failures may be handed back to the user. GitHub release and raw downloads must use the accelerator."
+    },
+    {
+      "id": "rea-wrapper",
+      "title": "REA MCP single source of truth",
+      "value": "C:\\Users\\guyue\\.local\\bin\\rea-mcp.cmd",
+      "scope": "user",
+      "usage": "Clients point to this absolute wrapper path with no environment/env block. REA is disabled by default; connect/disconnect via OpenCode API only when needed.",
+      "notes": "Launch command: \"C:\\Program Files\\nodejs\\npx.cmd\" -y rea-agents@latest mcp. Skill reverse-engineer-anything v63 reports 263 tools."
+    },
+    {
+      "id": "windows-launchers",
+      "title": "Windows executable shims",
+      "value": "npm.cmd / npx.cmd / pnpm.cmd / bun.cmd",
+      "scope": "manual convention",
+      "usage": "Use .cmd launchers in batch/MCP/agent integrations; .ps1 shims are fine in interactive PowerShell.",
+      "notes": "The REA wrapper deliberately uses npx.cmd."
+    },
+    {
+      "id": "pwsh-not-powershell51",
+      "title": "Use pwsh.exe for .ps1 scripts",
+      "value": "pwsh.exe (PowerShell 7); avoid powershell.exe (Windows PowerShell 5.1)",
+      "scope": "manual convention",
+      "usage": "When running a .ps1 file, invoke pwsh.exe -NoProfile -File <script>. Do not use the built-in Windows PowerShell 5.1 powershell.exe unless a script explicitly requires it.",
+      "notes": "OpenCode global shell is pwsh. PowerShell scripts are executed with pwsh.exe, not Windows PowerShell 5.1."
+    },
+    {
+      "id": "git-bash-linux-commands",
+      "title": "Git Bash for Linux-like commands",
+      "value": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "scope": "manual convention",
+      "usage": "Use Git Bash when a task needs sh/bash utilities on Windows. Do not assume `bash` on PATH is Git Bash; on this host it resolves to C:\\WINDOWS\\system32\\bash.exe.",
+      "notes": "Git Bash reports GNU bash 5.3.15(2)-release."
+    },
+    {
+      "id": "android-toolchain",
+      "title": "Android Studio and Android SDK",
+      "value": "SDK=C:\\Users\\guyue\\AppData\\Local\\Android\\Sdk; Studio=C:\\Users\\guyue\\AppData\\Local\\Programs\\Android Studio\\bin\\studio64.exe; Android CLI=...\\cmdline-tools\\latest\\bin\\android.exe",
+      "scope": "user",
+      "usage": "Android CLI is 1.1.16919734 and replaces sdkmanager (`android sdk ...`). The SDK contains NDK 29/30, emulator 37.3.10.0, build-tools 19.1.0/35/36/36.1/37, platforms through android-37.2, and system images. REA only uses platform-tools\\adb.exe.",
+      "notes": "Android Studio is AI-262.10968.63.2622.16975389 and bundles JBR 25.0.4. sdkmanager.bat is deprecated but still present."
+    }
+  ]
+}

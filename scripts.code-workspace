@@ -4,6 +4,10 @@
 			"path": "."
 		},
 		{
+			"name": "powershell toolchain 本机工具链清单生成器",
+			"path": "powershell/toolchain"
+		},
+		{
 			"name": "android xueqiuCookie 雪球 Cookie 抓取 App",
 			"path": "android/xueqiuCookie"
 		},
