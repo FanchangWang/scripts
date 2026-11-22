@@ -26,6 +26,13 @@ for (var i = 0; i < argv.Count; i++)
         return 1;
     }
     configPath = argv[i + 1];
+    // 空串当场拒绝（否则会拿探测出来的默认配置继续干活）。是不是目录交给 ClassifyMissing 判：
+    // 在这里裸 `Directory.Exists` 碰上黑洞 UNC 会先把 SMB 超时吃满 20 秒。
+    if (configPath.Length == 0)
+    {
+        Console.Error.WriteLine("--config 不能是空字符串，请给出配置文件路径。");
+        return 1;
+    }
     argv.RemoveAt(i + 1);
     argv.RemoveAt(i);
     i--;
@@ -46,13 +53,16 @@ switch (argv[0].ToLowerInvariant())
     case "config":
     {
         Console.WriteLine($"配置文件：{configPath}");
+        // 与 Load 同一顺序：先判可达性，再碰文件——`File.Exists` 在黑洞 UNC 上会等 20 秒 SMB 超时
+        var kind = ConfigStore.ClassifyMissing(configPath);
+        if (kind != ConfigStore.MissingConfigKind.FirstRun)
+        {
+            Console.Error.WriteLine($"[失败] {configPath}（{ConfigStore.UnreachableMessage(configPath, kind)}）");
+            return 1;
+        }
+
         if (!File.Exists(configPath))
         {
-            if (ConfigStore.ClassifyMissing(configPath) == ConfigStore.MissingConfigKind.Unreachable)
-            {
-                Console.Error.WriteLine($"[失败] {configPath}（配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(configPath)}）");
-                return 1;
-            }
             Console.WriteLine("（尚未生成，运行一次后自动生成）");
             return 0;
         }
@@ -63,10 +73,11 @@ switch (argv[0].ToLowerInvariant())
         }
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            // 与 Load 同一份判定
-            if (ConfigStore.ClassifyMissing(configPath) == ConfigStore.MissingConfigKind.Unreachable)
+            // 刚判过存在、读时却没了：同一份判定再来一次
+            kind = ConfigStore.ClassifyMissing(configPath);
+            if (kind != ConfigStore.MissingConfigKind.FirstRun)
             {
-                Console.Error.WriteLine($"[失败] {configPath}（配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(configPath)}）");
+                Console.Error.WriteLine($"[失败] {configPath}（{ConfigStore.UnreachableMessage(configPath, kind)}）");
                 return 1;
             }
             Console.WriteLine("（尚未生成，运行一次后自动生成）");
@@ -264,7 +275,7 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
             {
                 ok = false,
                 message = $"配置文件暂时读不到，未做任何修改：{ex.Message}"
-                          + "（可能是被其它程序占用或缺少读取权限，稍后重试即可）",
+                          + "（可能是该路径当前不可访问——网络盘断开、U 盘拔掉、缺少权限——或被其它程序占用，稍后重试即可）",
             });
         }
         catch (JsonException ex)
@@ -294,7 +305,7 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
 
     app.MapGet("/api/state", () =>
     {
-        var cfg = ConfigStore.Load(configPath);
+        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
         // 历史坏配置（重名 / 空名）不应该让整页打不开：逐条填充，重名保留第一套
         var snapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in cfg.Toolchains)
@@ -360,7 +371,14 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
 
         try
         {
-            ConfigStore.Save(incoming, configPath);
+            // 服务在跑 = 用户已经在用这份配置：目录没了就是没了，不能重建一份新配置顶上
+            ConfigStore.Save(incoming, configPath, allowCreateDirectory: false);
+        }
+        catch (ConfigUnreadableException ex)
+        {
+            // 位置不可达：不能报「已保存」，更不能把目录重建出来写一份新配置（Save 已经拦住）
+            return Results.Json(new { ok = false, message = $"配置文件暂时读不到，未做任何修改：{ex.Message}" },
+                jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (Exception ex)
         {
@@ -376,21 +394,21 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
         if (req is null || string.IsNullOrWhiteSpace(req.Toolchain) || string.IsNullOrWhiteSpace(req.Version))
             return Results.BadRequest(new { ok = false, message = "缺少工具链或版本。" });
 
-        var cfg = ConfigStore.Load(configPath);
+        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
         return Results.Json(EnvService.Apply(cfg, req.Toolchain, req.Version, req.DryRun, configPath), jsonOptions);
     });
 
     app.MapPost("/api/apply/all", async (HttpContext ctx) =>
     {
         var req = await JsonSerializer.DeserializeAsync<ApplyRequest>(ctx.Request.Body, jsonOptions);
-        var cfg = ConfigStore.Load(configPath);
+        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
         return Results.Json(EnvService.ApplyAll(cfg, req?.DryRun ?? false, configPath), jsonOptions);
     });
 
     app.MapPost("/api/path/view", async (HttpContext ctx) =>
     {
         var req = await JsonSerializer.DeserializeAsync<PathRequest>(ctx.Request.Body, jsonOptions);
-        var cfg = ConfigStore.Load(configPath);
+        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
         return Results.Json(
             EnvService.BuildPathView(cfg, req?.Sort ?? true, req?.Dedup ?? true), jsonOptions);
     });

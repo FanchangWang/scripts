@@ -26,7 +26,7 @@
 ## 1. 启动与命令分派
 
 1. 进程启动先设 `Console.OutputEncoding = UTF8`。
-2. **先剥离 `--config <路径>`**（可在任意命令前后），剩下的参数交给命令分派；不指定则用默认配置路径。
+2. **先剥离 `--config <路径>`**（可在任意命令前后），剩下的参数交给命令分派；不指定则用默认配置路径。剥参数时当场拒绝两种写法：空字符串（`--config ""`，旧写法会拿探测出的默认配置继续干活、还在当前目录留下 `.tmp`）、以及路径本身是个目录（`--config %TEMP%`）。「是不是目录」放在 `ClassifyMissing` 里判，不在解析段裸调 `Directory.Exists`（黑洞 UNC 上那一句就要吃掉 20 秒 SMB 超时）。
 3. 没有任何参数 → 直接进入网页模式（自动开浏览器、端口取配置）。
 4. `switch (argv[0])` 分派：`help / config / list|ls / use|apply / all|apply-all / path / serve`，其余报「未知命令」并返回 1。
 5. `path` 是唯一的 PATH 预览/写入命令：打印两侧「当前 → 处理后」，`--apply` 把两侧 PATH 一起写回（见第 6 节）。
@@ -49,15 +49,18 @@
 
 ### 2.1 读取（`ConfigStore.Load`）
 
-1. **先判路径可用性**（`ClassifyMissing`，`Load` 与 `config` 命令共用这一份判断）：
+1. **先判路径可用性**（`ClassifyMissing` → `ClassifyDirectory`，`Load`、`config` 命令与 `Save` 共用这一份判断）：
    - 默认路径 → 永远按「还没建」处理（它的目录本来就由 `Save` 创建，全新机器首启必须能过）；
    - 裸文件名（`--config cfg.json`，`GetDirectoryName` 返回空 = 当前目录）→ 同样按「还没建」；
-   - 其它路径 → 先做一次 **1.5 秒上限**的目录探测（`DirectoryReachable`，超时按不可达），不可达 → 抛 `ConfigUnreadableException`，CLI 退出码 1、API 503，**不碰文件也不写任何东西**。这一步在 `File.Exists` / `ReadAllText` 之前：黑洞 UNC 上那两个调用各自要等 SMB 超时（旧实现每次 21 秒），先探测后实测 43ms 返回。
+   - 其它路径 → **分两段判**。先取 `Path.GetPathRoot(dir)` 对**盘根**做一次 **1.5 秒上限**的探测（`DirectoryReachable`）：根行为空 → 按「还没建」；根探测失败 → `Timeout`（超 1.5 秒）或 `Unreachable`（连不上），抛 `ConfigUnreadableException`，CLI 退出码 1、API 503，**不碰文件也不写任何东西**。这一步在 `File.Exists` / `ReadAllText` 之前：黑洞 UNC 上那两个调用各自要等 SMB 超时（旧实现每次 21 秒），先探测后实测 43ms 返回。
+   - 根通了再看目录本身：`Directory.Exists(dir)` → 按「还没建」（**本地盘上的新目录属于合法首次创建**，不再误报「检查网络盘是否已连接」）；`File.Exists(dir)`（目录位置其实是个文件，如 `C:\Windows\notepad.exe\cfg.json`）→ `Unreachable`；两者都不是 → 按「还没建」。
+   - 不可达结论缓存 2 秒（`UnreachableStamp`）：2 秒内的后续调用直接返回同一个结论，不必每个请求重付 1.5 秒；探测成功后缓存立即清掉，路径一恢复就能读到。
+   - `Load(allowFirstRun: false)`（常驻服务在请求里用）：走到「确实要首次运行」分支时直接抛 `FirstRunNotAllowed` —— 服务启动时配置已落过盘，运行中再判成首次运行只可能是目录被改名/删除。
 2. 文件不存在 → 按首次运行：`DetectDefaultConfig()` 探测本机 Java → 立即保存（`Save` 负责 `CreateDirectory`）→ 返回（保存失败只打一行警告，内存里继续用）。
 3. 文件存在 → `ReadText` 读文本（`IOException` / `UnauthorizedAccessException` 先等 80ms 重试一次，仍失败抛 `ConfigUnreadableException`）。
 4. 读到文本 → 反序列化 → `Migrate` → 返回。
 5. 反序列化失败 → **先把坏文件复制成 `config.json.bad-yyyyMMdd-HHmmss`** → 用默认配置 → 把默认配置写回原路径（保证下次能启动）。**备份失败则跳过写回**，原文件保持原样（还能手工修），只用内存里的默认配置继续。
-6. 读取时文件却消失（极少数竞态）→ 再来一次 `ClassifyMissing`：不可达抛异常，否则按首次运行。
+6. 读取时文件却消失（极少数竞态）→ 再来一次 `ClassifyMissing`：不可达抛异常；仍判首次运行时，`allowFirstRun: false` 直接抛，否则按首次运行。
 
 `Migrate`（每次读取都跑，幂等）：
 
@@ -67,9 +70,11 @@
 
 ### 2.2 保存（`ConfigStore.Save`）
 
-1. 确保目录存在。
-2. 序列化到 `config.json.tmp`。
-3. `File.Move(tmp, file, overwrite: true)` 整体替换 —— 中途失败不会留下半份 JSON。
+1. **写侧先过与阅读同一道闸**：`ClassifyMissing` 不是 `FirstRun` 就抛 `ConfigUnreadableException`，一个字节都不写 —— 空值 / 目录 / 盘根不通的路径都在这里被挡住。
+2. 目录处理：`allowCreateDirectory: true`（默认，CLI 首次运行）→ `Directory.CreateDirectory`；`false`（网页 `/api/config`，用户已经在用这份配置）→ 目录不存在直接抛「配置文件所在目录已不存在（可能被改名或删除）」，**绝不重建**。
+3. 序列化到 `config.json.tmp`。
+4. `File.Move(tmp, file, overwrite: true)` 整体替换 —— 中途失败不会留下半份 JSON。
+5. `Move` 抛异常时先 `File.Delete(tmp)` 再原样抛出，避免在用户目录里留下垃圾 `.tmp`。
 
 ### 2.3 首次运行探测 Java
 
@@ -318,18 +323,18 @@
 1. `Host` 只允许 `127.0.0.1` / `localhost` / `[::1]` / `::1`，否则 400（挡 DNS rebinding）；
 2. `POST` 的 `Content-Type` 必须是 `application/json`，否则 415（挡浏览器可免预检的 `text/plain`）；
 3. 带 `Origin` 且 host 不在白名单 → 403；
-4. 未处理异常 → 500 + `{"ok":false,"message":"服务内部错误：…"}` + 控制台一行日志；请求体不是合法 JSON → 400。
+4. 未处理异常 → 500 + `{"ok":false,"message":"服务内部错误：…"}` + 控制台一行日志；请求体不是合法 JSON → 400；`ConfigUnreadableException` → 503，文案里同时列出「网络盘断开 / U 盘拔掉 / 缺少权限」与「被其它程序占用」两类可能。
 
 | 方法与路径 | 请求体 | 行为 | 失败响应 |
 | --- | --- | --- | --- |
-| `GET /api/state` | — | 每次重新读配置 + 各工具链当前变量值；空名/重名跳过并保留第一套，不抛异常 | — |
+| `GET /api/state` | — | 每次重新读配置（`allowFirstRun: false`）+ 各工具链当前变量值；空名/重名跳过并保留第一套，不抛异常 | 配置位置不可达 / 目录已不在原位 → 503 |
 | `GET /api/env?scope=` | — | 该侧全部变量（原样值 + 失效标记 + 非字符串项的 `readOnly`/`kind`） | — |
 | `POST /api/env/set` | `{scope,name,value}` | 写单个变量（空串=置空）；非字符串类型直接拒绝 | 200 + `ok:false`（权限/名字非法/类型不支持） |
 | `POST /api/env/delete` | `{scope,name}` | 删除单个变量；不存在时返回「无需删除」 | 同上 |
-| `POST /api/config` | 完整 `AppConfig` | `Migrate` → 校验 → 原子保存 | 400 + `errors[]`；写盘异常 500 |
+| `POST /api/config` | 完整 `AppConfig` | `Migrate` → 校验 → 原子保存（`allowCreateDirectory: false`，目录没了就是 503、不重建） | 400 + `errors[]`；位置不可达 503；写盘异常 500 |
 | `POST /api/apply` | `{toolchain,version,dryRun}` | 切一个工具链的一个版本；同名工具链直接失败 | 200 + `ok:false` + 原因 |
 | `POST /api/apply/all` | `{dryRun}` | 批量应用；重名工具链整组跳过 | 200 + `items[]` |
-| `POST /api/path/view` | `{sort,dedup}` | 生成系统/用户「当前 + 处理后」视图（存在性并发探测） | — |
+| `POST /api/path/view` | `{sort,dedup}` | 生成系统/用户「当前 + 处理后」视图（存在性并发探测） | 配置位置不可达 → 503 |
 | `POST /api/path/apply` | `{system?,user?,dryRun}` | 整体覆盖指定侧；`null` 侧不动 | 400（两侧都没给 / 两侧都是空数组） |
 
 ---
@@ -360,8 +365,12 @@
 | 配置写盘失败 | 接口 500 或 CLI 失败文案；Apply 场景区分「已写入但没记下激活版本」 |
 | 配置 JSON 损坏 | 备份成 `.bad-<时间戳>` 后用默认配置继续；**备份失败则不写回**，原文件保持原样，只用内存默认继续 |
 | 配置暂时读不到（被占用 / 无读权限） | 先重试一次（间隔 80ms），仍失败则**不写回默认配置**：接口返回 503 +「未做任何修改」，CLI 打印原因并退出码 1。与上一行的「损坏」严格区分，避免偶发占用把真配置覆盖掉 |
-| 显式 `--config` 所在目录不可达（断网盘 / 拔掉的 U 盘 / 无权限目录） | 归入「读不到」：先做 1.5 秒上限的目录探测，不可达立即报「配置文件所在目录不存在或无法访问」，CLI 退出码 1、API 503；**不会**当成首次运行去写默认配置。实测黑洞 UNC **43ms**（旧实现每次等 SMB 超时 21 197ms）、`Z:\nope\cfg.json` exit=1；服务运行中把配置目录改名后 `/api/state` **503 / 13ms**、`/api/path/view` 503 / 6ms |
-| 默认路径的目录不存在（全新机器 / 新用户 / 删过配置目录） | 按首次运行：`Save` 创建 `%LOCALAPPDATA%\EnvSwitch` 并生成默认配置，exit 0。实测把该目录整体改名后 `list` 恢复出目录 + 1 122 字节默认配置（94ms） |
+| 显式 `--config` 所在目录不可达（断网盘 / 拔掉的 U 盘 / 无权限目录） | 归入「读不到」：先对**盘根**做 1.5 秒上限的探测，不可达立即报错（超时给「未在 1.5 秒内响应（可能只是慢，重试一次通常就能过）」，连不上给「目录不存在或无法访问」），CLI 退出码 1、API 503；**不会**当成首次运行去写默认配置。实测黑洞 UNC 的 `config` 由 21 101ms 降到 **1 552ms**（`list` 43ms）、`Z:\cfg.json` exit=1 |
+| 显式 `--config` 指向本地**尚不存在的目录** | 盘根可达 + 目录不存在 = 合法首次创建：`Save` 建目录并写默认配置，exit 0。实测 `--config %TEMP%\es_f\newdir\cfg.json` exit=0 / 96ms、目录与配置都生成（不再误报「检查网络盘是否已连接」） |
+| 显式 `--config` 指到「其实是文件」的目录（`C:\Windows\notepad.exe\cfg.json`） | 目录存在性判定落到「这是个文件」→ `Unreachable`，exit 1，不写任何东西 |
+| `--config` 为空串 / 直接给一个目录 | 解析阶段拒绝，exit 1，不进入任何读写流程；当前目录不留 `.tmp`（实测 `tmp left=0`） |
+| 服务运行中配置目录被改名/删除 | 只读接口与保存接口都 503 且**不重建目录**：`/api/state` 16/2/4ms、`/api/config` 11ms，`Test-Path` 仍为 false；目录改回后 `/api/state`、`/api/config` 立即 200 |
+| 默认路径的目录不存在（全新机器 / 新用户 / 删过配置目录） | 按首次运行：`Save` 创建 `%LOCALAPPDATA%\EnvSwitch` 并生成默认配置，exit 0。实测把该目录整体改名后 `list` 恢复出目录 + 1 122 字节默认配置（98ms） |
 | `--config` 给裸相对文件名（`cfg.json`） | `GetDirectoryName` 为空 = 当前目录，按首次运行创建；实测 `list --config rel.json` exit=0 并生成文件 |
 | 启动端口被占用 / 越界 | `StartAsync` 捕获后打印「启动失败：端口 N 可能被占用或不可用」+ 换端口提示，退出码 1；配置里越界值先降级为 0（自动分配） |
 
@@ -380,9 +389,11 @@
 9. **多入口丢失更新**：网页打开期间用 CLI `use` 改了激活版本，网页再保存会用它手里的旧草稿整体覆盖。单机单用户、风险低，暂未加「保存前比对 mtime」。
 10. **配置读不到时只重试一次**（80ms）：杀软/同步盘占用通常瞬时，长重试会拖住页面；仍失败就报 503 / 退出 1，由用户重试。
 11. **`ProbeExists` 的超时只是「不再等」**：`Task.Run` 里那次 `Directory.Exists` 仍会跑到系统返回为止（实测断网 UNC 约 19 秒），并发探测时可能短暂占用若干线程池线程。目前靠 1.5 秒上限保证接口响应，未加结果缓存。PATH 视图与「环境变量」页都已并发探测，所以 N 条坏值不会累加成 N × 1.5 秒（实测 3 条黑洞 UNC：`/api/env` 4.5 秒 → 1.5 秒）。**并发度受核数限制**：条数 ≤ 核数时一轮 1.5 秒，条数 > 核数会分轮（4 核 + 60 条全坏约 22 秒，仍远好于串行 90 秒），不要把「恒为 1.5 秒」写进预期。
-12. **配置「看不到」的三态靠目录可达性判定**（`ClassifyMissing`）：默认路径与裸文件名一律算「还没建」（前者目录由 `Save` 创建，全新机器首启必须能过），其它路径看所在目录是否可达。因此极端的默认路径 ACL 场景仍是「保存失败 + 内存默认」，不拦启动。
-13. **批量部分写入的删除记录无法在本机实证**：`CommitEntry(Name, Deleted)` 的删除分支只在「另一侧本来就有同名变量」并且「这一侧写到一半失败」时才会出现；本机非管理员写不了 `HKLM`，碰不到这个组合，只能靠代码路径与编译保证。
-14. **路径探测本身也受网络影响**：`ClassifyMissing` 的 1.5 秒上限只保证「不会等 SMB 的主导超时」，探测线程超时后仍会在后台跑到系统返回（同 §17-11）。默认路径不做这条探测（否则首启会被误判不可达），所以 `%LOCALAPPDATA%` 被重定向到离线漫游目录时，读配置仍可能慢，但默认路径这条路径不会被拦成 503。
+12. **配置「看不到」的四种判定靠盘根可达性 + 目录存在性**（`ClassifyMissing` → `ClassifyDirectory`）：默认路径与裸文件名一律算「还没建」（前者目录由 `Save` 创建，全新机器首启必须能过），其它路径先探盘根（不通 = `Unreachable` / 超时 = `Timeout`），根通了再看目录：不存在 = 「还没建」（本地盘的新目录照样合法首建）、位置是文件 = `Unreachable`、路径本身是目录 = `PathIsDirectory`。因此极端的默认路径 ACL 场景仍是「保存失败 + 内存默认」，不拦启动。
+13. **有的慢盘会被判成「超时」**：1.5 秒上限对休眠 NAS（5–10 秒才响应）不够，这类盘上首次访问会得到 `Timeout` 文案并 exit 1，重试一次通常就能过；没有做「超时后自动 5 秒重试」（那会让每次首访都多等 5 秒，宁可把文案说清、由用户重试）。
+14. **批量部分写入的删除记录无法在本机实证**：`CommitEntry(Name, Deleted)` 的删除分支只在「另一侧本来就有同名变量」并且「这一侧写到一半失败」时才会出现；本机非管理员写不了 `HKLM`，碰不到这个组合，只能靠代码路径与编译保证。
+15. **路径探测本身也受网络影响**：`ClassifyMissing` 的 1.5 秒上限只保证「不会等 SMB 的主导超时」，探测线程超时后仍会在后台跑到系统返回（同 §17-11）。不可达结论缓存 2 秒（`UnreachableStamp`），同一个坏路径的连打请求不再逐次付 1.5 秒；本地盘改名这类场景不经过缓存，每次都是几毫秒的 `Directory.Exists`。默认路径不做这条探测（否则首启会被误判不可达），所以 `%LOCALAPPDATA%` 被重定向到离线漫游目录时，读配置仍可能慢，但默认路径这条路径不会被拦成 503。
+16. **「首次运行」与「运行中丢失」只能靠调用方声明区分**：同一个「目录不存在」在 CLI 首启时是合法的（要建），在常驻服务请求里是异常（不能建）。所以 `Load` / `Save` 各有一个开关（`allowFirstRun` / `allowCreateDirectory`），CLI 命令行保持 true，网页接口一律 false。若有人新增调用点却传了默认值，就会退回旧行为——这是设计上的取舍，不是遗漏。
 
 ---
 
@@ -463,7 +474,7 @@
 | --- | --- | --- | --- | --- |
 | D1 | 中 | ✔ 已实测 | `Load` 先 `File.Exists`，路径不可达（断网盘/U 盘拔掉/无权限目录）时 `File.Exists` 返回 false → 被当成「首次运行」：用 `DetectDefaultConfig()` 生成一份默认配置并尝试写回，`exit=0`，`list` 打印完整默认 Java 配置、`use --dry-run` 照常预演（去掉 dry-run 就会拿这份假配置去写注册表） | `Load` 改为先 `ReadText`，`FileNotFoundException` / `DirectoryNotFoundException` 时看「所在目录是否可达」：显式 `--config` 且目录不可达 → `ConfigUnreadableException`（CLI 打印「配置文件所在目录不存在或无法访问」exit=1，API 503），目录可达或默认路径才按首次运行。实测：`list --config \\192.0.2.1\share\cfg.json` → exit=1（21 197ms，网络超时后报错，不再输出默认配置）；`list --config Z:\nope\cfg.json` → exit=1；目录可达的 `%TEMP%\es_d1\new.json` → 仍按首次运行生成（1 122 字节、exit=0） |
 | D2 | 低 | ✔ 已实测 | `RecoverFromBroken` 备份失败也照样 `Save` 覆盖原文件（`catch { }` 后流程继续），一份只是「解析不出来」但内容还在的文件被永久换成默认 | 备份成功才写回（`backedUp` 布尔）：备份失败时打印「为避免覆盖仍可修复的原文件，本次不写回默认配置」，原文件保持原样、只用内存默认继续。实测预占只读 `.bad-<时间戳>` 文件让备份失败：输出上述两行警告，原文件 18 字节**逐字节未变**、无覆盖 |
-| D3 | 低 | ◐ 已改（编译 + 回归） | 批量路径 `ApplyBuffer → CommitScope` 把「唯一」模式删掉另一侧同名变量也记成「已写入 X」，与单发分支的口径不一致 | `CommitReport` 的 `Written` 改为 `Entries: List<CommitEntry(Name, Deleted)>`，`CommitScope` 按「新值为 null = 删除」记 `Deleted`；批量失败文案改成「该侧已写入 JAVA_HOME、删除 PHP_HOME，未回滚」，`Broadcast` 判据改成 `Entries.Count > 0`。编译 0 警告；`all --dry-run` 与其余回归不受影响。**删除分支**需两侧有同名变量且一侧写失败，本机非管理员写不了 `HKLM`，未实测（同 C9 限制，记入 §17-13） |
+| D3 | 低 | ◐ 已改（编译 + 回归） | 批量路径 `ApplyBuffer → CommitScope` 把「唯一」模式删掉另一侧同名变量也记成「已写入 X」，与单发分支的口径不一致 | `CommitReport` 的 `Written` 改为 `Entries: List<CommitEntry(Name, Deleted)>`，`CommitScope` 按「新值为 null = 删除」记 `Deleted`；批量失败文案改成「该侧已写入 JAVA_HOME、删除 PHP_HOME，未回滚」，`Broadcast` 判据改成 `Entries.Count > 0`。编译 0 警告；`all --dry-run` 与其余回归不受影响。**删除分支**需两侧有同名变量且一侧写失败，本机非管理员写不了 `HKLM`，未实测（同 C9 限制，记入 §17-14） |
 | D4 | 低 | ✔ 已实测（参数层） | CLI `path --apply` 在某一侧处理后 0 条（条目全失效被剔除）时会写空串，既无护栏也无确认 | 加两道：`ApplyPathSelection` 内部「给了元素、清理后 0 条」→ `Fail`（兜任何绕过 HTTP 校验的调用方）；`RunPathBoth` 在 `--apply` 前检查「某侧当前有条目、处理后 0 条」→ 拒绝并指出是哪一侧，确需清空加新增的 `--allow-empty`。实测：`path --allow-empty` 预览 exit=0、`path --allow-empty --bogus` 被参数白名单拒（提示「只支持 --no-sort / --no-dedup / --apply / --allow-empty」）、普通 `path` 预览 exit=0。**「处理后 0 条」需真实 PATH 全失效，未构造** |
 | D5 | 低 | ✔ 已实测 | `/api/env` 的 `GetAllDetailed` 逐条串行探测，N 条坏值 = N × 1.5 秒（实测 1 条 1.502s、0 条 6.6ms） | 照 `BuildPathView` 用 `Parallel.ForEach` 并发算 `invalid` 再组装。实测 3 条 `\\192.0.2.1\share\jdk` 用户变量：`GET /api/env` 1 502 / 1 518ms（串行约 4.5s）；基线 0 条 24ms。测试变量已用 `/api/env/delete` 清理，配置 SHA 仍 `48574EBE…9C802D` |
 
@@ -481,7 +492,25 @@
 
 **顺带**：`ConfigUnreadableException.Message` 去掉「配置文件暂时读不到：」前缀（由调用方各自给前缀），503 响应体不再出现两次同一句话；`config` 命令改为先 `File.Exists` + `ClassifyMissing`，仅对不可达路径报错退出。
 
-**保留 / 已知代价**：默认路径不做目录探测（否则首启会被误判不可达），`%LOCALAPPDATA%` 被重定向到离线漫游目录时读配置仍可能慢，但不会被拦成 503；探测线程超时后在后台继续跑到系统返回（同 §17-11、§17-14）。
+**保留 / 已知代价**：默认路径不做目录探测（否则首启会被误判不可达），`%LOCALAPPDATA%` 被重定向到离线漫游目录时读配置仍可能慢，但不会被拦成 503；探测线程超时后在后台继续跑到系统返回（同 §17-11、§17-15）。
+
+---
+
+### 附录 A.6 第六轮审计（`audit/audit06.md` 的 F1–F7）
+
+| 编号 | 级别 | 复核结果 | 原因 | 修复说明 |
+| --- | --- | --- | --- | --- |
+| F1 | 中 | ✔ 已实测 | `config` 命令仍是「先 `File.Exists` 再 `ClassifyMissing`」，顺序与 `Load` 相反：黑洞 UNC 上 `File.Exists` 先吃满 20 秒 SMB 超时，实测 `config` 首访 21 101ms、`list` 86ms | `config` 改成与 `Load` 同序：先 `ClassifyMissing`，`FirstRun` 才 `File.Exists`，读时竞态再判一次。**修复中又踩到同一坑**：给 `--config` 加「是不是目录」校验时用了裸 `Directory.Exists`，首测仍是 21 066ms——把该判定并入 `ClassifyMissing`（`PathIsDirectory`）后实测 **1 552ms / exit 1**，二次调用 49ms（SMB 负缓存） |
+| F2 | 中 | ✔ 已实测（端到端） | `POST /api/config` 不 `Load` 直接 `Save`，`Save` 的 `Directory.CreateDirectory` 把被改名搬走的目录原地**重建**并写一份新配置，还返回 200「配置已保存」 | `Save` 加 `allowCreateDirectory`（网页传 `false` → 目录不存在直接抛「配置文件所在目录已不存在（可能被改名或删除）」）；`Load` 加 `allowFirstRun`（网页读接口传 `false`）。**顺带发现只读接口更严重**：`/api/state` 在目录消失时走首次运行分支、把目录重建出来还返回 200，一并堵上。实测（临时配置副本 + 8098）：改名后 `/api/config` **503 / 11ms**、`/api/state` **503 / 16・2・4ms**，`Test-Path` 始终 false，未产生任何新文件；改回后两接口立即 200 |
+| F3 | 中 | ✔ 已实测 | `ClassifyMissing` 把「目录不存在」与「目录不可达」判成一类：显式 `--config %TEMP%\新目录\cfg.json`（合法首建）被拒，exit=1 并提示「检查网络盘是否已连接」 | 拆成 `ClassifyDirectory` 两段判：先对**盘根**做 1.5 秒探测（`Path.GetPathRoot`，UNC 根与本地盘根都适用），根通了再看目录——不存在 = 首次运行、位置是文件 = 不可达、路径本身是目录 = `PathIsDirectory`。实测 `--config %TEMP%\es_f\newdir\cfg.json` **exit=0 / 96ms**，目录与 1 122 字节配置都生成；`C:\Windows\notepad.exe\cfg.json` 与 `Z:\cfg.json` 均 exit=1 |
+| F4 | 低 | ✔ 已实测 | 503 响应体只说「被其它程序占用或缺少读取权限」，没提「目录不可达」 | 中间件 503 文案改为「可能是该路径当前不可访问——网络盘断开、U 盘拔掉、缺少权限——或被其它程序占用，稍后重试即可」。实测 `/api/state` 503 body 含该整句 |
+| F5 | 低 | ◐ 已改（代码级） | `DirectoryReachable` 每次重探，同一坏路径连打 N 次 = N × 1.5 秒 | 加 2 秒不可达缓存（`UnreachableStamp(Dir, Until, TimedOut)`）：命中时直接返回同一结论并回填「是否超时」，探测成功后清缓存。**本机无法端到端复现**：缓存只对「盘根不可达」生效，而本地盘根永远可达、改名场景走的是几毫秒的目录判断；`serve --config <不可达 UNC>` 在 `Load` 就已 exit=1 起不来，构造不出「服务在跑且盘根不可达」的场景 |
+| F6 | 低 | ✔ 已实测（文案） | 1.5 秒上限会把「慢但可用」的盘（休眠 NAS 5–10 秒）判成不可达，且无从分辨 | 取报告的第二方案：`MissingConfigKind` 加 `Timeout` 独立态，文案「配置文件所在目录未在 1.5 秒内响应（可能只是慢，重试一次通常就能过）」，与「目录不存在或无法访问」分开。未做「超时后自动 5 秒重试」（会让每次首访都多等 5 秒），代价记入 §17-13。实测黑洞 UNC 首访走的就是这句 |
+| F7 | 低 | ✔ 已实测 | `--config ""` 先写 `".tmp"` 再 `Move` 失败，当前目录留下垃圾、exit=0；`--config <已存在目录>` exit=0 + 一行「Access is denied」 | 空串在解析阶段直接拒绝（exit 1）；「是目录」由 `ClassifyMissing` 返回 `PathIsDirectory` → `config` / `list` / `serve` 统一 exit 1；`Save` 的 `Move` 失败先 `File.Delete(tmp)` 再抛。实测 `--config ""` exit=1、`--config %TEMP%\es_f` exit=1（`[失败] … 这个路径是一个目录，请给出配置文件名`），当前目录 `*.tmp` 计数 **0** |
+
+**顺带**：`UnreachableMessage(file, kind)` 抽成 `internal`，`config` 命令与 `Load` 打印同一句话；`config` 命令顺带支持 `Timeout` / `PathIsDirectory` 两种新状态。
+
+**保留 / 已知代价**：F5 的缓存只在同一进程内有效，CLI 每次新进程不共享；本地盘改名场景不经过缓存（每次 `Directory.Exists` 几毫秒）；F6 未加自动重试，文案已点明「可能只是慢」；`ClassifyMissing` 末尾多了一次 `Directory.Exists(file)`（本地盘 ~0.1ms，UNC 可达时走网络但已在 43ms 量级）；「首次运行 vs 运行中丢失」只能靠调用方传开关区分，新调用点若用默认值就会退回旧行为（§17-16）。
 
 ---
 

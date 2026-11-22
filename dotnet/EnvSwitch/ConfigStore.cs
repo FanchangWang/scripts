@@ -23,17 +23,24 @@ internal static class ConfigStore
             "EnvSwitch",
             "config.json");
 
-    /// <summary>「看不到配置」的两种原因：真的还没建，还是这个位置现在根本访问不了。</summary>
+    /// <summary>「看不到配置」的几种原因：真的还没建、这个位置访问不了、只是没在限时内响应、或指的其实是个目录。</summary>
     internal enum MissingConfigKind
     {
         FirstRun,
         Unreachable,
+        Timeout,
+        PathIsDirectory,
     }
 
+    /// <summary>刚判过「不可达」的短缓存：轮询 / 用户连点时不必每次都重新等一轮探测。</summary>
+    private sealed record UnreachableStamp(string Dir, DateTime Until, bool TimedOut);
+
+    private static UnreachableStamp? _unreachableCache;
+
     /// <summary>
-    /// 判断一个配置路径「看不到」时该按哪种原因处理。`Load` 与 `config` 命令共用这一份判断，
-    /// 避免两处各写一遍又抄漏（默认路径的特判曾经只在 `config` 命令里有，`Load` 没跟上）。
-    /// 默认路径、裸文件名（没有目录成分 = 当前目录）一律算「还没建」；其它路径看所在目录是否可达。
+    /// 判断一个配置路径「看不到」时该按哪种原因处理。`Load`、`config` 命令、`Save` 共用这一份判断，
+    /// 避免几处各写一遍又抄漏（默认路径的特判曾经只在 `config` 命令里有，`Load` 没跟上）。
+    /// 默认路径、裸文件名（没有目录成分 = 当前目录）一律算「还没建」。
     /// </summary>
     internal static MissingConfigKind ClassifyMissing(string file)
     {
@@ -42,46 +49,121 @@ internal static class ConfigStore
         var dir = Path.GetDirectoryName(file);
         if (string.IsNullOrEmpty(dir))
             return MissingConfigKind.FirstRun;
-        return DirectoryReachable(dir) ? MissingConfigKind.FirstRun : MissingConfigKind.Unreachable;
+        var kind = ClassifyDirectory(dir);
+        if (kind != MissingConfigKind.FirstRun)
+            return kind;
+        // 给的路径本身就是个目录（`--config %TEMP%`）：写进去只会得到「Access is denied」
+        if (Directory.Exists(file))
+            return MissingConfigKind.PathIsDirectory;
+        return MissingConfigKind.FirstRun;
     }
 
     /// <summary>
-    /// 目录可达性探测，上限 1.5 秒：断开的网络盘上 `Directory.Exists` 本身能卡十几秒。
-    /// 超时按**不可达**处理——宁可这次报错，也不拿一份默认配置往那个位置写。
+    /// 目录这一侧要分两件事：**根（盘符 / 共享）连不连得上**，和**目录本身建没建**。
+    /// 前者才是「不可达」（断开的网络盘、不存在的盘符、UNC 服务器无响应）；根可达而目录不存在，
+    /// 对本地盘和在线共享都只是「还没建」，交给 <see cref="Save"/> 的 `CreateDirectory`。
     /// </summary>
-    private static bool DirectoryReachable(string dir)
+    private static MissingConfigKind ClassifyDirectory(string dir)
     {
+        var root = Path.GetPathRoot(dir);
+        if (string.IsNullOrEmpty(root))
+            return MissingConfigKind.FirstRun;
+
+        if (!DirectoryReachable(root, out var timedOut))
+            return timedOut ? MissingConfigKind.Timeout : MissingConfigKind.Unreachable;
+
+        if (Directory.Exists(dir))
+            return MissingConfigKind.FirstRun;
+        // 路径上那一段其实是个文件（`C:\Windows\notepad.exe\cfg.json`）：Save 建不出这个目录
+        if (File.Exists(dir))
+            return MissingConfigKind.Unreachable;
+        return MissingConfigKind.FirstRun;
+    }
+
+    /// <summary>
+    /// 路径可达性探测，上限 1.5 秒：断开的网络盘上 `Directory.Exists` 本身能卡十几秒。
+    /// 超时按**不可达**处理——宁可这次报错，也不拿一份默认配置往那个位置写。
+    /// 判过不可达的结果缓存 2 秒，避免轮询 / 连点时反复等。
+    /// </summary>
+    private static bool DirectoryReachable(string dir, out bool timedOut)
+    {
+        timedOut = false;
+        var cached = _unreachableCache;
+        if (cached is not null && cached.Until > DateTime.UtcNow
+            && string.Equals(cached.Dir, dir, StringComparison.OrdinalIgnoreCase))
+        {
+            timedOut = cached.TimedOut;
+            return false;
+        }
+
+        bool ok;
         try
         {
             var probe = System.Threading.Tasks.Task.Run(() => Directory.Exists(dir));
             if (!probe.Wait(1500))
-                return false;
-            return probe.Result;
+            {
+                timedOut = true;
+                ok = false;
+            }
+            else
+            {
+                ok = probe.Result;
+            }
         }
         catch
         {
-            return false;
+            ok = false;
         }
+
+        _unreachableCache = ok ? null : new UnreachableStamp(dir, DateTime.UtcNow.AddSeconds(2), timedOut);
+        return ok;
     }
 
-    internal static AppConfig Load(string? path = null)
+    /// <summary>常驻服务的请求里发现配置「回到了首次运行」：目录已被改名/删除，不能重建也不能假装 200。</summary>
+    private static ConfigUnreadableException FirstRunNotAllowed(string file) =>
+        new(file, new DirectoryNotFoundException(
+            $"配置文件已不在原位（目录可能被改名或删除）：{file}"));
+
+    /// <summary>不可达 / 超时的统一异常：文案由这里决定，调用方只负责打印。</summary>
+    private static ConfigUnreadableException Unreachable(string file, MissingConfigKind kind) =>
+        new(file, new DirectoryNotFoundException(UnreachableMessage(file, kind)));
+
+    /// <summary>不可达 / 超时给用户看的那句话（`config` 命令也要打印同一句）。</summary>
+    internal static string UnreachableMessage(string file, MissingConfigKind kind)
+    {
+        if (kind == MissingConfigKind.PathIsDirectory)
+            return "这个路径是一个目录，请给出配置文件名";
+        var dir = Path.GetDirectoryName(file);
+        return kind == MissingConfigKind.Timeout
+            ? $"配置文件所在目录未在 1.5 秒内响应（可能只是慢，重试一次通常就能过）：{dir}"
+            : $"配置文件所在目录不存在或无法访问：{dir}";
+    }
+
+    /// <param name="allowFirstRun">
+    /// CLI 单次调用允许「首次运行就地把配置建出来」；常驻服务在请求里必须传 false——
+    /// 服务启动时配置一定已经落过盘，请求里再判成首次运行只可能是目录被改名/删除，
+    /// 那时既不能重建目录写一份假配置，也不能假装 `200` 返回默认配置。
+    /// </param>
+    internal static AppConfig Load(string? path = null, bool allowFirstRun = true)
     {
         var file = path ?? DefaultPath;
 
         // 先判「这个位置能不能访问」，再碰文件：默认路径与裸文件名不探测（前者目录本来就可能还没建，
         // 后者就是当前目录）。探测上限 1.5 秒——`File.Exists` 与 `ReadAllText` 在断开的网络盘上要等
         // SMB 超时（实测 21 秒），所以不可达时必须在这之前退出，否则每个 Web 请求都要付一次。
-        if (ClassifyMissing(file) == MissingConfigKind.Unreachable)
-            throw new ConfigUnreadableException(
-                file,
-                new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(file)}"));
+        var kind = ClassifyMissing(file);
+        if (kind != MissingConfigKind.FirstRun)
+            throw Unreachable(file, kind);
 
         if (!File.Exists(file))
         {
-            if (ClassifyMissing(file) == MissingConfigKind.Unreachable)
-                throw new ConfigUnreadableException(
-                    file,
-                    new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(file)}"));
+            // 探测之后到 `File.Exists` 之间目录才消失的竞态：同一份判定再来一次
+            kind = ClassifyMissing(file);
+            if (kind != MissingConfigKind.FirstRun)
+                throw Unreachable(file, kind);
+            // 走到这里才是真正的「首次运行」：常驻服务的请求不许就地建配置
+            if (!allowFirstRun)
+                throw FirstRunNotAllowed(file);
 
             var config = DetectDefaultConfig();
             // 首次运行落盘失败（目录不可写）时不要让程序崩掉，内存里还能用
@@ -101,10 +183,11 @@ internal static class ConfigStore
         catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
             // 刚判过存在、读取时却没了：同一份判定再来一次（这类竞态极少，但别退回「一律算首次运行」）
-            if (ClassifyMissing(file) == MissingConfigKind.Unreachable)
-                throw new ConfigUnreadableException(
-                    file,
-                    new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{Path.GetDirectoryName(file)}"));
+            kind = ClassifyMissing(file);
+            if (kind != MissingConfigKind.FirstRun)
+                throw Unreachable(file, kind);
+            if (!allowFirstRun)
+                throw FirstRunNotAllowed(file);
 
             var config = DetectDefaultConfig();
             try { Save(config, file); }
@@ -229,18 +312,44 @@ internal static class ConfigStore
         }
     }
 
-    internal static void Save(AppConfig config, string? path = null)
+    /// <param name="allowCreateDirectory">
+    /// 首次运行时允许把配置目录建出来；服务运行中保存（用户已经在用这份配置）必须传 false——
+    /// 否则目录被改名后 `CreateDirectory` 会原地重建并写一份新配置，看着还「保存成功」。
+    /// </param>
+    internal static void Save(AppConfig config, string? path = null, bool allowCreateDirectory = true)
     {
         var file = path ?? DefaultPath;
+
+        // 写侧也要有同一道护栏：目录被搬走 / 网络盘断线时，`CreateDirectory` 会在旧位置「重建」出目录
+        // 并写进一份新配置，看起来还保存成功了——实际用户的真配置在别处。这里先判，不可达就抛。
+        var kind = ClassifyMissing(file);
+        if (kind != MissingConfigKind.FirstRun)
+            throw Unreachable(file, kind);
+
         var dir = Path.GetDirectoryName(file);
         if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
+        {
+            if (allowCreateDirectory)
+                Directory.CreateDirectory(dir);
+            else if (!Directory.Exists(dir))
+                throw new ConfigUnreadableException(file,
+                    new DirectoryNotFoundException($"配置文件所在目录已不存在（可能被改名或删除）：{dir}"));
+        }
 
         // 先写临时文件再整体替换：中途出错 / 断电不会把已有配置截成半份 JSON
         var text = JsonSerializer.Serialize(config, JsonOptions);
         var tmp = file + ".tmp";
         File.WriteAllText(tmp, text);
-        File.Move(tmp, file, overwrite: true);
+        try
+        {
+            File.Move(tmp, file, overwrite: true);
+        }
+        catch
+        {
+            // 替换失败时别把半成品 `.tmp` 留在用户目录里
+            try { File.Delete(tmp); } catch { /* 删不掉就留给下次覆盖 */ }
+            throw;
+        }
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
