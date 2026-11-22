@@ -14,7 +14,7 @@ Windows 多版本环境变量切换器 + PATH 整理工具。一个 exe 同时�
 - **同一版本里指向同一目录的多种写法只写一条**：一个版本可以填多条 PATH，若其中几条其实指向同一个真实目录（典型是 `…\latest\jdk-21\bin` 这类 junction / 软链别名与 `…\jdk-21.0.13.0.2\bin` 这种真实目录），按配置顺序只保留**最靠前且目录存在**的那一条（第一条不存在就用后面第一条存在的），其余同目录写法会从 PATH 里一并删除，不再重复堆积。判定靠解析真实路径（穿透 junction，含路径中间的软链），不是比字符串。
 - **保存配置前校验路径**：每个版本的 Home、版本里的每条 PATH 条目、以及「该版本没填条目时才用到」的 PATH 模板（先把 `%环境变量名%` 换成 Home、再展开 `%USERPROFILE%` 这类系统变量），只要看起来是路径却不存在，就整份拒绝保存，并返回逐条错误（网页上对应输入框描红）；判断按真实目录分组，同一组的写法只要有一条存在就放行（反正写入时只会用那一条）。切换版本写 PATH 前也会再挡一次旧配置里残留的不存在条目。
 - 通过直接写注册表（`HKCU\Environment` / `HKLM\…\Session Manager\Environment`）并在写入后广播一次 `WM_SETTINGCHANGE`（最多等 200ms）落盘，新开的终端立即生效；不调 `Environment.SetEnvironmentVariable`，因为它每次写都要向所有顶层窗口广播并逐个等响应，本机实测单次可拖到 20 秒以上。
-- CLI 子命令对 PATH 排序、去重，默认只预览，`--apply` 才写入。
+- CLI：`list` 看当前配置、`use` 切换某个版本（环境变量 + PATH 一起写）、`all` 一次性应用全部生效工具链、`env` 列/读/写/删环境变量、`path` 对 PATH 排序去重（默认只预览，`--apply` 才写入）；`--scope` 支持 `--scope Machine` 与 `--scope=Machine` 两种写法。
 - 首次运行自动探测本机 Java 安装（读取 `release` 文件，不执行任何 exe）生成默认配置。
 
 ## 构建（单文件绿色 exe）
@@ -40,14 +40,28 @@ dotnet publish -c Release -o publish
 # 列出工具链 / 版本 / 当前值
 .\EnvSwitch.exe list
 
-# 切换版本（--dry-run 仅预览）
+# 切换版本（环境变量与 PATH 一起写；--dry-run 仅预览）
 .\EnvSwitch.exe use Java 17 --dry-run
 .\EnvSwitch.exe use Java 17
+
+# 一次性应用所有「生效且有激活版本」的工具链（环境变量 + PATH 一起写，
+# 等同网页的「立即应用全部」）
+.\EnvSwitch.exe all --dry-run
+.\EnvSwitch.exe all
 
 # PATH 排序去重（默认仅预览）
 .\EnvSwitch.exe path
 .\EnvSwitch.exe path --scope Machine --apply
 .\EnvSwitch.exe path --no-sort --dedup --apply
+
+# 环境变量：列 / 读 / 写 / 删（--scope 省略时列表和读取会用户+系统都来一遍，
+# 写入和删除省略则默认写用户侧）
+.\EnvSwitch.exe env                          # 列出用户 + 系统的全部变量
+.\EnvSwitch.exe env list --filter JAVA
+.\EnvSwitch.exe env get JAVA_HOME
+.\EnvSwitch.exe env set MY_FLAG 1 --scope Machine
+.\EnvSwitch.exe env set MY_FLAG --scope User # 值省略 = 写成空串
+.\EnvSwitch.exe env delete MY_FLAG --scope User
 
 # 指定配置文件
 .\EnvSwitch.exe --config D:\envswitch.json list

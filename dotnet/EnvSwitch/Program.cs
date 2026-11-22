@@ -73,14 +73,113 @@ switch (argv[0].ToLowerInvariant())
         return result.Ok ? 0 : 1;
     }
 
+    // 环境变量与 PATH 一起应用的批量版本：等同于网页「立即应用全部」
+    case "all" or "apply-all":
+    {
+        var dryRun = argv.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
+        var batch = EnvService.ApplyAll(ConfigStore.Load(configPath), dryRun, configPath);
+        Console.WriteLine($"[{(batch.Ok ? "OK" : "有失败")}] {batch.Message}");
+        foreach (var item in batch.Items)
+            Console.WriteLine($"  {(item.Ok ? "✔" : "✘")} {item.Toolchain} → {item.Version}：{item.Message}");
+        return batch.Ok ? 0 : 1;
+    }
+
+    case "env":
+    {
+        var sub = argv.Count > 1 && !argv[1].StartsWith("--", StringComparison.Ordinal) ? argv[1].ToLowerInvariant() : "list";
+        var scopeOption = GetOption(argv, "--scope");
+        var both = scopeOption is null;
+        var single = EnvService.ParseScope(scopeOption);
+
+        List<(EnvScope Scope, string Label)> Targets()
+        {
+            if (both)
+                return new List<(EnvScope, string)> { (EnvScope.User, "用户"), (EnvScope.Machine, "系统") };
+            return new List<(EnvScope, string)> { (single, single == EnvScope.Machine ? "系统" : "用户") };
+        }
+
+        switch (sub)
+        {
+            case "list" or "ls":
+            {
+                var filter = GetOption(argv, "--filter");
+                foreach (var (scope, label) in Targets())
+                {
+                    var items = EnvService.GetAllDetailed(scope)
+                        .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                        .Where(x => filter is null || x.Key.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    Console.WriteLine($"\n{label}环境变量：{items.Count} 个" + (filter is null ? "" : $"（筛选「{filter}」）"));
+                    foreach (var kv in items)
+                        Console.WriteLine($"  {kv.Key} = {kv.Value.Value}"
+                                          + (kv.Value.Invalid ? "   [已失效]" : ""));
+                }
+                return 0;
+            }
+
+            case "get":
+            {
+                if (argv.Count < 3 || argv[2].StartsWith("--", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine("用法：EnvSwitch env get <变量名> [--scope User|Machine]");
+                    return 1;
+                }
+                var name = argv[2];
+                var missing = 0;
+                foreach (var (scope, label) in Targets())
+                {
+                    var value = EnvService.GetEnv(name, scope);
+                    if (value is null)
+                    {
+                        Console.WriteLine($"{label}  {name}  （未设置）");
+                        missing++;
+                    }
+                    else
+                        Console.WriteLine($"{label}  {name} = {(value.Length == 0 ? "（空串）" : value)}");
+                }
+                return missing == Targets().Count ? 2 : 0;
+            }
+
+            case "set":
+            {
+                if (argv.Count < 3 || argv[2].StartsWith("--", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine("用法：EnvSwitch env set <变量名> [值] [--scope User|Machine]（值省略即写成空串）");
+                    return 1;
+                }
+                var name = argv[2];
+                var value = argv.Count > 3 && !argv[3].StartsWith("--", StringComparison.Ordinal) ? argv[3] : "";
+                var scope = both ? EnvScope.User : single;
+                var r = EnvService.SetEnv(name, value, scope);
+                Console.WriteLine($"[{(r.Ok ? "OK" : "失败")}] {r.Message}");
+                return r.Ok ? 0 : 1;
+            }
+
+            case "delete" or "del" or "rm":
+            {
+                if (argv.Count < 3 || argv[2].StartsWith("--", StringComparison.Ordinal))
+                {
+                    Console.Error.WriteLine("用法：EnvSwitch env delete <变量名> [--scope User|Machine]");
+                    return 1;
+                }
+                var scope = both ? EnvScope.User : single;
+                var r = EnvService.DeleteEnv(argv[2], scope);
+                Console.WriteLine($"[{(r.Ok ? "OK" : "失败")}] {r.Message}");
+                return r.Ok ? 0 : 1;
+            }
+
+            default:
+                Console.Error.WriteLine($"未知的 env 子命令：{sub}（可用 list / get / set / delete）");
+                return 1;
+        }
+    }
+
     case "path":
     {
         var sort = !argv.Any(a => string.Equals(a, "--no-sort", StringComparison.OrdinalIgnoreCase));
         var dedup = !argv.Any(a => string.Equals(a, "--no-dedup", StringComparison.OrdinalIgnoreCase));
         var apply = argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase));
-        var scopeArg = argv.Skip(1).FirstOrDefault(a =>
-            a.StartsWith("--scope=", StringComparison.OrdinalIgnoreCase))?["--scope=".Length..]
-            ?? "User";
+        var scopeArg = GetOption(argv, "--scope");
         var scope = EnvService.ParseScope(scopeArg);
 
         var result = EnvService.NormalizePath(scope, sort, dedup, dryRun: !apply);
@@ -279,15 +378,45 @@ static void PrintHelp()
                                              显式启动网页界面
           EnvSwitch list                     列出工具链、版本与当前值
           EnvSwitch use <工具链> <版本> [--dry-run]
-                                             切换版本（--dry-run 仅预览）
+                                             切换版本：环境变量与 PATH 一起写（--dry-run 仅预览）
+          EnvSwitch all [--dry-run]          把每套「生效且有激活版本」的工具链一次性应用，
+                                             环境变量与 PATH 一起写（等同网页「立即应用全部」）
           EnvSwitch path [--sort|--no-sort] [--dedup|--no-dedup]
                         [--scope User|Machine] [--apply]
                                              PATH 排序去重；默认仅预览，--apply 才写入
+
+          EnvSwitch env [list] [--filter 关键词] [--scope User|Machine]
+                                             列出环境变量；不带 --scope 时用户与系统都列
+          EnvSwitch env get <变量名> [--scope User|Machine]
+                                             读取单个变量（退出码 2 表示两侧都没设置）
+          EnvSwitch env set <变量名> [值] [--scope User|Machine]
+                                             写入变量（值省略即写空串；缺省 --scope 为 User）
+          EnvSwitch env delete <变量名> [--scope User|Machine]
+                                             删除变量（不可恢复；缺省 --scope 为 User）
+
           EnvSwitch config                   显示配置文件路径与内容
 
         全局参数：
           --config <路径>                    指定配置文件（可放在任意命令前）
+          --scope 既支持 --scope Machine，也支持 --scope=Machine
         """);
+}
+
+/// <summary>读一个选项值：同时支持 `--scope Machine` 与 `--scope=Machine`。</summary>
+static string? GetOption(List<string> argv, string name)
+{
+    for (var i = 0; i < argv.Count; i++)
+    {
+        var a = argv[i];
+        if (a.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase))
+            return a[(name.Length + 1)..];
+        if (!string.Equals(a, name, StringComparison.OrdinalIgnoreCase))
+            continue;
+        if (i + 1 < argv.Count && !argv[i + 1].StartsWith("--", StringComparison.Ordinal))
+            return argv[i + 1];
+        return null;
+    }
+    return null;
 }
 
 static void PrintList(string configPath)
