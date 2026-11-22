@@ -74,8 +74,13 @@ switch (argv[0].ToLowerInvariant())
     }
 
     // 环境变量与 PATH 一起应用的批量版本：等同于网页「立即应用全部」
+    // 这是唯一会直接写入的命令，所以参数从严：拼错/多余参数一律报错，不允许静默真实写入。
     case "all" or "apply-all":
     {
+        if (RejectScope("all", argv))
+            return 1;
+        if (RejectUnknownOptions("all", argv, "--dry-run"))
+            return 1;
         var dryRun = argv.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
         var batch = EnvService.ApplyAll(ConfigStore.Load(configPath), dryRun, configPath);
         Console.WriteLine($"[{(batch.Ok ? "OK" : "有失败")}] {batch.Message}");
@@ -96,17 +101,6 @@ switch (argv[0].ToLowerInvariant())
             sort: !argv.Any(a => string.Equals(a, "--no-sort", StringComparison.OrdinalIgnoreCase)),
             dedup: !argv.Any(a => string.Equals(a, "--no-dedup", StringComparison.OrdinalIgnoreCase)),
             apply: argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)));
-    }
-
-    // 环境变量：打印系统 + 用户两侧的全部变量，以及「应用当前激活版本后会改成什么」；
-    // --apply 时把激活版本的环境变量连同 PATH 一起写下去（只写变量会让 PATH 与变量对不上）。
-    case "env":
-    {
-        if (RejectScope("env", argv))
-            return 1;
-        if (RejectUnknownOptions("env", argv, "--apply"))
-            return 1;
-        return RunEnvPreview(configPath, apply: argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)));
     }
 
     case "serve":
@@ -306,11 +300,6 @@ static void PrintHelp()
                                               同目录多写法合并、可选排序去重）
                                              默认只预览；--apply 把两侧 PATH 一起写回
 
-          EnvSwitch env  [--apply]
-                                             打印系统 + 用户两侧的环境变量，
-                                             并列出应用当前激活版本后会改动哪些变量
-                                             默认只预览；--apply 把环境变量与 PATH 一起写入
-
           EnvSwitch config                   显示配置文件路径与内容
 
         全局参数：
@@ -338,56 +327,6 @@ static bool RejectUnknownOptions(string cmd, List<string> argv, params string[] 
         return false;
     Console.Error.WriteLine($"多余的参数：{string.Join(" ", bad)}。{cmd} 只支持：{string.Join(" / ", allowed)}。");
     return true;
-}
-
-/// <summary>
-/// env：打印系统 + 用户两侧的全部环境变量，并列出「应用当前激活版本后会改动哪些变量」；
-/// --apply 时执行 ApplyAll（环境变量与 PATH 一起写，避免变量写了、PATH 还停在旧版本）。
-/// </summary>
-static int RunEnvPreview(string configPath, bool apply)
-{
-    var cfg = ConfigStore.Load(configPath);
-
-    PrintEnvSide("系统", EnvScope.Machine);
-    PrintEnvSide("用户", EnvScope.User);
-
-    var plan = EnvService.PlanEnvWrites(cfg);
-    Console.WriteLine();
-    if (plan.Count == 0)
-        Console.WriteLine("应用当前激活版本：环境变量无需改动。");
-    else
-    {
-        Console.WriteLine($"应用当前激活版本会改动 {plan.Count} 个环境变量（加 --apply 才写入）：");
-        foreach (var item in plan)
-            Console.WriteLine($"    {(item.Scope == EnvScope.Machine ? "系统" : "用户")}  {item.Name}"
-                + $"：{(item.Before is null ? "（未设置）" : item.Before)}"
-                + (item.After is null ? " → 删除" : $" → {item.After}")
-                + $"   〔{item.Toolchain}〕");
-    }
-
-    if (!apply)
-    {
-        Console.WriteLine();
-        Console.WriteLine("未写入。加 --apply 才会把上面的改动连同 PATH 一起落盘。");
-        return 0;
-    }
-
-    var batch = EnvService.ApplyAll(cfg, dryRun: false, configPath);
-    Console.WriteLine();
-    Console.WriteLine($"[{(batch.Ok ? "OK" : "有失败")}] {batch.Message}");
-    foreach (var item in batch.Items)
-        Console.WriteLine($"  {(item.Ok ? "✔" : "✘")} {item.Toolchain} → {item.Version}：{item.Message}");
-    return batch.Ok ? 0 : 1;
-}
-
-static void PrintEnvSide(string label, EnvScope scope)
-{
-    var items = EnvService.GetAllDetailed(scope)
-        .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
-        .ToList();
-    Console.WriteLine($"\n{label}环境变量：{items.Count} 个");
-    foreach (var kv in items)
-        Console.WriteLine($"    {kv.Key} = {kv.Value.Value}" + (kv.Value.Invalid ? "   [已失效]" : ""));
 }
 
 /// <summary>

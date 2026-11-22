@@ -17,7 +17,7 @@ Windows 多版本环境变量切换器 + PATH 整理工具。一个 exe 同时�
 - **保存配置前校验路径**：每个版本的 Home、版本里的每条 PATH 条目、以及「该版本没填条目时才用到」的 PATH 模板（先把 `%环境变量名%` 换成 Home、再展开 `%USERPROFILE%` 这类系统变量），只要看起来是路径却不存在，就整份拒绝保存，并返回逐条错误（网页上对应输入框描红）；判断按真实目录分组，同一组的写法只要有一条存在就放行（反正写入时只会用那一条）。同一工具链里**版本重名**也会被拒绝保存（切换时按名字找不到唯一版本）。切换版本写 PATH 前也会再挡一次旧配置里残留的不存在条目。
 - **PATH 里的 `%变量%` 会换成具体路径**：Windows 只有在 `Path` 值是 `REG_EXPAND_SZ` 时才会展开条目里的 `%USERPROFILE%` 这类变量；若 `Path` 是普通字符串（`REG_SZ`，很多机器上就是），写进去只是一条无效路径。所以写入 PATH 时（版本切换、PATH 工具页「应用写入」、`path --apply`）会把这侧不会自动展开的 `%变量%` 条目换成实际路径再写，且只在「原写法本身无效、展开后确实存在」时替换，其余条目原样保留；PATH 工具页的「当前」列表会把这类条目标成 `→ 实际生效的是 …`。
 - 通过直接写注册表（`HKCU\Environment` / `HKLM\…\Session Manager\Environment`）并在写入后广播一次 `WM_SETTINGCHANGE`（最多等 200ms）落盘，新开的终端立即生效；不调 `Environment.SetEnvironmentVariable`，因为它每次写都要向所有顶层窗口广播并逐个等响应，本机实测单次可拖到 20 秒以上。
-- CLI：`list` 看当前配置、`use` 切换某个版本（环境变量 + PATH 一起写）、`all` 一次性应用全部生效工具链、`path` 查看系统与用户两侧 PATH 的处理结果、`env` 查看两侧环境变量并列出应用激活版本后会改动哪些变量（两者默认都只预览，分别加 `--apply` 才写入；`path` 只写 PATH，`env` 把环境变量与 PATH 一起写）。
+- CLI：`list` 看当前配置、`use` 切换某个版本（环境变量 + PATH 一起写）、`all` 一次性应用全部生效工具链（默认就写，加 `--dry-run` 只预览）、`path` 查看系统与用户两侧 PATH 的处理结果（默认只预览，加 `--apply` 才写）。环境变量的查看与编辑在网页「环境变量」页；`env` 命令已移除。
 - 首次运行自动探测本机 Java 安装（读取 `release` 文件，不执行任何 exe）生成默认配置。
 
 ## 构建（单文件绿色 exe）
@@ -61,12 +61,6 @@ dotnet publish -c Release -o publish
 # 可选：关掉排序 / 去重
 .\EnvSwitch.exe path --no-sort --no-dedup
 .\EnvSwitch.exe path --no-sort --no-dedup --apply
-
-# 查看系统 + 用户两侧的环境变量，以及应用当前激活版本后会改动哪些变量
-.\EnvSwitch.exe env
-
-# 写入：把环境变量与 PATH 一起落盘（只写变量会让 PATH 还停在旧版本）
-.\EnvSwitch.exe env --apply
 
 # 指定配置文件
 .\EnvSwitch.exe --config D:\envswitch.json list

@@ -581,48 +581,6 @@ internal static class EnvService
     }
 
     /// <summary>
-    /// `env` 预览：应用当前激活版本后，哪些环境变量会变。
-    /// 只算「生效 + 有名称 + 有激活版本 + 有变量名 + 有 Home」的工具链；唯一模式还要算另一侧的删除。
-    /// </summary>
-    internal static List<EnvPlanItem> PlanEnvWrites(AppConfig config)
-    {
-        var plan = new List<EnvPlanItem>();
-        foreach (var tc in config.Toolchains)
-        {
-            if (!tc.Enabled || string.IsNullOrWhiteSpace(tc.Name) || string.IsNullOrWhiteSpace(tc.Active))
-                continue;
-            if (string.IsNullOrWhiteSpace(tc.EnvVar))
-                continue;
-            var version = tc.Versions.FirstOrDefault(v =>
-                string.Equals(v.Name, tc.Active, StringComparison.OrdinalIgnoreCase));
-            if (version is null || string.IsNullOrWhiteSpace(version.Home))
-                continue;
-
-            var target = ParseWriteScope(tc.EnvScope);
-            var before = GetEnv(tc.EnvVar, target.Scope);
-            if (!string.Equals(before ?? "", version.Home, StringComparison.OrdinalIgnoreCase))
-                plan.Add(new EnvPlanItem
-                {
-                    Toolchain = tc.Name, Scope = target.Scope, Name = tc.EnvVar,
-                    Before = before, After = version.Home,
-                });
-
-            // 唯一模式：另一侧同名变量会被删掉
-            if (target.Unique)
-            {
-                var other = GetEnv(tc.EnvVar, target.Other);
-                if (other is not null)
-                    plan.Add(new EnvPlanItem
-                    {
-                        Toolchain = tc.Name, Scope = target.Other, Name = tc.EnvVar,
-                        Before = other, After = null,
-                    });
-            }
-        }
-        return plan;
-    }
-
-    /// <summary>
     /// 「立即应用」：把每套生效且有激活版本的工具链都应用一遍（配置里的工具链通常是多套，
     /// 只应用当前选中那套会让另一套停留在旧版本）。
     /// </summary>
