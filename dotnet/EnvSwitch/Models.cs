@@ -133,6 +133,28 @@ public sealed class PathViewResult
     public string Message { get; set; } = "";
 }
 
+/// <summary>保存配置时的单条校验错误，用于在网页上高亮对应输入框。</summary>
+public sealed class ConfigError
+{
+    /// <summary>工具链名称。</summary>
+    public string Toolchain { get; set; } = "";
+
+    /// <summary>版本名称；为空表示错误挂在工具链级别。</summary>
+    public string? Version { get; set; }
+
+    /// <summary>字段：home / path / template / name。</summary>
+    public string Field { get; set; } = "";
+
+    /// <summary>PATH 条目在该版本里的下标（仅 field=path 时有值）。</summary>
+    public int? Index { get; set; }
+
+    /// <summary>出问题的原始值。</summary>
+    public string Value { get; set; } = "";
+
+    /// <summary>给人看的说明。</summary>
+    public string Message { get; set; } = "";
+}
+
 /// <summary>环境变量单个写入 / 删除的结果（网页「环境变量」页用）。</summary>
 public sealed class EnvWriteResult
 {

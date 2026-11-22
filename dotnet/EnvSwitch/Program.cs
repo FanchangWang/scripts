@@ -173,6 +173,16 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         if (incoming.Toolchains.Any(t => string.IsNullOrWhiteSpace(t.Name)))
             return Results.BadRequest(new { ok = false, message = "工具链名称不能为空（环境变量名可以留空，表示不写环境变量）。" });
 
+        // 路径类字段先校验存在性：手填错的 Home / PATH 条目不该被保存进去
+        var errors = EnvService.ValidateConfig(incoming);
+        if (errors.Count > 0)
+            return Results.Json(new
+            {
+                ok = false,
+                message = $"有 {errors.Count} 处路径不存在，未保存：{string.Join("；", errors.Select(e => e.Message))}",
+                errors,
+            }, jsonOptions, statusCode: StatusCodes.Status400BadRequest);
+
         ConfigStore.Migrate(incoming);
         ConfigStore.Save(incoming, configPath);
         return Results.Ok(new { ok = true, message = "配置已保存。" });

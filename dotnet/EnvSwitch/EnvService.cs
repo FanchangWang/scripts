@@ -91,6 +91,93 @@ internal static class EnvService
         }
     }
 
+    /// <summary>
+    /// 值看起来是个路径、但目录和文件都不存在 → 返回 true（用在校验用户手填的 Home / PATH 条目）。
+    /// 不像是路径的值（变量名、URL、纯文本）和不正常的网络路径都算通过。
+    /// </summary>
+    internal static bool PathMissing(string value)
+    {
+        var expanded = Environment.ExpandEnvironmentVariables(value ?? "").Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(expanded) || !LooksLikePath(expanded))
+            return false;
+        try
+        {
+            var probe = Task.Run(() => Directory.Exists(expanded) || File.Exists(expanded));
+            return probe.Wait(1500) ? !probe.Result : false; // 超时判不了，先放行
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 保存前校验：Home、每个 PATH 条目、以及「没有显式条目时才会用到」的 PATH 模板，
+    /// 只要看起来是路径却不存在就拦下来，避免保存一份切换时才失败的错误配置。
+    /// </summary>
+    internal static List<ConfigError> ValidateConfig(AppConfig config)
+    {
+        var errors = new List<ConfigError>();
+        foreach (var tc in config.Toolchains)
+        {
+            var tcName = string.IsNullOrWhiteSpace(tc.Name) ? "(未命名)" : tc.Name.Trim();
+            foreach (var v in tc.Versions)
+            {
+                var verName = string.IsNullOrWhiteSpace(v.Name) ? "(未命名版本)" : v.Name.Trim();
+
+                if (!string.IsNullOrWhiteSpace(v.Home) && PathMissing(v.Home))
+                    errors.Add(new ConfigError
+                    {
+                        Toolchain = tcName, Version = verName, Field = "home", Value = v.Home,
+                        Message = $"版本「{verName}」的 Home 不存在：{v.Home}",
+                    });
+
+                var paths = v.Paths ?? [];
+                var explicitPaths = paths.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+                for (var i = 0; i < paths.Count; i++)
+                {
+                    var raw = (paths[i] ?? "").Trim();
+                    if (raw.Length == 0)
+                        continue;
+                    var expanded = ExpandForCheck(raw, tc, v);
+                    if (!PathMissing(expanded))
+                        continue;
+                    errors.Add(new ConfigError
+                    {
+                        Toolchain = tcName, Version = verName, Field = "path", Index = i, Value = raw,
+                        Message = $"版本「{verName}」的 PATH 条目不存在：{raw}",
+                    });
+                }
+
+                // 模板只在该版本没有任何显式条目时才会被用到，所以也只在这时校验
+                if (explicitPaths.Count == 0 && !string.IsNullOrWhiteSpace(tc.PathTemplate))
+                {
+                    var expanded = ExpandForCheck(tc.PathTemplate, tc, v);
+                    foreach (var part in PathUtil.Split(expanded))
+                    {
+                        if (!PathMissing(part))
+                            continue;
+                        errors.Add(new ConfigError
+                        {
+                            Toolchain = tcName, Version = verName, Field = "template", Value = tc.PathTemplate,
+                            Message = $"版本「{verName}」的 PATH 模板展开后不存在：{part}",
+                        });
+                    }
+                }
+            }
+        }
+        return errors;
+    }
+
+    /// <summary>先把 %环境变量名% 换成该版本 Home，再展开 %USERPROFILE% 这类系统变量。</summary>
+    private static string ExpandForCheck(string value, Toolchain tc, VersionEntry v)
+    {
+        var replaced = value;
+        if (!string.IsNullOrWhiteSpace(tc.EnvVar))
+            replaced = replaced.Replace($"%{tc.EnvVar}%", v.Home ?? "", StringComparison.OrdinalIgnoreCase);
+        return Environment.ExpandEnvironmentVariables(replaced);
+    }
+
     /// <summary>网页「环境变量」页：写入单个变量的值（空串即置空，不当成删除）。</summary>
     internal static EnvWriteResult SetEnv(string name, string value, EnvScope scope)
     {
@@ -197,6 +284,12 @@ internal static class EnvService
             toAdd.Add(PathUtil.Expand(tc.PathTemplate, tc.EnvVar, version.Home));
         // 网页已移除「是否加入 PATH」开关：有条目就写，没有就不写
         var writePath = toAdd.Count > 0;
+
+        // 保存时已经校验过；这里再挡一次旧配置里残留的不存在条目，
+        // 免得把一堆指向空目录的路径写进 PATH（现象就是「只有其中一条能用」）
+        var missingEntries = toAdd.Where(PathMissing).ToList();
+        if (missingEntries.Count > 0)
+            return Fail($"PATH 条目不存在，未做任何修改：{string.Join("、", missingEntries)}");
 
         // 该工具链所有版本可能留下的 PATH 条目（变量形式 + 显式路径 + 展开后的实际路径）
         var stale = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

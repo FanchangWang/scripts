@@ -83,6 +83,8 @@
   /* 环境变量：删除后就地置灰，不再整表重读（避免滚动条弹回顶部） */
   .env-deleted { opacity:.55; }
   .env-deleted .env-name, .env-deleted .env-val { text-decoration:line-through; }
+  /* 保存被拒时给对应输入框描红 */
+  input.bad, .pu-row input.bad { border-color:#b91c1c; background:#fef2f2; }
 
 
   .versions { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin:12px 0; }
@@ -136,7 +138,8 @@
   .path-list li.removed .content { text-decoration:line-through; color:#9ca3af; }
   .path-list li.invalid .content { color:#9ca3af; }
 
-  #toast { position:fixed; right:20px; bottom:20px; z-index:10; display:none; max-width:420px; padding:11px 16px; border-radius:8px; background:#111827; color:#fff; box-shadow:0 6px 24px #0003; font-size:13px; white-space:pre-wrap; }
+  /* 统一提示条：固定页面顶部居中，成功/失败都在同一处出现 */
+  #toast { position:fixed; top:64px; left:50%; transform:translateX(-50%); z-index:20; display:none; max-width:min(720px,92vw); padding:10px 16px; border-radius:8px; background:#111827; color:#fff; box-shadow:0 6px 24px #0003; font-size:13px; white-space:pre-wrap; cursor:pointer; }
   #toast.ok { background:var(--ok); } #toast.err { background:#b91c1c; }
   code { padding:1px 5px; border-radius:4px; background:#eef1f5; font-size:12px; }
 
@@ -185,6 +188,7 @@ let dirty = false;                // 编辑副本是否有未保存修改
 let curPage = 'switch';
 let selectedTc = 0;               // 工具链配置页当前选中的工具链下标
 let lastBatch = null;             // 最近一次「立即应用全部」的结果，常驻在页面顶部
+let configErrors = [];            // 上次保存被拒的逐条错误（用于描红对应输入框）
 
 function toast(msg, kind = '') {
   const el = $('#toast');
@@ -213,7 +217,11 @@ async function postJson(url, body) {
   });
   let data;
   try { data = await res.json(); } catch { data = { ok: false, message: res.statusText }; }
-  if (!res.ok) throw new Error(data?.message || res.statusText);
+  if (!res.ok) {
+    const err = new Error(data?.message || res.statusText);
+    err.errors = data?.errors || [];
+    throw err;
+  }
   return data;
 }
 
@@ -381,11 +389,19 @@ async function persistDraft(silent = false) {
     if (Array.isArray(v.paths)) v.paths = v.paths.filter(p => String(p).trim());
   }));
   try {
-    await api('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    await postJson('/api/config', payload);
+    configErrors = [];
     dirty = false;
     if (!silent) toast('配置已保存', 'ok');
+    if (curPage === 'toolchain') renderToolchain();
     return true;
-  } catch (e) { toast('保存失败：' + e.message, 'err'); return false; }
+  } catch (e) {
+    // 路径不存在时后端整份拒绝保存，并逐条告诉我们是哪一项
+    configErrors = e.errors || [];
+    toast(e.message, 'err');
+    if (curPage === 'toolchain') renderToolchain();
+    return false;
+  }
 }
 
 async function saveConfigDraft() {
@@ -408,6 +424,16 @@ function scopeSelect(attr, value) {
 
 function kvRow(label, html, note) {
   return `<div class="kv"><label>${label}</label><div class="ctl">${html}</div><div class="note">ℹ️ ${note}</div></div>`;
+}
+
+// 在当前保存错误里找「某工具链某版本的某个字段」的错误，用于描红
+function errBadge(t, v, field, idx) {
+  const tcName = String(t && t.name || '').trim() || '(未命名)';
+  const verName = String(v && v.name || '').trim() || '(未命名版本)';
+  return configErrors.find(e => e.field === field
+    && e.toolchain === tcName
+    && (field === 'name' || e.version === verName)
+    && (idx === undefined || e.index === idx)) || null;
 }
 
 function renderToolchain() {
@@ -433,22 +459,32 @@ function renderToolchain() {
 
   const rows = (t.versions || []).map((v, j) => {
     const paths = (v.paths && v.paths.length) ? v.paths : [''];
-    const pathInputs = paths.map((p, pi) => `<div class="pu-row">
-        <input class="pv" data-p="${j}.${pi}" value="${esc(p)}" placeholder="PATH 条目，如 %JAVA_HOME%\\bin">
+    const homeErr = errBadge(t, v, 'home');
+    const pathInputs = paths.map((p, pi) => {
+      const pathErr = errBadge(t, v, 'path', pi);
+      return `<div class="pu-row">
+        <input class="pv${pathErr ? ' bad' : ''}" data-p="${j}.${pi}" value="${esc(p)}" placeholder="PATH 条目，如 %JAVA_HOME%\\bin" title="${pathErr ? esc(pathErr.message) : ''}">
         <button class="danger" data-act="del-path" data-j="${j}" data-pi="${pi}" title="删除此条">×</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     return `<tr>
       <td style="text-align:center"><button class="danger" data-act="del-ver" data-j="${j}" title="删除此版本">×</button></td>
       <td style="text-align:center"><input type="radio" name="active-ver" data-activate="${j}" ${v.name && v.name === t.active ? 'checked' : ''}></td>
       <td><input data-v="${j}.name" value="${esc(v.name)}" placeholder="如 17"></td>
-      <td><input data-v="${j}.home" value="${esc(v.home)}" placeholder="Home 路径 / 变量值"></td>
+      <td><input data-v="${j}.home" value="${esc(v.home)}" placeholder="Home 路径 / 变量值" class="${homeErr ? 'bad' : ''}" title="${homeErr ? esc(homeErr.message) : ''}"></td>
       <td class="pvcell">${pathInputs}<button data-act="add-path" data-j="${j}">+ 添加 PATH 条目</button></td>
     </tr>`;
   }).join('');
 
   const batchPanel = lastBatch ? `<div class="res-banner ${lastBatch.ok ? 'ok' : 'err'}">${esc(lastBatch.message)
     }${(lastBatch.items || []).map(x => `<div class="item">${x.ok ? '✅' : '❌'} <b>${esc(x.toolchain)}</b> → ${esc(x.version || '')}：${esc(x.message)}</div>`).join('')}</div>` : '';
+  const errorPanel = configErrors.length
+    ? `<div class="res-banner err">${configErrors.length} 处路径不存在，<b>未保存</b>（改好再点保存）：${configErrors.map(e => `<div class="item">❌ ${esc(e.message)}</div>`).join('')}</div>`
+    : '';
+  const tcName = String(t.name || '').trim() || '(未命名)';
+  const tplErr = configErrors.find(e => e.field === 'template' && e.toolchain === tcName);
   root.innerHTML = `
+  ${errorPanel}
   <div class="apply-banner">
     <div><b>改完不会立即生效。</b>这里只修改配置；要让激活版本真正写进环境变量与 PATH，请点右侧「立即应用全部」（先保存配置，再按每套工具链的激活版本逐个应用）。</div>
     <button class="primary" id="apply-active" style="flex:none">立即应用全部</button>
@@ -466,8 +502,8 @@ function renderToolchain() {
                 '显示用名称，用来区分多套工具链。')}
         ${kvRow('环境变量名', `<input data-f="envVar" value="${esc(t.envVar)}" placeholder="如 JAVA_HOME（可留空）">`,
                 '切换版本时写入的变量名，值来自该版本的 Home。留空表示本工具链不写任何环境变量。')}
-        ${kvRow('PATH 条目模板', `<input data-f="pathTemplate" value="${esc(t.pathTemplate)}" placeholder="如 %JAVA_HOME%\\bin（可留空）">`,
-                '版本没有单独填写 PATH 条目时使用它，可用 %变量名% 引用该版本的环境变量值。模板留空且版本也没有条目时，不写 PATH。')}
+        ${kvRow('PATH 条目模板', `<input data-f="pathTemplate" class="${tplErr ? 'bad' : ''}" title="${tplErr ? esc(tplErr.message) : ''}" value="${esc(t.pathTemplate)}" placeholder="如 %JAVA_HOME%\\bin（可留空）">`,
+                '版本没有单独填写 PATH 条目时使用它，可用 %变量名% 引用该版本的环境变量值。模板留空且版本也没有条目时，不写 PATH。保存前会把 %变量名% 换成该版本 Home 再检查目录是否存在。')}
         ${kvRow('本工具链是否生效', `<label class="check" style="margin:0"><input type="checkbox" data-f="enabled" ${t.enabled === false ? '' : 'checked'}> 生效</label>`,
                 '取消勾选相当于没有配置过这套工具链：切换版本既不写变量也不动 PATH，版本切换页也会隐藏它。')}
         ${kvRow('环境变量作用范围', scopeSelect('data-f="envScope"', t.envScope),
@@ -687,6 +723,7 @@ async function applyPath() {
   const collect = name => Array.from(document.querySelectorAll(`input[data-list="${name}"]:checked`))
     .map(el => el.dataset.value);
   const body = { system: collect('system'), user: collect('user'), dryRun: $('#path-dry').checked };
+  if (!body.dryRun && !confirm(`确认写入 PATH？\n\n系统：${body.system.length} 条\n用户：${body.user.length} 条\n\n会整体覆盖当前的系统与用户 PATH，写入内容就是右侧「处理后」列表里勾选的条目。`)) return;
   try {
     const r = await api('/api/path/apply', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -804,6 +841,10 @@ function drawEnvGroups() {
 }
 
 async function saveEnv(scope, name, value) {
+  const label = scope === 'Machine' ? '系统' : '用户';
+  const cur = String((envData[scope] && envData[scope][name] && envData[scope][name].value) ?? '');
+  const brief = v => (v.length > 80 ? v.slice(0, 77) + '…' : v) || '(空)';
+  if (!confirm(`确认保存${label}变量「${name}」？\n\n原值：${brief(cur)}\n新值：${brief(String(value ?? ''))}`)) return;
   try {
     const r = await api('/api/env/set', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
