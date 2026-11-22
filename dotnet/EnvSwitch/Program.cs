@@ -26,11 +26,11 @@ for (var i = 0; i < argv.Count; i++)
         return 1;
     }
     configPath = argv[i + 1];
-    // 空串当场拒绝（否则会拿探测出来的默认配置继续干活）。是不是目录交给 ClassifyMissing 判：
+    // 空串 / 纯空白当场拒绝（否则会拿探测出来的默认配置继续干活）。是不是目录交给 ClassifyMissing 判：
     // 在这里裸 `Directory.Exists` 碰上黑洞 UNC 会先把 SMB 超时吃满 20 秒。
-    if (configPath.Length == 0)
+    if (string.IsNullOrWhiteSpace(configPath))
     {
-        Console.Error.WriteLine("--config 不能是空字符串，请给出配置文件路径。");
+        Console.Error.WriteLine("--config 不能是空白，请给出配置文件路径。");
         return 1;
     }
     argv.RemoveAt(i + 1);
@@ -658,6 +658,7 @@ static void PrintList(string configPath)
 /// <summary>
 /// CLI 统一取配置：读不到（被占用 / 无权限）时打印原因并以 1 退出，<b>不</b>写回默认配置。
 /// 与「配置损坏」分开：损坏才备份 + 重建，读不到只是这一次做不了。
+/// 第二行由异常自己决定（目录类错误不再补一句「检查网络盘」把人引偏）。
 /// </summary>
 static AppConfig LoadConfigOrExit(string configPath)
 {
@@ -668,8 +669,8 @@ static AppConfig LoadConfigOrExit(string configPath)
     catch (ConfigUnreadableException ex)
     {
         Console.Error.WriteLine($"[失败] {ex.Message}");
-        Console.Error.WriteLine("配置文件只是暂时读不到（不是损坏），已放弃本次操作，文件未被修改。"
-                                + "请检查该路径是否可访问（网络盘是否已连接、U 盘是否插着、是否有读取权限），是否被其它程序占用后重试。");
+        if (ex.Hint.Length > 0)
+            Console.Error.WriteLine(ex.Hint);
         Console.Out.Flush();
         Console.Error.Flush();
         Environment.Exit(1);

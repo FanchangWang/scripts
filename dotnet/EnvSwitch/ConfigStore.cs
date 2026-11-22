@@ -8,10 +8,20 @@ namespace EnvSwitch;
 /// 与「内容损坏」严格区分：调用方应该报错并放弃本次操作，<b>绝不</b>写回默认配置。
 /// Message 只描述「哪个文件、为什么」，由调用方决定前缀（CLI / 中间件各有一句自己的说明）。
 /// </summary>
-internal sealed class ConfigUnreadableException(string file, Exception inner)
+internal sealed class ConfigUnreadableException(string file, Exception inner, string? hint = null)
     : Exception($"{file}（{inner.Message}）", inner)
 {
     internal string File { get; } = file;
+
+    /// <summary>
+    /// 第二行的处置说明。给空串表示「第一行已经说清了，不再补」——「这个路径是一个目录」这类
+    /// 原因如果后面再接一句「请检查网络盘是否已连接」，只会把人往错方向引。
+    /// </summary>
+    internal string Hint { get; } = hint ?? DefaultHint;
+
+    private const string DefaultHint =
+        "配置文件只是暂时读不到（不是损坏），已放弃本次操作，文件未被修改。"
+        + "请检查该路径是否可访问（网络盘是否已连接、U 盘是否插着、是否有读取权限），是否被其它程序占用后重试。";
 }
 
 /// <summary>配置文件读写；首次运行时自动探测本机 Java 安装作为默认配置。</summary>
@@ -122,11 +132,20 @@ internal static class ConfigStore
     /// <summary>常驻服务的请求里发现配置「回到了首次运行」：目录已被改名/删除，不能重建也不能假装 200。</summary>
     private static ConfigUnreadableException FirstRunNotAllowed(string file) =>
         new(file, new DirectoryNotFoundException(
-            $"配置文件已不在原位（目录可能被改名或删除）：{file}"));
+            $"配置文件已不在原位（目录可能被改名或删除）：{file}"),
+            "配置文件已不在原位，已放弃本次操作，文件未被修改。把目录/文件改回原名后重试即可。");
+
+    /// <summary>显式 `--config` 的位置写不进去：不能拿「探测出来的」配置继续干活。</summary>
+    private static ConfigUnreadableException CannotWrite(string file, Exception saveException) =>
+        new(file, saveException,
+            "这个位置写不进去，已放弃本次操作，配置文件与被修改的环境都没有回滚。"
+            + "请换一个可写的位置，或让 --config 指向一份已存在的配置文件。");
 
     /// <summary>不可达 / 超时的统一异常：文案由这里决定，调用方只负责打印。</summary>
     private static ConfigUnreadableException Unreachable(string file, MissingConfigKind kind) =>
-        new(file, new DirectoryNotFoundException(UnreachableMessage(file, kind)));
+        new(file, new DirectoryNotFoundException(UnreachableMessage(file, kind)),
+            // 目录类错误第一行已经很明确，别再补一句网络盘的猜测
+            kind == MissingConfigKind.PathIsDirectory ? "" : null);
 
     /// <summary>不可达 / 超时给用户看的那句话（`config` 命令也要打印同一句）。</summary>
     internal static string UnreachableMessage(string file, MissingConfigKind kind)
@@ -135,7 +154,8 @@ internal static class ConfigStore
             return "这个路径是一个目录，请给出配置文件名";
         var dir = Path.GetDirectoryName(file);
         return kind == MissingConfigKind.Timeout
-            ? $"配置文件所在目录未在 1.5 秒内响应（可能只是慢，重试一次通常就能过）：{dir}"
+            // 不承诺「重试就能过」：最常见的触发就是路径打错，那重试多少次都一样
+            ? $"配置文件所在目录未在 1.5 秒内响应：可能是路径不存在、网络盘断开，也可能只是慢（稍后重试可确认）：{dir}"
             : $"配置文件所在目录不存在或无法访问：{dir}";
     }
 
@@ -166,13 +186,7 @@ internal static class ConfigStore
                 throw FirstRunNotAllowed(file);
 
             var config = DetectDefaultConfig();
-            // 首次运行落盘失败（目录不可写）时不要让程序崩掉，内存里还能用
-            try { Save(config, file); }
-            catch (Exception saveException)
-            {
-                Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{saveException.Message}");
-            }
-            return config;
+            return FirstRunFallback(config, file, explicitPath: path is not null);
         }
 
         string json;
@@ -190,12 +204,7 @@ internal static class ConfigStore
                 throw FirstRunNotAllowed(file);
 
             var config = DetectDefaultConfig();
-            try { Save(config, file); }
-            catch (Exception saveException)
-            {
-                Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{saveException.Message}");
-            }
-            return config;
+            return FirstRunFallback(config, file, explicitPath: path is not null);
         }
 
         try
@@ -210,6 +219,28 @@ internal static class ConfigStore
             Console.Error.WriteLine($"[警告] 配置内容无法解析（{file}）：{ex.Message}");
             return RecoverFromBroken(file);
         }
+    }
+
+    /// <summary>
+    /// 首次运行把默认配置落盘。默认路径写不进去时只警告（内存里接着用，程序还能跑）；
+    /// **显式 `--config` 写不进去就必须抛**——那份配置是「探测出来的」而不是用户的，
+    /// 拿它继续执行会让 `use` 把 JAVA_HOME / PATH 真写进注册表（D1/C2 禁止的正是这种事）。
+    /// </summary>
+    private static AppConfig FirstRunFallback(AppConfig config, string file, bool explicitPath)
+    {
+        try
+        {
+            Save(config, file);
+        }
+        catch (Exception saveException) when (explicitPath)
+        {
+            throw CannotWrite(file, saveException);
+        }
+        catch (Exception saveException)
+        {
+            Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{saveException.Message}");
+        }
+        return config;
     }
 
     /// <summary>

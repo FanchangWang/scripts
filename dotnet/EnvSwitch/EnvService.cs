@@ -875,7 +875,9 @@ internal static class EnvService
             {
                 try
                 {
-                    ConfigStore.Save(config, configPath);
+                    // 走到这里说明 `Load` 已经成功（目录刚还在）：服务内不许再建目录，
+                    // 真在两步之间被挪走就该报错，而不是原地重建一份假配置
+                    ConfigStore.Save(config, configPath, allowCreateDirectory: false);
                 }
                 catch (Exception ex)
                 {
@@ -1046,7 +1048,7 @@ internal static class EnvService
             {
                 try
                 {
-                    ConfigStore.Save(config, configPath);
+                    ConfigStore.Save(config, configPath, allowCreateDirectory: false);
                 }
                 catch (Exception ex)
                 {
