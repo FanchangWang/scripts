@@ -374,8 +374,10 @@ function renderProject() {
       <label class="field"><span>服务端口（0 = 自动分配，改端口需重启服务才生效）</span>
         <input id="set-port" type="number" min="0" max="65535" value="${esc(s.port ?? 0)}"></label>
     </div>
-    <label class="check"><input type="checkbox" id="set-normalize" ${s.normalizePathOnApply ? 'checked' : ''}> 切换版本时自动对 PATH 排序去重</label>
+    <label class="check"><input type="checkbox" id="set-normalize" ${s.normalizePathOnApply ? 'checked' : ''}> 切换版本时自动整理 PATH（排序 + 去重）</label>
+    <label class="check"><input type="checkbox" id="set-sort" ${s.sortPathOnApply ? 'checked' : ''}> 整理时按字典序排序（关掉则只去重、保留原有顺序）</label>
     <div class="note"><b>这一项是什么意思：</b>开启后每次切换版本都会把整条 PATH 重新排序并去掉重复条目（去重不区分大小写，并忽略结尾的 <code>\\</code>），避免反复切换后同一个目录越堆越多、顺序越来越乱。关闭则只按「原有条目 + 新版本条目」原样拼接。</div>
+    <div class="note"><b>排序为什么可以单独关：</b>排序会改变命令解析的先后顺序（先命中先执行），同名 exe（<code>python</code>、<code>java</code>、<code>git</code>）可能改从另一个目录命中。关掉排序后只去重、保留原有顺序；上面的整理关闭时这一项不起作用。</div>
     <label class="check"><input type="checkbox" id="set-openbrowser" ${s.openBrowserOnStart ? 'checked' : ''}> 启动服务时自动打开浏览器</label>
     <div class="note">每套工具链可以单独决定写入当前用户还是整台系统（含「唯一」模式），到「工具链配置」页的对应项里设置。</div>
   </div>
@@ -385,7 +387,14 @@ function renderProject() {
   </div>`;
 
   $('#set-port').addEventListener('input', e => { s.port = Number(e.target.value || 0); dirty = true; });
-  $('#set-normalize').addEventListener('change', e => { s.normalizePathOnApply = e.target.checked; dirty = true; });
+  const sortBox = $('#set-sort');
+  sortBox.disabled = !s.normalizePathOnApply;
+  $('#set-normalize').addEventListener('change', e => {
+    s.normalizePathOnApply = e.target.checked;
+    dirty = true;
+    sortBox.disabled = !e.target.checked;
+  });
+  sortBox.addEventListener('change', e => { s.sortPathOnApply = e.target.checked; dirty = true; });
   $('#set-openbrowser').addEventListener('change', e => { s.openBrowserOnStart = e.target.checked; dirty = true; });
   $('#save-project').addEventListener('click', async () => {
     if (await persistDraft()) { toast('项目配置已保存', 'ok'); await showPage('project'); }

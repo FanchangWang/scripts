@@ -73,7 +73,7 @@ switch (argv[0].ToLowerInvariant())
             return 1;
         }
         var dryRun = argv.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
-        var result = EnvService.Apply(ConfigStore.Load(configPath), positional[0], positional[1], dryRun, configPath);
+        var result = EnvService.Apply(LoadConfigOrExit(configPath), positional[0], positional[1], dryRun, configPath);
         Console.WriteLine($"[{(result.Ok ? "OK" : "失败")}] {result.Message}");
         if (result.Ok)
         {
@@ -94,7 +94,7 @@ switch (argv[0].ToLowerInvariant())
         if (RejectUnknownOptions("all", argv, "--dry-run"))
             return 1;
         var dryRun = argv.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
-        var batch = EnvService.ApplyAll(ConfigStore.Load(configPath), dryRun, configPath);
+        var batch = EnvService.ApplyAll(LoadConfigOrExit(configPath), dryRun, configPath);
         Console.WriteLine($"[{(batch.Ok ? "OK" : "有失败")}] {batch.Message}");
         foreach (var item in batch.Items)
             Console.WriteLine($"  {(item.Ok ? "✔" : "✘")} {item.Toolchain} → {item.Version}：{item.Message}");
@@ -151,7 +151,17 @@ switch (argv[0].ToLowerInvariant())
 // ---------- 网页模式 ----------
 static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptions, bool autoOpenBrowser, int? portOverride)
 {
-    var config = ConfigStore.Load(configPath);
+    AppConfig config;
+    try
+    {
+        config = ConfigStore.Load(configPath);
+    }
+    catch (ConfigUnreadableException ex)
+    {
+        Console.Error.WriteLine($"[失败] {ex.Message}");
+        Console.Error.WriteLine("配置文件只是暂时读不到（不是损坏），未做任何修改。请检查是否被其它程序占用或缺少读取权限后重试。");
+        return 1;
+    }
     var port = portOverride ?? config.Settings.Port;
 
     // 端口是能存进配置的：非法值不能让程序直接崩在堆栈里，降级成自动分配即可
@@ -205,6 +215,23 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
             }
 
             await next();
+        }
+        catch (ConfigUnreadableException ex)
+        {
+            // 配置文件在、但暂时读不到：绝不能当成「配置损坏」走默认值，
+            // 更不能顺手 Save（那会把用户的真配置覆盖掉）。这里只报错，什么都不改。
+            app.Logger.LogWarning(ex, "配置暂时读不到：{Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+            if (ctx.Response.HasStarted)
+                return;
+            ctx.Response.Clear();
+            ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            await ctx.Response.WriteAsJsonAsync(new
+            {
+                ok = false,
+                message = $"配置文件暂时读不到，未做任何修改：{ex.Message}"
+                          + "（可能是被其它程序占用或缺少读取权限，稍后重试即可）",
+            });
         }
         catch (JsonException ex)
         {
@@ -342,15 +369,45 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
         // 两侧都没给 = 不知道要改哪一侧，直接拒绝，避免把整条 PATH 写空
         if (req.System is null && req.User is null)
             return Results.BadRequest(new { ok = false, message = "请求里没有 system 或 user 列表，未做任何修改。" });
-        // 两侧都是空数组 = 把两条 PATH 一起清空。列表没加载出来时点「应用写入」就是这个形状，必须挡
-        if (req.System is { Count: 0 } && req.User is { Count: 0 })
+
+        // 先归一再看条数：null 表示「这一侧不动」，空数组表示主动清空该侧，
+        // 但 [null] / [""] 这种「给了元素却全是空值」必须拒绝——照原样写入的是空字符串，
+        // 等于把整侧 PATH 清空（前端列表没加载出来时就是这个形状）。
+        var system = req.System;
+        if (system is not null)
+        {
+            var cleaned = system.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+            if (cleaned.Count == 0 && system.Count > 0)
+                return Results.BadRequest(new
+                {
+                    ok = false,
+                    message = "系统列表里没有有效条目（元素是 null 或空串），未做任何修改。",
+                });
+            system = cleaned;
+        }
+
+        var user = req.User;
+        if (user is not null)
+        {
+            var cleaned = user.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+            if (cleaned.Count == 0 && user.Count > 0)
+                return Results.BadRequest(new
+                {
+                    ok = false,
+                    message = "用户列表里没有有效条目（元素是 null 或空串），未做任何修改。",
+                });
+            user = cleaned;
+        }
+
+        // 两侧都是空列表 = 把两条 PATH 一起清空。列表没加载出来时点「应用写入」就是这个形状，必须挡
+        if (system is { Count: 0 } && user is { Count: 0 })
             return Results.BadRequest(new
             {
                 ok = false,
                 message = "系统与用户两侧都是空列表。若确实要清空某一侧，请只提交那一侧；未做任何修改。",
             });
         return Results.Json(
-            EnvService.ApplyPathSelection(req.System, req.User, req.DryRun), jsonOptions);
+            EnvService.ApplyPathSelection(system, user, req.DryRun), jsonOptions);
     });
 
     // MapFallback 只匹配"像目录"的路径（nonfile），因此 /favicon.ico 之类的
@@ -468,7 +525,7 @@ static bool RejectUnknownFlags(string cmd, List<string> argv, params string[] al
 /// </summary>
 static int RunPathBoth(string configPath, bool sort, bool dedup, bool apply)
 {
-    var cfg = ConfigStore.Load(configPath);
+    var cfg = LoadConfigOrExit(configPath);
     var view = EnvService.BuildPathView(cfg, sort, dedup);
 
     PrintPathSide("系统", view.SystemCurrent, view.SystemProcessed);
@@ -512,7 +569,7 @@ static void PrintPathSide(string label, List<PathEntryView> current, List<PathEn
 
 static void PrintList(string configPath)
 {
-    var cfg = ConfigStore.Load(configPath);
+    var cfg = LoadConfigOrExit(configPath);
     Console.WriteLine($"配置文件：{configPath}");
     if (cfg.Toolchains.Count == 0)
     {
@@ -526,6 +583,28 @@ static void PrintList(string configPath)
         Console.WriteLine($"  当前值：{(string.IsNullOrWhiteSpace(t.EnvVar) ? "(未配置环境变量)" : EnvService.GetEnv(t.EnvVar, EnvService.ParseWriteScope(t.EnvScope).Scope) ?? "(未设置)")}");
         foreach (var v in t.Versions)
             Console.WriteLine($"  {(string.Equals(v.Name, t.Active, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {v.Name,-6} {v.Home}");
+    }
+}
+
+/// <summary>
+/// CLI 统一取配置：读不到（被占用 / 无权限）时打印原因并以 1 退出，<b>不</b>写回默认配置。
+/// 与「配置损坏」分开：损坏才备份 + 重建，读不到只是这一次做不了。
+/// </summary>
+static AppConfig LoadConfigOrExit(string configPath)
+{
+    try
+    {
+        return ConfigStore.Load(configPath);
+    }
+    catch (ConfigUnreadableException ex)
+    {
+        Console.Error.WriteLine($"[失败] {ex.Message}");
+        Console.Error.WriteLine("配置文件只是暂时读不到（不是损坏），已放弃本次操作，文件未被修改。"
+                                + "请检查是否被其它程序占用或缺少读取权限后重试。");
+        Console.Out.Flush();
+        Console.Error.Flush();
+        Environment.Exit(1);
+        throw; // 满足返回类型；Environment.Exit 不会返回
     }
 }
 

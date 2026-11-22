@@ -116,19 +116,26 @@ internal static class EnvService
         var expanded = Environment.ExpandEnvironmentVariables(value).Trim().Trim('"');
         if (!LooksLikePath(expanded))
             return false;
-        try
-        {
-            return !Directory.Exists(expanded) && !File.Exists(expanded);
-        }
-        catch
-        {
-            return false;
-        }
+        // 走统一入口：断网的网络盘 / 拔掉的移动硬盘会让 Directory.Exists 卡十几秒（实测 19 秒），
+        // 而这个方法在「环境变量」页会被逐条串行调用。超时一律当存在，不误标失效。
+        return !ProbeExists(expanded);
     }
 
     private static bool LooksLikePath(string v) =>
         (v.Length >= 3 && char.IsLetter(v[0]) && v[1] == ':' && (v[2] == '\\' || v[2] == '/'))
         || v.StartsWith(@"\\", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 看起来「意图是路径」：盘符 / UNC 开头，或者以 <c>%变量%</c> 开头的写法（<c>%USERPROFILE%\x</c>）。
+    /// 展开失败时用它判断「这是不是一个本来想指向目录的值」，避免把 -Xmx%MEM% 这类文本也标成失效路径。
+    /// </summary>
+    private static bool LooksLikePathValue(string v)
+    {
+        var t = (v ?? "").Trim().Trim('"');
+        if (LooksLikePath(t))
+            return true;
+        return t.StartsWith('%') && (t.Contains('\\') || t.Contains('/'));
+    }
 
     /// <summary>
     /// 带超时的存在性探测，全项目唯一的存在性判断入口。
@@ -177,20 +184,13 @@ internal static class EnvService
     internal static bool PathExpandsVariables(EnvScope scope) =>
         EnvStore.KindOf("Path", scope) == Microsoft.Win32.RegistryValueKind.ExpandString;
 
-    /// <summary>按字面判断路径是否存在（不展开变量）。</summary>
+    /// <summary>按字面判断路径是否存在（不展开变量）。同样走 <see cref="ProbeExists"/> 的超时入口。</summary>
     private static bool LiteralExists(string entry)
     {
         var text = (entry ?? "").Trim().Trim('"');
         if (text.Length == 0)
             return false;
-        try
-        {
-            return Directory.Exists(text) || File.Exists(text);
-        }
-        catch
-        {
-            return false;
-        }
+        return ProbeExists(text);
     }
 
     /// <summary>
@@ -400,18 +400,67 @@ internal static class EnvService
         var invalid = ValidateName(name);
         if (invalid is not null)
             return new EnvWriteResult { Ok = false, Message = invalid };
+        var target = name.Trim();
+
+        // Path 不能用这个页清空：写空串等于把该侧全部 PATH 条目一起抹掉（命令全部失效）。
+        // 与 PATH 页的护栏对齐：要改 PATH 去那边勾选条目、预览后再写。
+        if (IsPath(target) && string.IsNullOrWhiteSpace(value))
+            return new EnvWriteResult
+            {
+                Ok = false,
+                Message = "清空 Path 会让该侧所有 PATH 条目一起失效，这里不能这么写。"
+                          + "请到「PATH 工具」页勾选条目后再应用（那里有预览和二次确认）。",
+            };
+
         try
         {
             // 原来是非字符串类型时拒绝改写：写进去会把 REG_DWORD 变成 REG_SZ
-            var kind = EnvStore.KindOf(name.Trim(), scope);
+            var kind = EnvStore.KindOf(target, scope);
             if (kind is not null && !EnvStore.IsStringKind(kind.Value))
                 return new EnvWriteResult
                 {
                     Ok = false,
-                    Message = $"{name.Trim()} 在{(scope == EnvScope.Machine ? "系统" : "用户")}侧是 {kind.Value} 类型，"
+                    Message = $"{target} 在{(scope == EnvScope.Machine ? "系统" : "用户")}侧是 {kind.Value} 类型，"
                               + "网页只支持字符串变量，改写会破坏它的类型。请用注册表编辑器修改。",
                 };
-            EnvStore.Set(name.Trim(), value, scope);
+
+            // 与「切换版本」时的写入对齐：目标不是 REG_EXPAND_SZ 时，%变量% 存进去不会被系统展开，
+            // 字面值不指向任何目录。能展开成真实路径就先展开；展不开则明确标成无效，不静默存坏值。
+            var stored = value;
+            var note = "";
+            var valueInvalid = false;
+            if (value.Contains('%', StringComparison.Ordinal) && !EnvStore.IsExpandString(target, scope))
+            {
+                var expanded = Environment.ExpandEnvironmentVariables(value).Trim();
+                if (!expanded.Contains('%', StringComparison.Ordinal)
+                    && LooksLikePathValue(expanded)
+                    && !string.Equals(expanded, value, StringComparison.Ordinal))
+                {
+                    stored = expanded;
+                    note = $"；值里的 %变量% 已换成具体路径（{target} 不是 REG_EXPAND_SZ，系统不会替你展开）";
+                }
+                else if (LooksLikePathValue(value) || LooksLikePathValue(expanded))
+                {
+                    // 展不开、写法又明显是路径（%USERPROFILE%\x 或盘符开头）：这个值必然指向不了任何目录，
+                    // 必须标成无效，不能让界面显示「正常」
+                    valueInvalid = true;
+                    note = $"；值里的 %变量% 无法展开，而 {target} 是普通字符串（不是 REG_EXPAND_SZ），"
+                           + "系统不会替你展开，这个值无效";
+                }
+            }
+
+            EnvStore.Set(target, stored, scope);
+            return new EnvWriteResult
+            {
+                Ok = true,
+                // 新值重新判断一次：界面直接用这个结果刷新「已失效」标记，不要沿用保存前的旧标记
+                Invalid = valueInvalid || IsProbablyInvalidPath(target, stored),
+                Message = $"已写入{(scope == EnvScope.Machine ? "系统" : "用户")}变量 {target}"
+                          + (IsPath(target)
+                              ? "（Path 建议改用「PATH 工具」页，可直接排序、去重并预览后再写入）"
+                              : "")
+                          + note,
+            };
         }
         catch (UnauthorizedAccessException)
         {
@@ -421,17 +470,6 @@ internal static class EnvService
         {
             return FailWrite($"写入环境变量失败：{ex.Message}");
         }
-
-        var hint = IsPath(name)
-            ? "（Path 建议改用「PATH 工具」页，可直接排序、去重并预览后再写入）"
-            : "";
-        return new EnvWriteResult
-        {
-            Ok = true,
-            // 新值重新判断一次：界面直接用这个结果刷新「已失效」标记，不要沿用保存前的旧标记
-            Invalid = IsProbablyInvalidPath(name.Trim(), value),
-            Message = $"已写入{(scope == EnvScope.Machine ? "系统" : "用户")}变量 {name.Trim()}{hint}",
-        };
     }
 
     /// <summary>网页「环境变量」页：删除单个变量（写入 null 即删除）。</summary>
@@ -441,18 +479,29 @@ internal static class EnvService
         if (invalid is not null)
             return new EnvWriteResult { Ok = false, Message = invalid };
 
+        var target = name.Trim();
+
+        // 删除整条 PATH 比清空更彻底：这里不放行，请到 PATH 页取消勾选后再应用。
+        if (IsPath(target))
+            return new EnvWriteResult
+            {
+                Ok = false,
+                Message = "不能在「环境变量」页删除 Path：删掉后该侧所有命令都会失效。"
+                          + "请到「PATH 工具」页把不要的条目取消勾选，预览确认后再应用。",
+            };
+
         // 本来就没有这个变量时别报「已删除（不可恢复）」，否则用户会以为删掉了什么。
         // 用类型判断（不是 GetRaw）：REG_DWORD 之类读不出字符串，但它确实存在，是可以删的。
-        if (EnvStore.KindOf(name.Trim(), scope) is null)
+        if (EnvStore.KindOf(target, scope) is null)
             return new EnvWriteResult
             {
                 Ok = true,
-                Message = $"{(scope == EnvScope.Machine ? "系统" : "用户")}侧没有变量 {name.Trim()}，无需删除。",
+                Message = $"{(scope == EnvScope.Machine ? "系统" : "用户")}侧没有变量 {target}，无需删除。",
             };
 
         try
         {
-            EnvStore.Set(name.Trim(), null, scope);
+            EnvStore.Set(target, null, scope);
         }
         catch (UnauthorizedAccessException)
         {
@@ -466,7 +515,7 @@ internal static class EnvService
         return new EnvWriteResult
         {
             Ok = true,
-            Message = $"已删除{(scope == EnvScope.Machine ? "系统" : "用户")}变量 {name.Trim()}（不可恢复）",
+            Message = $"已删除{(scope == EnvScope.Machine ? "系统" : "用户")}变量 {target}（不可恢复）",
         };
     }
 
@@ -743,15 +792,12 @@ internal static class EnvService
         {
             // 分两步写并记下已写入的部分：写环境变量成功、写 PATH 被拒时，不能只报一句「被拒绝」
             var done = new List<string>();
+            var otherLabel = envTarget.Other == EnvScope.Machine ? "系统" : "用户";
             if (writeEnv)
             {
                 try
                 {
                     EnvStore.Set(tc.EnvVar, envValue, envTarget.Scope);
-                    // 「唯一」：另一侧存在同名变量才删，避免无意义地要求系统写权限
-                    if (envTarget.Unique && GetEnv(tc.EnvVar, envTarget.Other) is not null)
-                        EnvStore.Set(tc.EnvVar, null, envTarget.Other);
-                    done.Add($"{tc.EnvVar}（{envTarget.Label}）");
                 }
                 catch (UnauthorizedAccessException)
                 {
@@ -761,16 +807,46 @@ internal static class EnvService
                 {
                     return FailPart(done, $"写入环境变量失败：{ex.Message}");
                 }
+
+                // 「唯一」：另一侧存在同名变量才删，避免无意义地要求系统写权限。
+                // 删除与写入分开 try ——「删掉另一侧」也是已经发生的副作用，部分写入报告必须说全。
+                if (envTarget.Unique && GetEnv(tc.EnvVar, envTarget.Other) is not null)
+                {
+                    try
+                    {
+                        EnvStore.Set(tc.EnvVar, null, envTarget.Other);
+                        done.Add($"{tc.EnvVar}（{envTarget.Label}），并删除了{otherLabel}侧同名变量");
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        done.Add($"{tc.EnvVar}（{envTarget.Label}）");
+                        return FailPart(done, $"已写入变量，但删除{otherLabel}侧同名变量被拒绝（需要管理员身份）。");
+                    }
+                    catch (Exception ex)
+                    {
+                        done.Add($"{tc.EnvVar}（{envTarget.Label}）");
+                        return FailPart(done, $"已写入变量，但删除{otherLabel}侧同名变量失败：{ex.Message}");
+                    }
+                }
+                else
+                    done.Add($"{tc.EnvVar}（{envTarget.Label}）");
             }
             if (writePath)
             {
+                var otherPathLabel = pathTarget.Other == EnvScope.Machine ? "系统" : "用户";
+                var otherPathWritten = false;
                 try
                 {
                     EnvStore.Set("Path", pathAfter, pathTarget.Scope);
                     if (otherPathAfter is not null
                         && !string.Equals(otherPathAfter, GetPathRaw(pathTarget.Other), StringComparison.Ordinal))
+                    {
                         EnvStore.Set("Path", otherPathAfter, pathTarget.Other);
-                    done.Add($"PATH（{pathTarget.Label}）");
+                        otherPathWritten = true;
+                    }
+                    done.Add(otherPathWritten
+                        ? $"PATH（{pathTarget.Label}），并整理了{otherPathLabel}侧 PATH"
+                        : $"PATH（{pathTarget.Label}）");
                 }
                 catch (UnauthorizedAccessException)
                 {
@@ -835,6 +911,10 @@ internal static class EnvService
         var items = new List<ApplyItem>();
         var scopesOf = new Dictionary<string, List<EnvScope>>(StringComparer.OrdinalIgnoreCase);
         var skipped = new List<string>();
+        // 跳过原因分开计数：收尾提示要指向真正的原因，不能一律让人去勾「生效」
+        var dupSkipped = 0;
+        var disabledSkipped = 0;
+        var noActiveSkipped = 0;
 
         // 1) 先把两侧变量与 PATH 读进内存（只读一次）
         var buffer = dryRun ? null : ApplyBuffer.Load();
@@ -848,22 +928,31 @@ internal static class EnvService
             .Select(g => g.Key)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        // 1.8) 激活版本必须在逐套 Apply 之前采集：Apply 会边算边把 tc.Active 改成新版本，
+        //      事后再采集拿到的就是新值，失败回滚会变成空操作（这条以前就是死代码）。
+        var origActive = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tc in config.Toolchains)
+            origActive[tc.Name] = tc.Active;
+
         // 2) 逐套在内存上处理，不碰注册表
         foreach (var tc in config.Toolchains)
         {
             if (string.IsNullOrWhiteSpace(tc.Name) || !tc.Enabled)
             {
                 skipped.Add($"{tc.Name}（不生效）");
+                if (!tc.Enabled) disabledSkipped++;
                 continue;
             }
             if (dupNames.Contains(tc.Name.Trim()))
             {
                 skipped.Add($"{tc.Name}（配置里有同名工具链，先改名再应用）");
+                dupSkipped++;
                 continue;
             }
             if (string.IsNullOrWhiteSpace(tc.Active))
             {
                 skipped.Add($"{tc.Name}（没选激活版本）");
+                noActiveSkipped++;
                 continue;
             }
             var r = Apply(config, tc.Name, tc.Active, dryRun, configPath, buffer, saveConfig: false);
@@ -878,21 +967,27 @@ internal static class EnvService
         }
 
         if (items.Count == 0)
+        {
+            // 提示要按真正的原因写：因重名被跳过时，光让人「勾选生效」是无效建议
+            var hints = new List<string>();
+            if (dupSkipped > 0)
+                hints.Add("先把重名的工具链改成不同的名字");
+            if (disabledSkipped > 0)
+                hints.Add("勾选「生效」");
+            if (noActiveSkipped > 0)
+                hints.Add("在版本表格里选定激活版本");
+            var tail = hints.Count == 0 ? "" : $"请{string.Join("、", hints)}后再试。";
             return new BatchApplyResult
             {
                 Ok = false,
                 DryRun = dryRun,
                 Message = skipped.Count > 0
-                    ? $"没有可应用的版本：{string.Join("、", skipped)}。先勾选「生效」并在版本表格选定激活版本。"
+                    ? $"没有可应用的版本：{string.Join("、", skipped)}。{tail}"
                     : "还没有工具链，先到「工具链配置」新建。",
             };
+        }
 
-        // 3) 按侧一次写回，全部写完只广播一次。
-        //    激活版本要在逐套 Apply 之前采集 —— Apply 会边算边改 tc.Active，事后采集拿到的是新值，回滚就成了空操作。
-        var origActive = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var tc in config.Toolchains)
-            origActive[tc.Name] = tc.Active;
-
+        // 3) 按侧一次写回，全部写完只广播一次
         if (buffer is not null)
         {
             var hadChanges = BothScopes.Where(buffer.HasChanges).ToList();
@@ -1064,10 +1159,15 @@ internal static class EnvService
     {
         // 传 null 表示「这一侧不动」：只改勾选过的那一侧，避免误清空另一半 PATH。
         // 传空数组则是用户主动清空该侧（界面里取消勾选全部条目）。
+        // 空值元素在这一层再过滤一次：任何入口漏过一个 "" 都会让整条 PATH 变成空串。
         var systemEntries = system?
-            .Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.Machine), null, null)).ToList();
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.Machine), null, null))
+            .ToList();
         var userEntries = user?
-            .Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.User), null, null)).ToList();
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.User), null, null))
+            .ToList();
 
         if (!dryRun)
         {

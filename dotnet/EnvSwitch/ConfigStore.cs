@@ -3,6 +3,16 @@ using System.Text.RegularExpressions;
 
 namespace EnvSwitch;
 
+/// <summary>
+/// 配置文件存在、但暂时读不到（被其它进程占用 / 没有读权限）。
+/// 与「内容损坏」严格区分：调用方应该报错并放弃本次操作，<b>绝不</b>写回默认配置。
+/// </summary>
+internal sealed class ConfigUnreadableException(string file, Exception inner)
+    : Exception($"配置文件暂时读不到：{file}（{inner.Message}）", inner)
+{
+    internal string File { get; } = file;
+}
+
 /// <summary>配置文件读写；首次运行时自动探测本机 Java 安装作为默认配置。</summary>
 internal static class ConfigStore
 {
@@ -24,29 +34,64 @@ internal static class ConfigStore
             return config;
         }
 
+        var json = ReadText(file);
+
         try
         {
-            var json = File.ReadAllText(file);
             var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions) ?? DetectDefaultConfig();
             Migrate(config);
             return config;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[警告] 配置读取失败（{file}）：{ex.Message}");
-            // 读不懂的配置先另存一份：否则下面的 Save 会把用户原来的内容永久覆盖掉
+            // 读到文本了、但解析不出来（JSON 语法坏 / 结构对不上）：这才按「损坏」处理。
+            Console.Error.WriteLine($"[警告] 配置内容无法解析（{file}）：{ex.Message}");
+            return RecoverFromBroken(file);
+        }
+    }
+
+    /// <summary>
+    /// 内容坏了才走这里：先备份原文件（否则下面的 Save 会把用户内容永久覆盖），再写默认配置。
+    /// 「读不到」绝不能进这个分支。
+    /// </summary>
+    private static AppConfig RecoverFromBroken(string file)
+    {
+        try
+        {
+            var backup = $"{file}.bad-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Copy(file, backup, overwrite: true);
+            Console.Error.WriteLine($"[警告] 原配置已备份为：{backup}");
+        }
+        catch { /* 备份失败也要继续，至少程序还能启动 */ }
+
+        var fallback = DetectDefaultConfig();
+        try { Save(fallback, file); } catch { /* 落盘失败时内存里仍可用 */ }
+        Console.Error.WriteLine("[警告] 已使用默认配置继续运行。");
+        return fallback;
+    }
+
+    /// <summary>
+    /// 读配置文本。读不到（被占用 / 无权限）时重试一次——杀软扫描、同步盘、备份软件造成的
+    /// 占用通常是瞬时的。重试仍失败就抛 <see cref="ConfigUnreadableException"/>：
+    /// 这种情况**绝不能**当成「配置损坏」去写回默认值，那会把用户的真配置永久覆盖掉。
+    /// </summary>
+    private static string ReadText(string file)
+    {
+        try
+        {
+            return File.ReadAllText(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            System.Threading.Thread.Sleep(80);
             try
             {
-                var backup = $"{file}.bad-{DateTime.Now:yyyyMMdd-HHmmss}";
-                File.Copy(file, backup, overwrite: true);
-                Console.Error.WriteLine($"[警告] 原配置已备份为：{backup}");
+                return File.ReadAllText(file);
             }
-            catch { /* 备份失败也要继续，至少程序还能启动 */ }
-
-            var fallback = DetectDefaultConfig();
-            try { Save(fallback, file); } catch { /* 落盘失败时内存里仍可用 */ }
-            Console.Error.WriteLine("[警告] 已使用默认配置继续运行。");
-            return fallback;
+            catch (Exception retry)
+            {
+                throw new ConfigUnreadableException(file, retry);
+            }
         }
     }
 
