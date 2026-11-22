@@ -146,7 +146,12 @@
 ## 5. 立即应用全部
 
 - 前端：工具链配置页右上角按钮；先 `confirm` 列出「将应用哪些 → 哪些版本、跳过哪些（原因）」，再保存配置，再 `POST /api/apply/all`。
-- 后端 `ApplyAll`：遍历所有工具链，跳过「名称为空 / 不生效 / 没选激活版本」，其余逐个调用 `Apply`（同一个 dryRun）。
+- 后端 `ApplyAll` 是**一次性处理**，不再逐套写注册表：
+  1. `ApplyBuffer.Load()`：一次读进系统 / 用户两侧的全部变量（原样值）与 PATH，作为内存快照；
+  2. 遍历所有工具链，跳过「名称为空 / 不生效 / 没选激活版本」，其余在内存快照上串行计算（同一套 `Apply` 逻辑，只是读写都走 buffer，不落盘、不存配置）；
+  3. 提交：按侧（系统、用户）各写一次 —— 变量逐个 `SetSilent`、PATH 写一次 `SetSilent`，两侧写完统一 `EnvStore.Broadcast()` **一次**（10 套工具链也只广播 1 次，原来是每套 2 次）；
+  4. 配置只 `Save` 一次（原来每成功一套存一次）。
+- 失败归属：提交前 `EnvStore.CanWrite(侧)` 预检，某侧写不进去时，**所有涉及该侧**的工具链标失败（消息「未写入：…；写入系统侧被拒绝」）并把其激活版本回滚；涉及其它侧的工具链照常成功。
 - 部分失败不影响其它工具链；接口返回 `items[]` 逐条结果，网页顶部常驻面板用 ✅/❌ 列出，`ok` 仅在全部成功时为 `true`（但 HTTP 仍是 200，前端靠 `postJson` 拿全量结果）。
 - CLI `all` 等价此流程，退出码：全成功 0，有失败 1。
 
@@ -232,8 +237,11 @@
   1. 打开 `HKCU\Environment` 或 `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`；
   2. `DeleteValue`（值为 `null`）或 `SetValue`（**沿用原有类型**，不会把 `REG_EXPAND_SZ` 降级成 `REG_SZ`）；
   3. 用 `SendMessageTimeout(... SMTO_ABORTIFHUNG, 200ms)` 广播一次，超时就放弃通知（写入已落盘）。
-- 实测：单变量约 0.7 秒，批量从 41 秒降到约 1.3 秒。
-- 权限：写 `HKLM` 被拒时统一转成 `UnauthorizedAccessException`，界面/CLI 提示「需要以管理员身份运行」。
+- 通道分两种粒度：
+  - 单套 `use` / 环境变量页保存 / 删除 → `EnvStore.Set`（写完立即广播）；
+  - 立即应用全部 / CLI `all` → `EnvStore.SetSilent` 逐个静默写，最后统一 `EnvStore.Broadcast()` 一次（`ApplyBuffer.CommitScope`），N 套工具链只有 1 次广播。
+- 实测：单变量约 0.7 秒，批量从 41 秒降到约 1.3 秒（再降到一次广播后 2 套批量为 112ms）。
+- 权限：写 `HKLM` 被拒时统一转成 `UnauthorizedAccessException`，界面/CLI 提示「需要以管理员身份运行」；批量提交前用 `EnvStore.CanWrite` 预检该侧。
 
 ---
 

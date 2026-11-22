@@ -26,6 +26,15 @@ internal static class EnvStore
 
     internal static void Set(string name, string? value, EnvScope scope)
     {
+        SetSilent(name, value, scope);
+        Broadcast();
+    }
+
+    /// <summary>
+    /// 只写注册表、不广播，供批量应用使用：一条一条写完，最后统一 <see cref="Broadcast"/> 一次。
+    /// </summary>
+    internal static void SetSilent(string name, string? value, EnvScope scope)
+    {
         var (hive, subKey) = scope == EnvScope.Machine
             ? (RegistryHive.LocalMachine, MachineSubKey)
             : (RegistryHive.CurrentUser, UserSubKey);
@@ -46,8 +55,21 @@ internal static class EnvStore
             // 统一成 UnauthorizedAccessException，调用方的提示文案才能复用
             throw new UnauthorizedAccessException(ex.Message, ex);
         }
+    }
 
-        Broadcast();
+    /// <summary>预检某一侧能否写入（只打开键、不写值），用于批量应用前判断要不要整侧跳过。</summary>
+    internal static bool CanWrite(EnvScope scope)
+    {
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(HiveOf(scope), RegistryView.Default);
+            using var key = baseKey.OpenSubKey(SubKeyOf(scope), writable: true);
+            return key is not null;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>写 PATH 这类「值已存在」的变量时沿用原来的类型，避免把 REG_EXPAND_SZ 降级成普通字符串。</summary>

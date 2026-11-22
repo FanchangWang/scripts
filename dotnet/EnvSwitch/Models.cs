@@ -80,6 +80,9 @@ public sealed class ApplyResult
     public string? PathBefore { get; set; }
     public string? PathAfter { get; set; }
     public bool DryRun { get; set; }
+
+    /// <summary>这次应用会碰到哪几侧（批量提交后按侧归属失败原因用；不参与 JSON 序列化）。</summary>
+    internal List<EnvScope> TouchedScopes { get; set; } = [];
 }
 
 /// <summary>「立即应用」时单个工具链的结果。</summary>

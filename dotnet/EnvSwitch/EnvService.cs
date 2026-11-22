@@ -423,12 +423,105 @@ internal static class EnvService
 
     private static EnvWriteResult FailWrite(string message) => new() { Ok = false, Message = message };
 
+    private static readonly EnvScope[] BothScopes = [EnvScope.Machine, EnvScope.User];
+
+    /// <summary>
+    /// 批量应用的读写缓冲：一次把两侧变量与 PATH 读进内存，逐套工具链在内存上串行处理，
+    /// 最后按侧一次性写注册表、只广播一次 WM_SETTINGCHANGE（避免 10 套工具链广播 20 次）。
+    /// </summary>
+    internal sealed class ApplyBuffer
+    {
+        private readonly Dictionary<EnvScope, Dictionary<string, string?>> _now = new();
+        private readonly Dictionary<EnvScope, Dictionary<string, string?>> _orig = new();
+        private readonly Dictionary<EnvScope, string> _pathNow = new();
+        private readonly Dictionary<EnvScope, string> _pathOrig = new();
+
+        internal static ApplyBuffer Load()
+        {
+            var buffer = new ApplyBuffer();
+            foreach (var scope in BothScopes)
+            {
+                var raw = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    foreach (var kv in EnvStore.AllRaw(scope))
+                        raw[kv.Key] = kv.Value;
+                }
+                catch
+                {
+                    // 读不到就当作空；真正的权限问题会在 CommitScope 里报出来
+                }
+                buffer._now[scope] = new Dictionary<string, string?>(raw, StringComparer.OrdinalIgnoreCase);
+                buffer._orig[scope] = new Dictionary<string, string?>(raw, StringComparer.OrdinalIgnoreCase);
+                buffer._pathNow[scope] = GetPathRaw(scope);
+                buffer._pathOrig[scope] = buffer._pathNow[scope];
+            }
+            return buffer;
+        }
+
+        internal string? Get(string name, EnvScope scope) =>
+            _now[scope].TryGetValue(name, out var value) ? value : null;
+
+        internal void Set(string name, string? value, EnvScope scope) => _now[scope][name] = value;
+
+        internal string Path(EnvScope scope) => _pathNow[scope];
+
+        internal void SetPath(string value, EnvScope scope) => _pathNow[scope] = value;
+
+        /// <summary>该侧是否还有没写下去的改动（PATH 或 Path 之外的变量）。</summary>
+        internal bool HasChanges(EnvScope scope) =>
+            !string.Equals(_pathOrig[scope], _pathNow[scope], StringComparison.Ordinal)
+            || ChangedNames(scope).Count > 0;
+
+        private List<string> ChangedNames(EnvScope scope) =>
+            _orig[scope].Keys.Concat(_now[scope].Keys)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(n => !IsPath(n)
+                            && !string.Equals(_orig[scope].GetValueOrDefault(n), _now[scope].GetValueOrDefault(n), StringComparison.Ordinal))
+                .ToList();
+
+        /// <summary>提交某一侧：变量逐个静默写、PATH 静默写一次。返回错误文案（null = 成功）。</summary>
+        internal string? CommitScope(EnvScope scope)
+        {
+            if (!HasChanges(scope))
+                return null;
+            if (!EnvStore.CanWrite(scope))
+                return $"写入{(scope == EnvScope.Machine ? "系统" : "用户")}侧被拒绝，请以管理员身份运行。";
+            try
+            {
+                foreach (var name in ChangedNames(scope))
+                    EnvStore.SetSilent(name, _now[scope].TryGetValue(name, out var v) ? v : null, scope);
+                if (!string.Equals(_pathOrig[scope], _pathNow[scope], StringComparison.Ordinal))
+                    EnvStore.SetSilent("Path", _pathNow[scope], scope);
+
+                // 基准同步到已写入状态，同一侧不会被写第二遍
+                _orig[scope] = new Dictionary<string, string?>(_now[scope], StringComparer.OrdinalIgnoreCase);
+                _pathOrig[scope] = _pathNow[scope];
+                return null;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return $"写入{(scope == EnvScope.Machine ? "系统" : "用户")}侧被拒绝，请以管理员身份运行。";
+            }
+            catch (Exception ex)
+            {
+                return $"写入{(scope == EnvScope.Machine ? "系统" : "用户")}侧失败：{ex.Message}";
+            }
+        }
+    }
+
+    /// <summary>
+    /// 应用一套工具链的一个版本。传 <paramref name="buffer"/> 时只在内存里算与改，
+    /// 由调用方最后统一提交；<paramref name="saveConfig"/> 为 false 时也不落配置。
+    /// </summary>
     internal static ApplyResult Apply(
         AppConfig config,
         string toolchainName,
         string versionName,
         bool dryRun,
-        string configPath)
+        string configPath,
+        ApplyBuffer? buffer = null,
+        bool saveConfig = true)
     {
         var tc = config.Toolchains.FirstOrDefault(t =>
             string.Equals(t.Name, toolchainName, StringComparison.OrdinalIgnoreCase));
@@ -487,7 +580,7 @@ internal static class EnvService
         string? otherPathAfter = null;
         if (writePath)
         {
-            pathBefore = GetPathRaw(pathTarget.Scope);
+            pathBefore = buffer?.Path(pathTarget.Scope) ?? GetPathRaw(pathTarget.Scope);
             var entries = PathUtil.Without(PathUtil.Split(pathBefore), stale);
             // 再按真实目录剔一遍：PATH 里若残留同一目录的别的写法（配置里没有的别名、
             // 历史遗留的 latest 写法等），一并删掉，只留上面选中的那一条
@@ -504,7 +597,7 @@ internal static class EnvService
             // 「唯一」模式：把本条工具链的条目从另一侧 PATH 里移除
             if (pathTarget.Unique)
             {
-                var otherPath = GetPathRaw(pathTarget.Other);
+                var otherPath = buffer?.Path(pathTarget.Other) ?? GetPathRaw(pathTarget.Other);
                 var otherEntries = PathUtil.Without(PathUtil.Split(otherPath), stale.Concat(toAdd));
                 if (config.Settings.NormalizePathOnApply)
                     otherEntries = PathUtil.Normalize(PathUtil.Join(otherEntries));
@@ -512,7 +605,38 @@ internal static class EnvService
             }
         }
 
-        if (!dryRun)
+        var touched = new List<EnvScope>();
+        if (writeEnv)
+        {
+            touched.Add(envTarget.Scope);
+            if (envTarget.Unique) touched.Add(envTarget.Other);
+        }
+        if (writePath)
+        {
+            touched.Add(pathTarget.Scope);
+            if (pathTarget.Unique) touched.Add(pathTarget.Other);
+        }
+
+        if (!dryRun && buffer is not null)
+        {
+            // 批量：只改内存，最后由 ApplyAll 一次性写回并广播
+            if (writeEnv)
+            {
+                buffer.Set(tc.EnvVar, version.Home, envTarget.Scope);
+                // 「唯一」：另一侧存在同名变量才删（存在性以内存快照为准）
+                if (envTarget.Unique && buffer.Get(tc.EnvVar, envTarget.Other) is not null)
+                    buffer.Set(tc.EnvVar, null, envTarget.Other);
+            }
+            if (writePath)
+            {
+                buffer.SetPath(pathAfter, pathTarget.Scope);
+                if (otherPathAfter is not null
+                    && !string.Equals(otherPathAfter, buffer.Path(pathTarget.Other), StringComparison.Ordinal))
+                    buffer.SetPath(otherPathAfter, pathTarget.Other);
+            }
+            tc.Active = version.Name;
+        }
+        else if (!dryRun)
         {
             try
             {
@@ -541,16 +665,19 @@ internal static class EnvService
             }
 
             tc.Active = version.Name;
-            try
+            if (saveConfig)
             {
-                ConfigStore.Save(config, configPath);
-            }
-            catch (Exception ex)
-            {
-                // 环境变量 / PATH 已经写进去了，只是「当前激活版本」没记下来，
-                // 这里要明确说清，避免用户以为整次切换都失败了
-                return Fail($"环境变量与 PATH 已写入，但保存配置失败：{ex.Message}"
-                            + "（激活版本未能记录，请检查配置文件所在目录是否可写）");
+                try
+                {
+                    ConfigStore.Save(config, configPath);
+                }
+                catch (Exception ex)
+                {
+                    // 环境变量 / PATH 已经写进去了，只是「当前激活版本」没记下来，
+                    // 这里要明确说清，避免用户以为整次切换都失败了
+                    return Fail($"环境变量与 PATH 已写入，但保存配置失败：{ex.Message}"
+                                + "（激活版本未能记录，请检查配置文件所在目录是否可写）");
+                }
             }
         }
 
@@ -572,22 +699,29 @@ internal static class EnvService
         {
             Ok = true,
             DryRun = dryRun,
-            Message = (dryRun ? "预览：" : "已应用：") + string.Join("；", parts),
+            Message = (dryRun ? "预览：" : buffer is null ? "已应用：" : "待写入：") + string.Join("；", parts),
             EnvVar = writeEnv ? tc.EnvVar : null,
             NewValue = writeEnv ? version.Home : null,
             PathBefore = pathBefore,
             PathAfter = pathAfter,
+            TouchedScopes = touched,
         };
     }
 
     /// <summary>
-    /// 「立即应用」：把每套生效且有激活版本的工具链都应用一遍（配置里的工具链通常是多套，
-    /// 只应用当前选中那套会让另一套停留在旧版本）。
+    /// 「立即应用」：一次读两侧快照 → 逐套工具链在内存里串行处理 → 按侧一次写回 → 广播一次。
+    /// 这样 10 套工具链只有 1 次 WM_SETTINGCHANGE，而不是每套 2 次。
     /// </summary>
     internal static BatchApplyResult ApplyAll(AppConfig config, bool dryRun, string configPath)
     {
         var items = new List<ApplyItem>();
+        var scopesOf = new Dictionary<string, List<EnvScope>>(StringComparer.OrdinalIgnoreCase);
         var skipped = new List<string>();
+
+        // 1) 先把两侧变量与 PATH 读进内存（只读一次）
+        var buffer = dryRun ? null : ApplyBuffer.Load();
+
+        // 2) 逐套在内存上处理，不碰注册表
         foreach (var tc in config.Toolchains)
         {
             if (string.IsNullOrWhiteSpace(tc.Name) || !tc.Enabled)
@@ -600,7 +734,7 @@ internal static class EnvService
                 skipped.Add($"{tc.Name}（没选激活版本）");
                 continue;
             }
-            var r = Apply(config, tc.Name, tc.Active, dryRun, configPath);
+            var r = Apply(config, tc.Name, tc.Active, dryRun, configPath, buffer, saveConfig: false);
             items.Add(new ApplyItem
             {
                 Toolchain = tc.Name,
@@ -608,6 +742,7 @@ internal static class EnvService
                 Ok = r.Ok,
                 Message = r.Message,
             });
+            scopesOf[tc.Name] = r.TouchedScopes;
         }
 
         if (items.Count == 0)
@@ -619,6 +754,61 @@ internal static class EnvService
                     ? $"没有可应用的版本：{string.Join("、", skipped)}。先勾选「生效」并在版本表格选定激活版本。"
                     : "还没有工具链，先到「工具链配置」新建。",
             };
+
+        // 3) 按侧一次写回，全部写完只广播一次
+        var origActive = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tc in config.Toolchains)
+            origActive[tc.Name] = tc.Active;
+
+        if (buffer is not null)
+        {
+            var hadChanges = BothScopes.Where(buffer.HasChanges).ToList();
+            var scopeErrors = new Dictionary<EnvScope, string>();
+            foreach (var scope in hadChanges)
+            {
+                var error = buffer.CommitScope(scope);
+                if (error is not null)
+                    scopeErrors[scope] = error;
+            }
+            if (hadChanges.Any(scope => !scopeErrors.ContainsKey(scope)))
+                EnvStore.Broadcast();
+
+            // 4) 某侧没写进去：涉及该侧的工具链一律算失败，并把激活版本回滚
+            foreach (var item in items)
+            {
+                if (!item.Ok)
+                    continue;
+                var scopes = scopesOf.GetValueOrDefault(item.Toolchain) ?? [];
+                var bad = scopes.Where(scopeErrors.ContainsKey).Distinct().ToList();
+                if (bad.Count == 0)
+                    continue;
+                item.Ok = false;
+                item.Message = item.Message.Replace("待写入：", "未写入：")
+                              + "；" + string.Join("；", bad.Select(s => scopeErrors[s]).Distinct());
+                var tc = config.Toolchains.FirstOrDefault(t =>
+                    string.Equals(t.Name, item.Toolchain, StringComparison.OrdinalIgnoreCase));
+                if (tc is not null)
+                    tc.Active = origActive[tc.Name];
+            }
+
+            // 5) 补正措辞：真正写下去的项「待写入 → 已应用」
+            foreach (var item in items.Where(i => i.Ok))
+                item.Message = item.Message.Replace("待写入：", "已应用：");
+
+            // 5) 配置只保存一次（原来每套工具链存一次）
+            if (items.Any(i => i.Ok))
+            {
+                try
+                {
+                    ConfigStore.Save(config, configPath);
+                }
+                catch (Exception ex)
+                {
+                    foreach (var item in items.Where(i => i.Ok).ToList())
+                        item.Message += $"；环境变量与 PATH 已写入，但保存配置失败：{ex.Message}（激活版本未能记录）";
+                }
+            }
+        }
 
         var failed = items.Count(i => !i.Ok);
         var okCount = items.Count - failed;
