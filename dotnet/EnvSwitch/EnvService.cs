@@ -99,7 +99,7 @@ internal static class EnvService
             return new EnvWriteResult { Ok = false, Message = invalid };
         try
         {
-            Environment.SetEnvironmentVariable(name.Trim(), value, Target(scope));
+            EnvStore.Set(name.Trim(), value, scope);
         }
         catch (UnauthorizedAccessException)
         {
@@ -128,7 +128,7 @@ internal static class EnvService
             return new EnvWriteResult { Ok = false, Message = invalid };
         try
         {
-            Environment.SetEnvironmentVariable(name.Trim(), null, Target(scope));
+            EnvStore.Set(name.Trim(), null, scope);
         }
         catch (UnauthorizedAccessException)
         {
@@ -234,17 +234,17 @@ internal static class EnvService
             {
                 if (writeEnv)
                 {
-                    Environment.SetEnvironmentVariable(tc.EnvVar, version.Home, Target(envTarget.Scope));
+                    EnvStore.Set(tc.EnvVar, version.Home, envTarget.Scope);
                     // 「唯一」：另一侧存在同名变量才删，避免无意义地要求系统写权限
                     if (envTarget.Unique && GetEnv(tc.EnvVar, envTarget.Other) is not null)
-                        Environment.SetEnvironmentVariable(tc.EnvVar, null, Target(envTarget.Other));
+                        EnvStore.Set(tc.EnvVar, null, envTarget.Other);
                 }
                 if (writePath)
                 {
-                    Environment.SetEnvironmentVariable("Path", pathAfter, Target(pathTarget.Scope));
+                    EnvStore.Set("Path", pathAfter, pathTarget.Scope);
                     if (otherPathAfter is not null
                         && !string.Equals(otherPathAfter, GetEnv("Path", pathTarget.Other), StringComparison.Ordinal))
-                        Environment.SetEnvironmentVariable("Path", otherPathAfter, Target(pathTarget.Other));
+                        EnvStore.Set("Path", otherPathAfter, pathTarget.Other);
                 }
             }
             catch (UnauthorizedAccessException)
@@ -280,6 +280,60 @@ internal static class EnvService
         };
     }
 
+    /// <summary>
+    /// 「立即应用」：把每套生效且有激活版本的工具链都应用一遍（配置里的工具链通常是多套，
+    /// 只应用当前选中那套会让另一套停留在旧版本）。
+    /// </summary>
+    internal static BatchApplyResult ApplyAll(AppConfig config, bool dryRun, string configPath)
+    {
+        var items = new List<ApplyItem>();
+        var skipped = new List<string>();
+        foreach (var tc in config.Toolchains)
+        {
+            if (string.IsNullOrWhiteSpace(tc.Name) || !tc.Enabled)
+            {
+                skipped.Add($"{tc.Name}（不生效）");
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(tc.Active))
+            {
+                skipped.Add($"{tc.Name}（没选激活版本）");
+                continue;
+            }
+            var r = Apply(config, tc.Name, tc.Active, dryRun, configPath);
+            items.Add(new ApplyItem
+            {
+                Toolchain = tc.Name,
+                Version = tc.Active,
+                Ok = r.Ok,
+                Message = r.Message,
+            });
+        }
+
+        if (items.Count == 0)
+            return new BatchApplyResult
+            {
+                Ok = false,
+                DryRun = dryRun,
+                Message = skipped.Count > 0
+                    ? $"没有可应用的版本：{string.Join("、", skipped)}。先勾选「生效」并在版本表格选定激活版本。"
+                    : "还没有工具链，先到「工具链配置」新建。",
+            };
+
+        var failed = items.Count(i => !i.Ok);
+        var okCount = items.Count - failed;
+        var message = (dryRun ? "预览：" : "已应用：") + $"{okCount} 个工具链"
+                      + (failed > 0 ? $"，{failed} 个失败" : "")
+                      + (skipped.Count > 0 ? $"；跳过 {string.Join("、", skipped)}" : "");
+        return new BatchApplyResult
+        {
+            Ok = failed == 0,
+            DryRun = dryRun,
+            Message = message,
+            Items = items,
+        };
+    }
+
     internal static PathResult NormalizePath(EnvScope scope, bool sort, bool dedup, bool dryRun)
     {
         var before = GetEnv("Path", scope) ?? "";
@@ -289,7 +343,7 @@ internal static class EnvService
         {
             try
             {
-                Environment.SetEnvironmentVariable("Path", after, Target(scope));
+                EnvStore.Set("Path", after, scope);
             }
             catch (UnauthorizedAccessException)
             {
@@ -398,10 +452,8 @@ internal static class EnvService
         {
             try
             {
-                Environment.SetEnvironmentVariable(
-                    "Path", string.Join(';', system ?? []), EnvironmentVariableTarget.Machine);
-                Environment.SetEnvironmentVariable(
-                    "Path", string.Join(';', user ?? []), EnvironmentVariableTarget.User);
+                EnvStore.Set("Path", string.Join(';', system ?? []), EnvScope.Machine);
+                EnvStore.Set("Path", string.Join(';', user ?? []), EnvScope.User);
             }
             catch (UnauthorizedAccessException)
             {

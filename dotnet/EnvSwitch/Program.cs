@@ -188,6 +188,13 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         return Results.Json(EnvService.Apply(cfg, req.Toolchain, req.Version, req.DryRun, configPath), jsonOptions);
     });
 
+    app.MapPost("/api/apply/all", async (HttpContext ctx) =>
+    {
+        var req = await JsonSerializer.DeserializeAsync<ApplyRequest>(ctx.Request.Body, jsonOptions);
+        var cfg = ConfigStore.Load(configPath);
+        return Results.Json(EnvService.ApplyAll(cfg, req?.DryRun ?? false, configPath), jsonOptions);
+    });
+
     app.MapPost("/api/path", async (HttpContext ctx) =>
     {
         var req = await JsonSerializer.DeserializeAsync<PathRequest>(ctx.Request.Body, jsonOptions);

@@ -75,6 +75,16 @@
   .ver-table .pvcell > button { padding:3px 9px; font-size:12px; }
   .kv .ctl .check { flex:none; white-space:nowrap; }
 
+  /* 操作结果横幅：常驻显示，不会被自动消失的 toast 带走 */
+  .res-banner { padding:10px 14px; margin-bottom:14px; border-radius:9px; border:1px solid; font-size:12.5px; line-height:1.7; }
+  .res-banner.ok { background:#f0fdf4; border-color:#bbf7d0; color:#14532d; }
+  .res-banner.err { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+  .res-banner .item { margin-top:4px; font-size:12px; }
+  /* 环境变量：删除后就地置灰，不再整表重读（避免滚动条弹回顶部） */
+  .env-deleted { opacity:.55; }
+  .env-deleted .env-name, .env-deleted .env-val { text-decoration:line-through; }
+
+
   .versions { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; margin:12px 0; }
   .ver { padding:10px 12px; text-align:left; background:#fafbfc; border-radius:8px; }
   .ver b { font-size:15px; }
@@ -130,8 +140,7 @@
   #toast.ok { background:var(--ok); } #toast.err { background:#b91c1c; }
   code { padding:1px 5px; border-radius:4px; background:#eef1f5; font-size:12px; }
 
-  @media (max-width:900px) {
-    body { flex-direction:column; }
+  @media (max-width:900px) {    body { flex-direction:column; }
     .sidebar { flex:none; }
     .menu { flex-direction:row; flex-wrap:wrap; }
     .side-meta { border-top:0; margin-top:0; }
@@ -160,7 +169,6 @@
   <main id="content"></main>
 </div>
 <div id="toast"></div>
-
 <script>
 const PAGES = {
   switch:    { title: '版本切换',   sub: '选中版本即可切换环境变量与 PATH' },
@@ -176,6 +184,7 @@ let draft = null;                 // 项目配置 / 工具链配置的编辑副�
 let dirty = false;                // 编辑副本是否有未保存修改
 let curPage = 'switch';
 let selectedTc = 0;               // 工具链配置页当前选中的工具链下标
+let lastBatch = null;             // 最近一次「立即应用全部」的结果，常驻在页面顶部
 
 function toast(msg, kind = '') {
   const el = $('#toast');
@@ -183,7 +192,8 @@ function toast(msg, kind = '') {
   el.className = kind;
   el.style.display = 'block';
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => el.style.display = 'none', 5000);
+  // 失败信息留久一点，避免一眨眼就看不到
+  toast.t = setTimeout(() => el.style.display = 'none', kind === 'err' ? 12000 : 5000);
 }
 
 async function api(url, options) {
@@ -195,6 +205,18 @@ async function api(url, options) {
 }
 
 const clone = o => JSON.parse(JSON.stringify(o));
+
+// 和 api() 一样发 JSON，但「ok=false」也算正常返回：批量应用的逐条结果要靠它拿全
+async function postJson(url, body) {
+  const res = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  });
+  let data;
+  try { data = await res.json(); } catch { data = { ok: false, message: res.statusText }; }
+  if (!res.ok) throw new Error(data?.message || res.statusText);
+  return data;
+}
+
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /* ---------- 路由：/switch /project /toolchain /path /env ---------- */
@@ -254,6 +276,8 @@ function renderPage() {
 }
 
 /* ---------- 版本切换 ---------- */
+let lastSwitch = null;            // 最近一次切换的结果，常驻在页面顶部
+
 function renderSwitch() {
   const root = $('#content');
   const toolchains = state.config.toolchains.filter(t => t.enabled !== false);
@@ -261,7 +285,10 @@ function renderSwitch() {
     root.innerHTML = '<div class="card">没有生效中的工具链。到「工具链配置」页新建或勾选「生效」。</div>';
     return;
   }
-  root.innerHTML = toolchains.map((t) => {
+  const banner = lastSwitch
+    ? `<div class="res-banner ${lastSwitch.ok ? 'ok' : 'err'}">${esc(lastSwitch.text)}</div>`
+    : '';
+  root.innerHTML = banner + toolchains.map((t) => {
     const i = state.config.toolchains.indexOf(t);
     const cur = state.current[t.name] || '(未设置)';
     const versions = t.versions.map(v => `
@@ -275,25 +302,46 @@ function renderSwitch() {
         <span class="badge">PATH：${scopeLabel(t.pathScope)}</span></h2>
       <div class="hint">当前 <code>${esc(t.envVar) || '(未配置)'}</code> = ${esc(cur)}</div>
       <div class="versions">${versions || '<div class="hint" style="margin:0">没有版本</div>'}</div>
-      <div class="row"><label class="check" style="margin:0"><input type="checkbox" id="dry-${i}" checked> 仅预览，不写入</label></div>
+      <div class="row"><label class="check" style="margin:0" title="勾选时点版本只演练、不改系统；取消勾选才会真正写入环境变量与 PATH"><input type="checkbox" id="dry-${i}" checked> 仅预览，不写入</label></div>
     </div>`;
   }).join('');
   root.querySelectorAll('[data-apply]').forEach(btn => btn.addEventListener('click', () => {
     const i = +btn.dataset.apply;
-    applyVersion(state.config.toolchains[i].name, btn.dataset.ver, $('#dry-' + i).checked);
+    const t = state.config.toolchains[i];
+    const v = (t.versions || []).find(x => x.name === btn.dataset.ver);
+    const dry = $('#dry-' + i).checked;
+    const paths = ((v && v.paths) || []).filter(p => String(p).trim());
+    const envLine = t.envVar
+      ? `${t.envVar} = ${(v && v.home) || '(空)'}（${scopeLabel(t.envScope)}）`
+      : '不写环境变量（未配置变量名）';
+    const pathLine = paths.length
+      ? `${paths.length} 条（${scopeLabel(t.pathScope)}）`
+      : (String(t.pathTemplate || '').trim() ? `1 条（模板，${scopeLabel(t.pathScope)}）` : '不写 PATH');
+    const modeLine = dry
+      ? '当前勾选「仅预览，不写入」：点确定只演练预览，系统不会被修改。'
+      : '将真实写入环境变量与 PATH，写系统侧需要管理员权限。';
+    if (!confirm(`确认切换「${t.name} → ${btn.dataset.ver}」？\n\n环境变量：${envLine}\nPATH：${pathLine}\n\n${modeLine}`)) return;
+    applyVersion(t.name, btn.dataset.ver, dry);
   }));
 }
 
 async function applyVersion(toolchain, version, dryRun) {
+  toast(dryRun ? '正在预览…' : '正在写入环境变量与 PATH…');
   try {
     const r = await api('/api/apply', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ toolchain, version, dryRun })
     });
-    toast(r.message + (dryRun ? '\n（预览模式，未修改系统）' : ''), 'ok');
+    lastSwitch = { ok: true, text: r.message + (dryRun ? '\n（预览模式，未修改系统）' : '') };
+    toast(dryRun ? '预览完成（未写入系统）' : `已切换：${toolchain} → ${version}`, 'ok');
     await loadState();
     renderSwitch();
-  } catch (e) { toast('切换失败：' + e.message, 'err'); }
+  } catch (e) {
+    // 失败原因写在常驻横幅上，toast 5 秒后消失容易漏看
+    lastSwitch = { ok: false, text: `切换失败：${toolchain} → ${version}\n${e.message || '未知错误'}` };
+    toast('切换失败：' + (e.message || '未知错误'), 'err');
+    renderSwitch();
+  }
 }
 
 /* ---------- 项目配置（全局设置） ---------- */
@@ -398,11 +446,14 @@ function renderToolchain() {
     </tr>`;
   }).join('');
 
+  const batchPanel = lastBatch ? `<div class="res-banner ${lastBatch.ok ? 'ok' : 'err'}">${esc(lastBatch.message)
+    }${(lastBatch.items || []).map(x => `<div class="item">${x.ok ? '✅' : '❌'} <b>${esc(x.toolchain)}</b> → ${esc(x.version || '')}：${esc(x.message)}</div>`).join('')}</div>` : '';
   root.innerHTML = `
   <div class="apply-banner">
-    <div><b>改完不会立即生效。</b>这里只修改配置；要让激活版本真正写进环境变量与 PATH，请点右侧「立即应用」（会先保存配置）。</div>
-    <button class="primary" id="apply-active" style="flex:none">立即应用</button>
+    <div><b>改完不会立即生效。</b>这里只修改配置；要让激活版本真正写进环境变量与 PATH，请点右侧「立即应用全部」（先保存配置，再按每套工具链的激活版本逐个应用）。</div>
+    <button class="primary" id="apply-active" style="flex:none">立即应用全部</button>
   </div>
+  ${batchPanel}
   <div class="tc-layout">
     <aside class="tc-list">
       ${list}
@@ -514,7 +565,7 @@ function renderToolchain() {
     renderToolchain();
   }));
 
-  $('#apply-active').addEventListener('click', () => applyActiveToolchain(t));
+  $('#apply-active').addEventListener('click', applyAllToolchains);
 }
 
 function updateItemSub(root, t) {
@@ -524,26 +575,37 @@ function updateItemSub(root, t) {
     + (t.envVar || '(不写变量)') + (t.active ? ' · ' + t.active : '');
 }
 
-async function applyActiveToolchain(t) {
-  if (t.enabled === false) { toast('该工具链当前为「不生效」，先勾选生效再应用。', 'err'); return; }
-  if (!t.name) { toast('工具链名称不能为空。', 'err'); return; }
-  if (!t.active) { toast('先在版本表格的「激活」列点选一个版本。', 'err'); return; }
+// 「立即应用」= 保存配置后，把所有「生效 + 有激活版本」的工具链都应用一遍。
+async function applyAllToolchains() {
+  const ready = draft.toolchains.filter(t => t.enabled !== false && String(t.name || '').trim() && t.active);
+  const skipped = draft.toolchains
+    .filter(t => !(t.enabled !== false && String(t.name || '').trim() && t.active))
+    .map(t => `${String(t.name || '').trim() || '(未命名)'}（${t.enabled === false ? '不生效' : !String(t.name || '').trim() ? '名称为空' : '没选激活版本'}）`);
 
-  const activeVersion = (t.versions || []).find(v => v.name === t.active);
-  const hasPaths = !!activeVersion && (activeVersion.paths || []).some(p => String(p).trim()) || !!String(t.pathTemplate || '').trim();
-  const envLine = t.envVar ? `${t.envVar} = 该版本 Home（${scopeLabel(t.envScope)}）` : '不写环境变量';
-  const pathLine = hasPaths ? `PATH（${scopeLabel(t.pathScope)}）` : '不写 PATH';
-  if (!confirm(`立即应用「${t.name} → ${t.active}」？\n环境变量：${envLine}\nPATH：${pathLine}\n写系统侧需要管理员权限。`)) return;
+  if (!ready.length) {
+    toast('没有可应用的版本：先勾选「生效」，并在版本表格的「激活」列选一个版本。', 'err');
+    return;
+  }
+
+  const detail = ready.map(t => `· ${t.name} → ${t.active}`).join('\n');
+  const msg = `立即应用全部生效的工具链（共 ${ready.length} 个）？\n\n${detail}`
+    + (skipped.length ? `\n\n跳过：${skipped.join('、')}` : '')
+    + '\n\n会先保存当前配置，再逐个写入环境变量与 PATH。写系统侧需要管理员权限。';
+  if (!confirm(msg)) return;
 
   if (!await persistDraft(true)) return;
+  toast('正在应用全部工具链…');
   try {
-    const r = await api('/api/apply', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toolchain: t.name, version: t.active, dryRun: false })
-    });
-    toast(r.message, 'ok');
+    // 用 postJson：部分工具链失败时接口仍返回逐条结果，前端要据此展示哪些成功哪些失败
+    const r = await postJson('/api/apply/all', { dryRun: false });
+    lastBatch = r;
+    toast(r.message, r.ok ? 'ok' : 'err');
     await showPage('toolchain');
-  } catch (e) { toast('应用失败：' + e.message, 'err'); }
+  } catch (e) {
+    lastBatch = { ok: false, message: '应用失败：' + (e.message || '未知错误'), items: [] };
+    toast('应用失败：' + (e.message || '未知错误'), 'err');
+    await showPage('toolchain');
+  }
 }
 
 function addToolchain() {
@@ -567,12 +629,13 @@ function renderPath() {
         <label class="check" style="margin:0"><input type="checkbox" id="path-dedup" checked> 去重</label>
         <button id="path-refresh">刷新列表</button>
         <span class="grow"></span>
-        <label class="check" style="margin:0"><input type="checkbox" id="path-dry" checked> 仅预览，不写入</label>
+        <label class="check" style="margin:0" title="勾选时点「应用写入」只演练、不改系统；取消勾选才真正写回注册表"><input type="checkbox" id="path-dry" checked> 仅预览，不写入</label>
         <button id="path-apply" class="primary">应用写入</button>
       </div>
       <div id="path-msg" class="hint"></div>
       <div id="path-grid" class="path-grid"></div>
       <p class="hint">规则：系统与用户中完全相同的条目会从用户的「处理后」列表自动移除；同一工具链的不同版本会用徽标标注；<b>目录已不存在的条目会在「处理后」列表自动剔除，只在「当前」列表以「已失效」标出</b>；「处理后」列表可勾选要保留的条目。</p>
+      <p class="hint">右上角「仅预览，不写入」勾选着的时候，点「应用写入」只按你的勾选重新计算一遍并提示会写入多少条，<b>不会真的改 PATH</b>；想真正落盘就先取消这个勾选，再点「应用写入」。它的用途是：批量清理 / 排序前先看一眼结果，确认无误再写入。</p>
     </div>`;
   ['path-sort', 'path-dedup'].forEach(id => $('#' + id).addEventListener('change', loadPathView));
   $('#path-refresh').addEventListener('click', loadPathView);
@@ -667,7 +730,17 @@ async function loadEnvAll() {
 function envRow(scope, k, o) {
   const v = String((o && o.value) ?? '');
   const invalid = !!(o && o.invalid);
-  const nameCell = `${esc(k)}${invalid ? '<span class="badge warn" style="margin-left:6px">已失效</span>' : ''}`;
+  const deleted = !!(o && o.deleted);
+  const badge = deleted
+    ? '<span class="badge muted" style="margin-left:6px">已删除</span>'
+    : (invalid ? '<span class="badge warn" style="margin-left:6px">已失效</span>' : '');
+  const nameCell = esc(k) + badge;
+  if (deleted) {
+    // 删除后就地标灰：保留这一行便于核对删了什么，但去掉编辑 / 删除按钮
+    return `<tr class="env-deleted"><td class="env-name">${nameCell}</td>
+      <td class="env-val">${v ? esc(v) : '<span class="hint" style="margin:0">（空）</span>'}</td>
+      <td class="act-col"><span class="hint" style="margin:0">已从系统移除</span></td></tr>`;
+  }
   const editing = envEdit && envEdit.scope === scope && envEdit.name === k;
   if (editing) {
     const multiline = v.length > 60 || v.includes(';');
@@ -738,14 +811,18 @@ async function saveEnv(scope, name, value) {
     });
     toast(r.message, 'ok');
     envEdit = null;
-    await loadEnvAll();
-    await loadState();
+    // 只更新这一行，不整表重读——重读会把滚动条弹回顶部
+    if (!envData[scope]) envData[scope] = {};
+    const prev = envData[scope][name] || {};
+    envData[scope][name] = { value, invalid: !!prev.invalid, deleted: false };
+    drawEnvGroups();
   } catch (e) { toast('写入失败：' + e.message, 'err'); }
 }
 
 async function delEnv(scope, name) {
   const label = scope === 'Machine' ? '系统' : '用户';
   if (!confirm(`确定删除${label}变量「${name}」？\n删除后不可恢复${scope === 'Machine' ? '，系统变量还可能影响其它程序' : ''}。`)) return;
+  const oldValue = String((envData[scope] && envData[scope][name] && envData[scope][name].value) ?? '');
   try {
     const r = await api('/api/env/delete', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -753,12 +830,15 @@ async function delEnv(scope, name) {
     });
     toast(r.message, 'ok');
     envEdit = null;
-    await loadEnvAll();
-    await loadState();
+    // 不重新读取整表：把这一行就地改成「已删除」置灰，页面滚动位置保持不变
+    if (!envData[scope]) envData[scope] = {};
+    envData[scope][name] = { value: oldValue, invalid: false, deleted: true };
+    drawEnvGroups();
   } catch (e) { toast('删除失败：' + e.message, 'err'); }
 }
 
 /* ---------- 启动 ---------- */
+$('#toast').addEventListener('click', () => { $('#toast').style.display = 'none'; });
 document.querySelectorAll('#menu a').forEach(a => a.addEventListener('click', e => {
   e.preventDefault();
   navigate(a.dataset.page, true);

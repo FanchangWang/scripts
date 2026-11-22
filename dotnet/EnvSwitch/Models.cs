@@ -82,6 +82,24 @@ public sealed class ApplyResult
     public bool DryRun { get; set; }
 }
 
+/// <summary>「立即应用」时单个工具链的结果。</summary>
+public sealed class ApplyItem
+{
+    public string Toolchain { get; set; } = "";
+    public string? Version { get; set; }
+    public bool Ok { get; set; }
+    public string Message { get; set; } = "";
+}
+
+/// <summary>「立即应用」批量应用到所有生效工具链的汇总结果。</summary>
+public sealed class BatchApplyResult
+{
+    public bool Ok { get; set; }
+    public bool DryRun { get; set; }
+    public string Message { get; set; } = "";
+    public List<ApplyItem> Items { get; set; } = [];
+}
+
 public sealed class PathResult
 {
     public bool Ok { get; set; }
