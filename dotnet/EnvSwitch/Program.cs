@@ -84,111 +84,35 @@ switch (argv[0].ToLowerInvariant())
         return batch.Ok ? 0 : 1;
     }
 
-    case "env":
+    // PATH 整理：系统 + 用户两侧一起算、一起写。env 是 path 的别名（同一个实现），
+    // 因为本项目处理的「环境变量」就只有 PATH。
+    case "path" or "env":
     {
-        var sub = argv.Count > 1 && !argv[1].StartsWith("--", StringComparison.Ordinal) ? argv[1].ToLowerInvariant() : "list";
-        var scopeOption = GetOption(argv, "--scope");
-        var both = scopeOption is null;
-        var single = EnvService.ParseScope(scopeOption);
-
-        List<(EnvScope Scope, string Label)> Targets()
+        // 只改一侧会让两侧条目重复或错位，所以 --scope 已被移除，出现就直接报错而不是静默忽略
+        if (argv.Any(a => a.StartsWith("--scope", StringComparison.OrdinalIgnoreCase)))
         {
-            if (both)
-                return new List<(EnvScope, string)> { (EnvScope.User, "用户"), (EnvScope.Machine, "系统") };
-            return new List<(EnvScope, string)> { (single, single == EnvScope.Machine ? "系统" : "用户") };
+            Console.Error.WriteLine(
+                $"{argv[0]} 不再支持 --scope：系统与用户两侧总是一起计算、一起写入（只写一侧会造成条目错位）。");
+            return 1;
         }
 
-        switch (sub)
+        // env 以前有 list / get / set / delete 子命令，现在只剩「查看 / --apply 写入」两件事
+        var extra = argv.Skip(1)
+            .Where(a => !a.StartsWith("--", StringComparison.Ordinal))
+            .ToList();
+        if (extra.Count > 0)
         {
-            case "list" or "ls":
-            {
-                var filter = GetOption(argv, "--filter");
-                foreach (var (scope, label) in Targets())
-                {
-                    var items = EnvService.GetAllDetailed(scope)
-                        .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
-                        .Where(x => filter is null || x.Key.Contains(filter, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-                    Console.WriteLine($"\n{label}环境变量：{items.Count} 个" + (filter is null ? "" : $"（筛选「{filter}」）"));
-                    foreach (var kv in items)
-                        Console.WriteLine($"  {kv.Key} = {kv.Value.Value}"
-                                          + (kv.Value.Invalid ? "   [已失效]" : ""));
-                }
-                return 0;
-            }
-
-            case "get":
-            {
-                if (argv.Count < 3 || argv[2].StartsWith("--", StringComparison.Ordinal))
-                {
-                    Console.Error.WriteLine("用法：EnvSwitch env get <变量名> [--scope User|Machine]");
-                    return 1;
-                }
-                var name = argv[2];
-                var missing = 0;
-                foreach (var (scope, label) in Targets())
-                {
-                    var value = EnvService.GetEnv(name, scope);
-                    if (value is null)
-                    {
-                        Console.WriteLine($"{label}  {name}  （未设置）");
-                        missing++;
-                    }
-                    else
-                        Console.WriteLine($"{label}  {name} = {(value.Length == 0 ? "（空串）" : value)}");
-                }
-                return missing == Targets().Count ? 2 : 0;
-            }
-
-            case "set":
-            {
-                if (argv.Count < 3 || argv[2].StartsWith("--", StringComparison.Ordinal))
-                {
-                    Console.Error.WriteLine("用法：EnvSwitch env set <变量名> [值] [--scope User|Machine]（值省略即写成空串）");
-                    return 1;
-                }
-                var name = argv[2];
-                var value = argv.Count > 3 && !argv[3].StartsWith("--", StringComparison.Ordinal) ? argv[3] : "";
-                var scope = both ? EnvScope.User : single;
-                var r = EnvService.SetEnv(name, value, scope);
-                Console.WriteLine($"[{(r.Ok ? "OK" : "失败")}] {r.Message}");
-                return r.Ok ? 0 : 1;
-            }
-
-            case "delete" or "del" or "rm":
-            {
-                if (argv.Count < 3 || argv[2].StartsWith("--", StringComparison.Ordinal))
-                {
-                    Console.Error.WriteLine("用法：EnvSwitch env delete <变量名> [--scope User|Machine]");
-                    return 1;
-                }
-                var scope = both ? EnvScope.User : single;
-                var r = EnvService.DeleteEnv(argv[2], scope);
-                Console.WriteLine($"[{(r.Ok ? "OK" : "失败")}] {r.Message}");
-                return r.Ok ? 0 : 1;
-            }
-
-            default:
-                Console.Error.WriteLine($"未知的 env 子命令：{sub}（可用 list / get / set / delete）");
-                return 1;
+            Console.Error.WriteLine(
+                $"多余的参数：{string.Join(" ", extra)}。{argv[0]} 只有 --no-sort / --no-dedup / --apply，"
+                + "不带参数是查看两侧处理结果，加 --apply 才写入。");
+            return 1;
         }
-    }
 
-    case "path":
-    {
-        var sort = !argv.Any(a => string.Equals(a, "--no-sort", StringComparison.OrdinalIgnoreCase));
-        var dedup = !argv.Any(a => string.Equals(a, "--no-dedup", StringComparison.OrdinalIgnoreCase));
-        var apply = argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase));
-        var scopeArg = GetOption(argv, "--scope");
-        var scope = EnvService.ParseScope(scopeArg);
-
-        var result = EnvService.NormalizePath(scope, sort, dedup, dryRun: !apply);
-        Console.WriteLine($"[{(result.Ok ? "OK" : "失败")}] {result.Message}");
-        Console.WriteLine($"  范围：{scope}  条目数：{result.BeforeCount} -> {result.AfterCount}");
-        Console.WriteLine("  修改后：");
-        foreach (var entry in PathUtil.Split(result.After))
-            Console.WriteLine($"    {entry}");
-        return result.Ok ? 0 : 1;
+        return RunPathBoth(
+            configPath,
+            sort: !argv.Any(a => string.Equals(a, "--no-sort", StringComparison.OrdinalIgnoreCase)),
+            dedup: !argv.Any(a => string.Equals(a, "--no-dedup", StringComparison.OrdinalIgnoreCase)),
+            apply: argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)));
     }
 
     case "serve":
@@ -313,17 +237,6 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         return Results.Json(EnvService.ApplyAll(cfg, req?.DryRun ?? false, configPath), jsonOptions);
     });
 
-    app.MapPost("/api/path", async (HttpContext ctx) =>
-    {
-        var req = await JsonSerializer.DeserializeAsync<PathRequest>(ctx.Request.Body, jsonOptions);
-        if (req is null)
-            return Results.BadRequest(new { ok = false, message = "请求为空。" });
-
-        var result = EnvService.NormalizePath(
-            EnvService.ParseScope(req.Scope), req.Sort, req.Dedup, dryRun: req.DryRun);
-        return Results.Json(result, jsonOptions);
-    });
-
     app.MapPost("/api/path/view", async (HttpContext ctx) =>
     {
         var req = await JsonSerializer.DeserializeAsync<PathRequest>(ctx.Request.Body, jsonOptions);
@@ -393,42 +306,67 @@ static void PrintHelp()
                                              切换版本：环境变量与 PATH 一起写（--dry-run 仅预览）
           EnvSwitch all [--dry-run]          把每套「生效且有激活版本」的工具链一次性应用，
                                              环境变量与 PATH 一起写（等同网页「立即应用全部」）
-          EnvSwitch path [--sort|--no-sort] [--dedup|--no-dedup]
-                        [--scope User|Machine] [--apply]
-                                             PATH 排序去重；默认仅预览，--apply 才写入
-
-          EnvSwitch env [list] [--filter 关键词] [--scope User|Machine]
-                                             列出环境变量；不带 --scope 时用户与系统都列
-          EnvSwitch env get <变量名> [--scope User|Machine]
-                                             读取单个变量（退出码 2 表示两侧都没设置）
-          EnvSwitch env set <变量名> [值] [--scope User|Machine]
-                                             写入变量（值省略即写空串；缺省 --scope 为 User）
-          EnvSwitch env delete <变量名> [--scope User|Machine]
-                                             删除变量（不可恢复；缺省 --scope 为 User）
+          EnvSwitch path [--no-sort] [--no-dedup] [--apply]
+          EnvSwitch env  [--no-sort] [--no-dedup] [--apply]
+                                             查看系统 + 用户两侧 PATH 的处理结果
+                                             （失效条目剔除、与系统重复的用户条目移除、
+                                              同目录多写法合并、可选排序去重）
+                                             默认只预览；--apply 把两侧一起写回注册表
+                                             写系统侧需要管理员权限，两侧要么一起成功要么不动
 
           EnvSwitch config                   显示配置文件路径与内容
 
         全局参数：
           --config <路径>                    指定配置文件（可放在任意命令前）
-          --scope 既支持 --scope Machine，也支持 --scope=Machine
         """);
 }
 
-/// <summary>读一个选项值：同时支持 `--scope Machine` 与 `--scope=Machine`。</summary>
-static string? GetOption(List<string> argv, string name)
+/// <summary>
+/// path / env 共用实现：先把系统、用户两侧的「当前 → 处理后」都算出来并打印；
+/// 加 --apply 时把两侧一起写回。只写一侧会让两侧条目重复或错位，所以这里不提供单侧写入。
+/// </summary>
+static int RunPathBoth(string configPath, bool sort, bool dedup, bool apply)
 {
-    for (var i = 0; i < argv.Count; i++)
+    var cfg = ConfigStore.Load(configPath);
+    var view = EnvService.BuildPathView(cfg, sort, dedup);
+
+    PrintPathSide("系统", view.SystemCurrent, view.SystemProcessed);
+    PrintPathSide("用户", view.UserCurrent, view.UserProcessed);
+
+    Console.WriteLine();
+    Console.WriteLine(view.Message + $"（排序={sort}，去重={dedup}）");
+
+    if (!apply)
     {
-        var a = argv[i];
-        if (a.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase))
-            return a[(name.Length + 1)..];
-        if (!string.Equals(a, name, StringComparison.OrdinalIgnoreCase))
-            continue;
-        if (i + 1 < argv.Count && !argv[i + 1].StartsWith("--", StringComparison.Ordinal))
-            return argv[i + 1];
-        return null;
+        Console.WriteLine();
+        Console.WriteLine("未写入。上面的「处理后」就是将要写的完整内容；确认无误后加 --apply 才会真正落盘。");
+        return 0;
     }
-    return null;
+
+    var result = EnvService.ApplyPathSelection(
+        view.SystemProcessed.Select(x => x.Value).ToList(),
+        view.UserProcessed.Select(x => x.Value).ToList(),
+        dryRun: false);
+    Console.WriteLine($"[{(result.Ok ? "OK" : "失败")}] {result.Message}");
+    return result.Ok ? 0 : 1;
+}
+
+static void PrintPathSide(string label, List<PathEntryView> current, List<PathEntryView> processed)
+{
+    Console.WriteLine($"\n{label} PATH：当前 {current.Count} 条 → 处理后 {processed.Count} 条");
+    Console.WriteLine($"  {label} · 当前：");
+    foreach (var e in current)
+    {
+        var marks = new List<string>();
+        if (!string.IsNullOrEmpty(e.Badge))
+            marks.Add(e.Badge);
+        if (!string.IsNullOrEmpty(e.Expanded))
+            marks.Add($"实际生效 {e.Expanded}");
+        Console.WriteLine($"    {e.Value}" + (marks.Count > 0 ? "   [" + string.Join("；", marks) + "]" : ""));
+    }
+    Console.WriteLine($"  {label} · 处理后：");
+    foreach (var e in processed)
+        Console.WriteLine($"    {e.Value}");
 }
 
 static void PrintList(string configPath)
@@ -459,10 +397,8 @@ internal sealed class ApplyRequest
 
 internal sealed class PathRequest
 {
-    public string? Scope { get; set; }
     public bool Sort { get; set; } = true;
     public bool Dedup { get; set; } = true;
-    public bool DryRun { get; set; }
 }
 
 internal sealed class PathApplyRequest

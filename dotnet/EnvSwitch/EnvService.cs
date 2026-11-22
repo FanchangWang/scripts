@@ -634,43 +634,8 @@ internal static class EnvService
         };
     }
 
-    internal static PathResult NormalizePath(EnvScope scope, bool sort, bool dedup, bool dryRun)
-    {
-        var before = GetPathRaw(scope);
-        var expands = PathExpandsVariables(scope);
-        var entries = PathUtil.Split(before).Select(p => PreparePathEntry(p, expands, null, null)).ToList();
-        var after = PathUtil.Join(PathUtil.Normalize(PathUtil.Join(entries), sort, dedup));
-
-        if (!dryRun)
-        {
-            try
-            {
-                EnvStore.Set("Path", after, scope);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return new PathResult { Ok = false, Message = "写入 PATH 被拒绝，请以管理员身份运行。" };
-            }
-            catch (Exception ex)
-            {
-                return new PathResult { Ok = false, Message = $"写入 PATH 失败：{ex.Message}" };
-            }
-        }
-
-        return new PathResult
-        {
-            Ok = true,
-            DryRun = dryRun,
-            Before = before,
-            After = after,
-            BeforeCount = PathUtil.Split(before).Count,
-            AfterCount = PathUtil.Split(after).Count,
-            Message = dryRun ? "预览完成，未写入。" : "PATH 已更新。",
-        };
-    }
-
     // ---------------------------------------------------------------------
-    // 网页 PATH 工具：系统 + 用户并排视图
+    // PATH 整理：系统 + 用户并排视图（网页 PATH 页与 CLI path / env 共用）
     // ---------------------------------------------------------------------
 
     private sealed class Marked(string value, bool isSystem)

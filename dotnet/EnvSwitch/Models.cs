@@ -100,17 +100,6 @@ public sealed class BatchApplyResult
     public List<ApplyItem> Items { get; set; } = [];
 }
 
-public sealed class PathResult
-{
-    public bool Ok { get; set; }
-    public string Message { get; set; } = "";
-    public string Before { get; set; } = "";
-    public string After { get; set; } = "";
-    public int BeforeCount { get; set; }
-    public int AfterCount { get; set; }
-    public bool DryRun { get; set; }
-}
-
 /// <summary>PATH 工具网页视图中的一行。</summary>
 public sealed class PathEntryView
 {

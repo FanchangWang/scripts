@@ -28,17 +28,10 @@
 1. 进程启动先设 `Console.OutputEncoding = UTF8`。
 2. **先剥离 `--config <路径>`**（可在任意命令前后），剩下的参数交给命令分派；不指定则用默认配置路径。
 3. 没有任何参数 → 直接进入网页模式（自动开浏览器、端口取配置）。
-4. `switch (argv[0])` 分派：`help / config / list|ls / use|apply / all|apply-all / env / path / serve`，其余报「未知命令」并返回 1。
-5. `env` 自身再分子命令 `list|ls / get / set / delete|del|rm`，缺省为 `list`。
-
-**`env` 的作用域默认值**（这是最容易记错的一点）：
-
-| 子命令 | 不带 `--scope` 时 |
-| --- | --- |
-| `env` / `env list` | 用户 + 系统都列一遍 |
-| `env get` | 两侧都读，两侧都没设置时退出码 2 |
-| `env set` | 只写**用户**侧 |
-| `env delete` | 只删**用户**侧 |
+4. `switch (argv[0])` 分派：`help / config / list|ls / use|apply / all|apply-all / path / env / serve`，其余报「未知命令」并返回 1。
+5. `path` 与 `env` 是**同一个实现的两个名字**：本项目处理的「环境变量」就是 PATH，所以两者行为完全一致（见第 6 节）。
+   - `env` 没有子命令；出现 `list` / `get` / `set` / `delete` 这类裸参数会直接报错退出（不会静默当成别的命令）。
+   - 出现 `--scope` 也会直接报错：系统与用户两侧总是一起算、一起写。
 
 **写入类命令的默认行为**（防止误改）：
 
@@ -46,7 +39,7 @@
 | --- | --- | --- |
 | `use` | 真实写入 | 加 `--dry-run` 只预览 |
 | `all` | 真实写入 | 加 `--dry-run` 只预览 |
-| `path` | 仅预览 | 加 `--apply` 才写 |
+| `path` / `env` | 仅预览（打印两侧「当前 → 处理后」） | 加 `--apply` 才把两侧一起写回 |
 
 ---
 
@@ -182,6 +175,7 @@
 3. 后端按提交的数组整体写该侧（`string.Join(';')`），写前同样把无效 `%变量%` 换具体路径。
 4. **未提交某一侧（`null`）表示该侧不动**；两侧都没提交会被 400 拒绝 —— 防止误清空整条 PATH。
 5. 成功（非预览）后前端 `loadState + loadPathView` 刷新，看到的就是注册表里的新状态。
+6. CLI 的 `path` / `env` 走同一套：默认打印两侧「当前 → 处理后」；`--apply` 时同样把两侧**一起**提交给 `ApplyPathSelection`（等价于网页里两侧都勾选后点「应用写入」），没有单侧写入入口。
 
 ---
 
@@ -249,7 +243,7 @@
 | `REG_SZ`（本机两侧都是） | **完全不展开**，`%VAR%\bin` 等于一条无效路径 | 写入前把「字面无效、展开后存在」的条目换成具体路径；视图里提示实际生效路径 |
 
 判定入口：`EnvService.PathExpandsVariables(scope)` → `EnvStore.KindOf("Path", scope) == ExpandString`。
-替换入口：`PreparePathEntry`，三条写入通道都会经过（`Apply` / `ApplyPathSelection` / `NormalizePath`）。
+替换入口：`PreparePathEntry`，两条写入通道都会经过（`Apply` / `ApplyPathSelection`）。
 
 ---
 
@@ -274,14 +268,16 @@
 | `list` | 读配置 + 每套工具链的当前变量值 + 版本列表（`*` 标激活） | 无配置时提示去网页建 |
 | `use <工具链> <版本> [--dry-run]` | `Apply` | 打印消息、变量新值、修改后 PATH；失败 1 |
 | `all [--dry-run]` | `ApplyAll` | 逐条 ✔/✘；有失败 1 |
-| `path [--sort/--no-sort] [--dedup/--no-dedup] [--scope] [--apply]` | `NormalizePath` | 打印条目数前后与结果；默认不写 |
-| `env [list] [--filter] [--scope]` | 逐侧枚举 | 每侧条数 + `[已失效]` 标记 |
-| `env get <名> [--scope]` | 逐侧取值 | 两侧都未设置 → 2 |
-| `env set <名> [值] [--scope]` | 写一侧（缺省级 User） | 值省略 = 写空串；失败 1 |
-| `env delete <名> [--scope]` | 删一侧（缺省级 User） | 失败 1 |
+| `path [--no-sort] [--no-dedup] [--apply]` | `BuildPathView`（两侧一起） | 打印系统/用户各自的「当前 N → 处理后 M」与逐条结果；默认不写 |
+| `env [--no-sort] [--no-dedup] [--apply]` | 与 `path` 完全相同（同一函数） | 同上 |
 | `config` | 打印配置路径 + 原文 | 未生成时提示先跑一次 |
 
-选项解析：`--scope Machine` 与 `--scope=Machine` 都支持（`GetOption`）；值以 `--` 开头视为「没有值」。
+`path` / `env` 的额外规则：
+
+- 带 `--apply` 时，把「处理后」两侧列表原样交给 `ApplyPathSelection`，**系统与用户同一轮一起写**；任一侧被拒（多半是系统侧需要管理员）就整轮失败，避免出现「只改了一半」的错位状态。
+- 出现 `--scope` → 直接报错退出（提示「两侧总是一起处理」）。
+- 出现 `list` / `get` / `set` / `delete` 等裸参数 → 直接报错退出（不再有子命令）。
+- CLI 与网页 PATH 页用的是同一套计算：失效剔除、系统重复移除、同目录合并、`%变量%` 展开一致。
 
 ---
 
@@ -296,7 +292,6 @@
 | `POST /api/config` | 完整 `AppConfig` | 校验 → 迁移 → 原子保存 | 400 + `errors[]`；写盘异常 500 |
 | `POST /api/apply` | `{toolchain,version,dryRun}` | 切一个工具链的一个版本 | 200 + `ok:false` + 原因 |
 | `POST /api/apply/all` | `{dryRun}` | 批量应用 | 200 + `items[]` |
-| `POST /api/path` | `{scope,sort,dedup,dryRun}` | 排序去重（CLI 同逻辑） | 200 + `ok:false` |
 | `POST /api/path/view` | `{sort,dedup}` | 生成系统/用户「当前 + 处理后」视图 | — |
 | `POST /api/path/apply` | `{system?,user?,dryRun}` | 整体覆盖指定侧；`null` 侧不动 | 400（两侧都没给） |
 
@@ -331,7 +326,7 @@
 ## 17. 已知限制（审核时请留意是否符合预期）
 
 1. 校验只判断「存在」，不判断「是不是目录」；先填路径后装软件会被拦（可接受吗？目前没有跳过开关）。
-2. 「PATH 工具」的「应用写入」是**整体覆盖**该侧 PATH，勾选结果就是最终内容；未勾选的条目会被删掉。
+2. 「PATH 工具」的「应用写入」是**整体覆盖两侧 PATH**，勾选结果就是最终内容；未勾选的条目会被删掉。CLI 的 `path --apply` / `env --apply` 直接把「处理后」两侧整体写回。
 3. 用户侧与系统侧的「重复」判定用规范化字符串，`%USERPROFILE%\…` 与已展开的同一路径跨侧不算重复。
 4. 条目归属识别只认配置里出现过的路径，配置外的条目没有工具链徽标。
 5. 非管理员会话无法在本机验证系统侧真实写入，只能验证 dry-run 结果。
@@ -356,6 +351,8 @@
 | A10 | 低 | ✔ 已改 | 项目配置页保存失败只有 toast，没有错误面板 | 项目页复用同一套 `configErrors` 面板；`persistDraft` 失败时也重绘项目页 |
 | A11 | 低 | ✔ 已改（0 警告） | `net10.0` TFM 下注册表 API 触发 31 条 CA1416 平台警告，掩盖真实告警 | TFM 改 `net10.0-windows`，构建 0 警告 0 错误 |
 | A12 | 低 | ✔ 已改 | 校验失败文案固定写「N 处路径不存在」，版本重名等错误被误述 | 统一改为「N 处配置有误」 |
+| A13 | 高 | ✔ 已实测（path/env 输出逐字节一致） | `path` 默认只按 `--scope`（缺省 User）整理一侧，另一侧完全不动，容易造成系统/用户条目重复或错位 | 重写为 `path` / `env` 同一实现：默认打印**系统 + 用户**两侧「当前 → 处理后」，`--apply` 把两侧一起提交给 `ApplyPathSelection`，任一侧被拒则整轮失败；`--scope` 出现即报错退出 |
+| A14 | 中 | ✔ 已实测（`env list` 退出码 1） | `env` 被做成了 list/get/set/delete 四个子命令，偏离本项目「整理 PATH」的定位，而且真正的 `--apply` 写入反而不存在 | 删除四个子命令与 `--filter`，`env` 只保留「预览」与「--apply 写入」；裸参数直接报错，`GetOption` / `NormalizePath` / `/api/path` 一并移除 |
 
 **未修复 / 留待确认**：
 
