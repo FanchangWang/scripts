@@ -18,7 +18,9 @@ internal static class ConfigStore
         if (!File.Exists(file))
         {
             var config = DetectDefaultConfig();
-            Save(config, file);
+            // 首次运行落盘失败（目录不可写）时不要让程序崩掉，内存里还能用
+            try { Save(config, file); }
+            catch (Exception ex) { Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{ex.Message}"); }
             return config;
         }
 
@@ -48,18 +50,29 @@ internal static class ConfigStore
         }
     }
 
-    /// <summary>旧配置补齐新字段：工具链没有作用域时继承全局 pathScope（再默认 User）。</summary>
+    /// <summary>旧配置补齐新字段：剔除 null 元素、补集合、把 null 字符串补成空串，再继承作用域。</summary>
     internal static void Migrate(AppConfig config)
     {
-        // JSON 里写 null 的字段反序列化后会是 null，这里统一补成空集合，避免后续 NRE
+        // JSON 里写 null 的字段反序列化后会是 null，这里统一补成空集合 / 空串，避免后续 NRE
         config.Toolchains ??= [];
         config.Settings ??= new ConfigSettings();
+        config.Toolchains.RemoveAll(t => t is null);
         var defaultScope = string.IsNullOrWhiteSpace(config.Settings.PathScope) ? "User" : config.Settings.PathScope;
         foreach (var t in config.Toolchains)
         {
+            t.Name ??= "";
+            t.EnvVar ??= "";
+            t.PathTemplate ??= "";
+            t.Active ??= "";
             t.Versions ??= [];
+            t.Versions.RemoveAll(v => v is null);
             foreach (var v in t.Versions)
+            {
+                v.Name ??= "";
+                v.Home ??= "";
                 v.Paths ??= [];
+                v.Paths.RemoveAll(p => p is null);
+            }
             if (string.IsNullOrWhiteSpace(t.PathScope))
                 t.PathScope = defaultScope;
             if (string.IsNullOrWhiteSpace(t.EnvScope))

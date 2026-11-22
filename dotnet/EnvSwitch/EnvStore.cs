@@ -88,8 +88,7 @@ internal static class EnvStore
         }
     }
 
-    /// <summary>
-    /// 读取现有值的注册表类型：REG_EXPAND_SZ 里的 %VAR% 会被系统展开，REG_SZ 不会。
+    /// <summary>读取现有值的注册表类型：REG_EXPAND_SZ 里的 %VAR% 会被系统展开，REG_SZ 不会。
     /// 值不存在时返回 null。
     /// </summary>
     internal static RegistryValueKind? KindOf(string name, EnvScope scope)
@@ -109,6 +108,50 @@ internal static class EnvStore
         }
     }
 
+    /// <summary>该变量当下是不是 REG_EXPAND_SZ（系统会替我们展开 %VAR%）。</summary>
+    internal static bool IsExpandString(string name, EnvScope scope) =>
+        KindOf(name, scope) == RegistryValueKind.ExpandString;
+
+    /// <summary>这种类型能不能当字符串读写；REG_DWORD / REG_MULTI_SZ 之类不行。</summary>
+    internal static bool IsStringKind(RegistryValueKind kind) =>
+        kind is RegistryValueKind.String or RegistryValueKind.ExpandString;
+
+    /// <summary>
+    /// 一侧里那些「不是字符串」的变量（REG_DWORD / REG_MULTI_SZ …）及其中文类型名。
+    /// 这些值只能只读展示：ToString() 之后再写回会把注册表类型改掉。
+    /// </summary>
+    internal static Dictionary<string, string> NonStringKinds(EnvScope scope)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        using var baseKey = RegistryKey.OpenBaseKey(HiveOf(scope), RegistryView.Default);
+        using var key = baseKey.OpenSubKey(SubKeyOf(scope), writable: false);
+        if (key is null)
+            return result;
+        foreach (var name in key.GetValueNames())
+        {
+            RegistryValueKind kind;
+            try
+            {
+                kind = key.GetValueKind(name);
+            }
+            catch
+            {
+                continue;
+            }
+            if (!IsStringKind(kind))
+                result[name] = kind switch
+                {
+                    RegistryValueKind.DWord => "REG_DWORD",
+                    RegistryValueKind.QWord => "REG_QWORD",
+                    RegistryValueKind.MultiString => "REG_MULTI_SZ",
+                    RegistryValueKind.Binary => "REG_BINARY",
+                    RegistryValueKind.None => "无类型",
+                    _ => kind.ToString(),
+                };
+        }
+        return result;
+    }
+
     /// <summary>
     /// 读取注册表里的原样值：REG_EXPAND_SZ 的 %变量% 不展开。
     /// 界面编辑 / 写回时用它，避免把「%USERPROFILE%\go」这种写法固化成展开后的绝对路径。
@@ -120,10 +163,24 @@ internal static class EnvStore
         using var key = baseKey.OpenSubKey(SubKeyOf(scope), writable: false);
         if (key is null)
             return null;
+        try
+        {
+            // 非字符串类型（REG_DWORD 等）不返回伪造的 ToString() 结果
+            if (key.GetValueKind(name) is var kind && !IsStringKind(kind))
+                return null;
+        }
+        catch
+        {
+            return null;
+        }
         return key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames)?.ToString();
     }
 
-    /// <summary>枚举一侧的全部变量（原样值，不展开）。读不到时抛异常，由调用方回退。</summary>
+    /// <summary>
+    /// 枚举一侧的全部变量（原样值，不展开）。只返回字符串类型的值；
+    /// 非字符串类型（REG_DWORD 等）交给 <see cref="NonStringKinds"/> 只读展示，
+    /// 不能在这里 ToString() 了事——那样界面上一保存就会把注册表类型写坏。
+    /// </summary>
     internal static Dictionary<string, string> AllRaw(EnvScope scope)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -133,6 +190,17 @@ internal static class EnvStore
             return result;
         foreach (var name in key.GetValueNames())
         {
+            RegistryValueKind kind;
+            try
+            {
+                kind = key.GetValueKind(name);
+            }
+            catch
+            {
+                continue;
+            }
+            if (!IsStringKind(kind))
+                continue;
             var value = key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
             result[name] = value?.ToString() ?? "";
         }

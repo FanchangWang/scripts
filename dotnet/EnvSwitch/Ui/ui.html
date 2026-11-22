@@ -735,9 +735,24 @@ function drawPathView() {
 }
 
 async function applyPath() {
+  if (!pathView) { toast('列表还没加载，先点「刷新列表」再操作。', 'err'); return; }
   const collect = name => Array.from(document.querySelectorAll(`input[data-list="${name}"]:checked`))
     .map(el => el.dataset.value);
   const body = { system: collect('system'), user: collect('user'), dryRun: $('#path-dry').checked };
+
+  // 空列表护栏：一条都不勾就等于把 PATH 清空，命令全都找不到，必须挡住
+  if (body.system.length === 0 && body.user.length === 0) {
+    toast('系统与用户两侧都没勾选任何条目，这样会把 PATH 清空，已取消。', 'err');
+    return;
+  }
+
+  // 原来有条目、现在一条不留：单独再确认一次「这一侧会被清空」
+  const emptied = [];
+  if (pathView.systemProcessed.length > 0 && body.system.length === 0) emptied.push('系统');
+  if (pathView.userProcessed.length > 0 && body.user.length === 0) emptied.push('用户');
+  if (emptied.length > 0
+      && !confirm(`注意：${emptied.join('、')} PATH 会被整条清空（原条目全部移除）。\n\n确认继续？`)) return;
+
   if (!body.dryRun && !confirm(`确认写入 PATH？\n\n系统：${body.system.length} 条\n用户：${body.user.length} 条\n\n会整体覆盖当前的系统与用户 PATH，写入内容就是右侧「处理后」列表里勾选的条目。`)) return;
   try {
     const r = await api('/api/path/apply', {
@@ -782,15 +797,24 @@ function envRow(scope, k, o) {
   const v = String((o && o.value) ?? '');
   const invalid = !!(o && o.invalid);
   const deleted = !!(o && o.deleted);
+  const readOnly = !!(o && o.readOnly);
   const badge = deleted
     ? '<span class="badge muted" style="margin-left:6px">已删除</span>'
-    : (invalid ? '<span class="badge warn" style="margin-left:6px">已失效</span>' : '');
+    : readOnly
+      ? `<span class="badge muted" style="margin-left:6px">${esc(o.kind || '只读')}</span>`
+      : (invalid ? '<span class="badge warn" style="margin-left:6px">已失效</span>' : '');
   const nameCell = esc(k) + badge;
   if (deleted) {
     // 删除后就地标灰：保留这一行便于核对删了什么，但去掉编辑 / 删除按钮
     return `<tr class="env-deleted"><td class="env-name">${nameCell}</td>
       <td class="env-val">${v ? esc(v) : '<span class="hint" style="margin:0">（空）</span>'}</td>
       <td class="act-col"><span class="hint" style="margin:0">已从系统移除</span></td></tr>`;
+  }
+  if (readOnly) {
+    // REG_DWORD 之类的非字符串值：改写成字符串会破坏注册表类型，只允许删除
+    return `<tr><td class="env-name">${nameCell}</td>
+      <td class="env-val">${esc(v)}</td>
+      <td class="act-col"><span class="hint" style="margin:0">只读</span><button class="danger" data-del="${esc(k)}" data-scope="${scope}">删除</button></td></tr>`;
   }
   const editing = envEdit && envEdit.scope === scope && envEdit.name === k;
   if (editing) {
@@ -868,8 +892,8 @@ async function saveEnv(scope, name, value) {
     envEdit = null;
     // 只更新这一行，不整表重读——重读会把滚动条弹回顶部
     if (!envData[scope]) envData[scope] = {};
-    const prev = envData[scope][name] || {};
-    envData[scope][name] = { value, invalid: !!prev.invalid, deleted: false };
+    // 失效标记按新值重算（后端返回），不要沿用保存前的旧标记
+    envData[scope][name] = { value, invalid: !!(r && r.invalid), deleted: false };
     drawEnvGroups();
   } catch (e) { toast('写入失败：' + e.message, 'err'); }
 }

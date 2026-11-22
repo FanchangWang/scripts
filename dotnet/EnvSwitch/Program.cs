@@ -34,8 +34,7 @@ configPath ??= ConfigStore.DefaultPath;
 
 if (argv.Count == 0)
 {
-    await RunWeb(configPath, jsonOptions, autoOpenBrowser: true, portOverride: null);
-    return 0;
+    return await RunWeb(configPath, jsonOptions, autoOpenBrowser: true, portOverride: null);
 }
 
 switch (argv[0].ToLowerInvariant())
@@ -55,13 +54,26 @@ switch (argv[0].ToLowerInvariant())
 
     case "use" or "apply":
     {
-        if (argv.Count < 3)
+        if (RejectScope("use", argv))
+            return 1;
+        if (RejectUnknownFlags("use", argv, "--dry-run"))
+            return 1;
+        // 位置参数只有两个：工具链、版本。--dry-run 这类选项不算，避免把选项当成版本名
+        var positional = argv.Skip(1)
+            .Where(a => !a.StartsWith("--", StringComparison.Ordinal))
+            .ToList();
+        if (positional.Count < 2)
         {
             Console.Error.WriteLine("用法：EnvSwitch use <工具链> <版本> [--dry-run]");
             return 1;
         }
+        if (positional.Count > 2)
+        {
+            Console.Error.WriteLine($"多余的参数：{string.Join(" ", positional.Skip(2))}。use 只接受工具链和版本两个位置参数。");
+            return 1;
+        }
         var dryRun = argv.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
-        var result = EnvService.Apply(ConfigStore.Load(configPath), argv[1], argv[2], dryRun, configPath);
+        var result = EnvService.Apply(ConfigStore.Load(configPath), positional[0], positional[1], dryRun, configPath);
         Console.WriteLine($"[{(result.Ok ? "OK" : "失败")}] {result.Message}");
         if (result.Ok)
         {
@@ -109,13 +121,26 @@ switch (argv[0].ToLowerInvariant())
         var noBrowser = false;
         for (var i = 1; i < argv.Count; i++)
         {
-            if (string.Equals(argv[i], "--port", StringComparison.OrdinalIgnoreCase) && i + 1 < argv.Count)
-                int.TryParse(argv[++i], out port);
-            else if (string.Equals(argv[i], "--no-browser", StringComparison.OrdinalIgnoreCase))
+            var a = argv[i];
+            if (string.Equals(a, "--port", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= argv.Count || !int.TryParse(argv[i + 1], out var parsed) || parsed is < 1 or > 65535)
+                {
+                    Console.Error.WriteLine("--port 后面需要 1–65535 之间的端口号。");
+                    return 1;
+                }
+                port = parsed;
+                i++;
+            }
+            else if (string.Equals(a, "--no-browser", StringComparison.OrdinalIgnoreCase))
                 noBrowser = true;
+            else
+            {
+                Console.Error.WriteLine($"多余的参数：{a}。serve 只支持：--port N / --no-browser。");
+                return 1;
+            }
         }
-        await RunWeb(configPath, jsonOptions, autoOpenBrowser: !noBrowser, portOverride: port > 0 ? port : null);
-        return 0;
+        return await RunWeb(configPath, jsonOptions, autoOpenBrowser: !noBrowser, portOverride: port > 0 ? port : null);
     }
 
     default:
@@ -124,26 +149,100 @@ switch (argv[0].ToLowerInvariant())
 }
 
 // ---------- 网页模式 ----------
-static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, bool autoOpenBrowser, int? portOverride)
+static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptions, bool autoOpenBrowser, int? portOverride)
 {
     var config = ConfigStore.Load(configPath);
     var port = portOverride ?? config.Settings.Port;
 
+    // 端口是能存进配置的：非法值不能让程序直接崩在堆栈里，降级成自动分配即可
+    if (port is < 0 or > 65535)
+    {
+        Console.Error.WriteLine($"[警告] 端口 {port} 不在 0–65535 范围内，已改为自动分配。");
+        port = 0;
+    }
+
     var builder = WebApplication.CreateBuilder();
     builder.Logging.ClearProviders();
+    // 只留 warning/error：既不刷屏，又能在 500 时打印原因（原来全部关掉，异常变成空响应体）
+    builder.Logging.AddSimpleConsole(o => o.SingleLine = true);
+    builder.Logging.SetMinimumLevel(LogLevel.Warning);
     builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 
     var app = builder.Build();
+
+    // 本地接口的三道闸 + 统一异常出口。
+    // 只监听 127.0.0.1 挡不住浏览器：任意网页都能用 no-cors 简单请求盲打这里改环境变量 / 清空 PATH。
+    var allowedHosts = new[] { "127.0.0.1", "localhost", "[::1]", "::1" };
+    app.Use(async (ctx, next) =>
+    {
+        try
+        {
+            // 1) Host 白名单：挡 DNS rebinding（把自己的域名解析到 127.0.0.1 时 Host 仍是他的域名）
+            if (!allowedHosts.Contains(ctx.Request.Host.Host, StringComparer.OrdinalIgnoreCase))
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            if (HttpMethods.IsPost(ctx.Request.Method))
+            {
+                // 2) 只收 JSON：text/plain 属于 CORS 安全列表类型（浏览器不发预检），必须挡掉
+                if (ctx.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) != true)
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status415UnsupportedMediaType;
+                    return;
+                }
+
+                // 3) 带 Origin 时必须同源；跨站 JSON 请求会触发预检，而本服务不返回 CORS 头
+                var origin = ctx.Request.Headers.Origin.ToString();
+                if (origin.Length > 0
+                    && (!Uri.TryCreate(origin, UriKind.Absolute, out var parsed)
+                        || !allowedHosts.Contains(parsed.Host, StringComparer.OrdinalIgnoreCase)))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+            }
+
+            await next();
+        }
+        catch (JsonException ex)
+        {
+            // 请求体不是合法 JSON 属于客户端错误，别混进 500（也就不会被当成服务端 bug 排查）
+            app.Logger.LogWarning(ex, "请求体解析失败：{Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+            if (ctx.Response.HasStarted)
+                return;
+            ctx.Response.Clear();
+            ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            await ctx.Response.WriteAsJsonAsync(new { ok = false, message = $"请求体不是合法 JSON：{ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogError(ex, "未处理异常：{Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+            if (ctx.Response.HasStarted)
+                return;
+            ctx.Response.Clear();
+            ctx.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            ctx.Response.ContentType = "application/json; charset=utf-8";
+            await ctx.Response.WriteAsJsonAsync(new { ok = false, message = $"服务内部错误：{ex.Message}" });
+        }
+    });
 
     app.MapGet("/", () => Results.Content(Ui.Html, "text/html; charset=utf-8"));
 
     app.MapGet("/api/state", () =>
     {
         var cfg = ConfigStore.Load(configPath);
-        var snapshot = cfg.Toolchains.ToDictionary(
-            t => t.Name,
-            t => EnvService.GetEnv(t.EnvVar, EnvService.ParseWriteScope(t.EnvScope).Scope) ?? "",
-            StringComparer.OrdinalIgnoreCase);
+        // 历史坏配置（重名 / 空名）不应该让整页打不开：逐条填充，重名保留第一套
+        var snapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in cfg.Toolchains)
+        {
+            var name = t.Name ?? "";
+            if (name.Length == 0 || snapshot.ContainsKey(name))
+                continue;
+            snapshot[name] = EnvService.GetEnv(t.EnvVar, EnvService.ParseWriteScope(t.EnvScope).Scope) ?? "";
+        }
         return Results.Json(new
         {
             configPath,
@@ -180,7 +279,10 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         var incoming = await JsonSerializer.DeserializeAsync<AppConfig>(ctx.Request.Body, jsonOptions);
         if (incoming is null)
             return Results.BadRequest(new { ok = false, message = "配置内容为空。" });
-        incoming.Toolchains ??= [];
+
+        // 先归一：剔除数组里的 null 元素、补集合、把 null 字符串补成空串，
+        // 否则后面的校验会直接 NRE（表现就是空响应体的 500）
+        ConfigStore.Migrate(incoming);
 
         if (incoming.Toolchains.Any(t => string.IsNullOrWhiteSpace(t.Name)))
             return Results.BadRequest(new { ok = false, message = "工具链名称不能为空（环境变量名可以留空，表示不写环境变量）。" });
@@ -195,7 +297,6 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
                 errors,
             }, jsonOptions, statusCode: StatusCodes.Status400BadRequest);
 
-        ConfigStore.Migrate(incoming);
         try
         {
             ConfigStore.Save(incoming, configPath);
@@ -241,6 +342,13 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         // 两侧都没给 = 不知道要改哪一侧，直接拒绝，避免把整条 PATH 写空
         if (req.System is null && req.User is null)
             return Results.BadRequest(new { ok = false, message = "请求里没有 system 或 user 列表，未做任何修改。" });
+        // 两侧都是空数组 = 把两条 PATH 一起清空。列表没加载出来时点「应用写入」就是这个形状，必须挡
+        if (req.System is { Count: 0 } && req.User is { Count: 0 })
+            return Results.BadRequest(new
+            {
+                ok = false,
+                message = "系统与用户两侧都是空列表。若确实要清空某一侧，请只提交那一侧；未做任何修改。",
+            });
         return Results.Json(
             EnvService.ApplyPathSelection(req.System, req.User, req.DryRun), jsonOptions);
     });
@@ -257,7 +365,16 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
             ? Results.NotFound(new { ok = false, message = "未知的接口。" })
             : Results.Content(Ui.Html, "text/html; charset=utf-8"));
 
-    await app.StartAsync();
+    try
+    {
+        await app.StartAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"启动失败：端口 {port} 可能被占用或不可用（{ex.Message}）");
+        Console.Error.WriteLine("换个端口试试：EnvSwitch serve --port 5180");
+        return 1;
+    }
 
     var addresses = app.Services.GetRequiredService<IServer>()
                        .Features.Get<IServerAddressesFeature>()?.Addresses
@@ -278,6 +395,7 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
     }
 
     await app.WaitForShutdownAsync();
+    return 0;
 }
 
 static void PrintHelp()
@@ -321,6 +439,21 @@ static bool RejectScope(string cmd, List<string> argv)
 static bool RejectUnknownOptions(string cmd, List<string> argv, params string[] allowed)
 {
     var bad = argv.Skip(1)
+        .Where(a => allowed.All(x => !string.Equals(a, x, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
+    if (bad.Count == 0)
+        return false;
+    Console.Error.WriteLine($"多余的参数：{string.Join(" ", bad)}。{cmd} 只支持：{string.Join(" / ", allowed)}。");
+    return true;
+}
+
+/// <summary>
+/// 只拒绝白名单之外的 --flag（位置参数不算）。给 `use &lt;工具链&gt; &lt;版本&gt;` 这种带位置参数的命令用。
+/// </summary>
+static bool RejectUnknownFlags(string cmd, List<string> argv, params string[] allowed)
+{
+    var bad = argv.Skip(1)
+        .Where(a => a.StartsWith("--", StringComparison.Ordinal))
         .Where(a => allowed.All(x => !string.Equals(a, x, StringComparison.OrdinalIgnoreCase)))
         .ToList();
     if (bad.Count == 0)

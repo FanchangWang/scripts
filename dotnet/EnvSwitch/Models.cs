@@ -9,8 +9,17 @@ public sealed class AppConfig
 
 public sealed class ConfigSettings
 {
-    /// <summary>应用版本时是否顺带对 PATH 排序 + 去重。</summary>
+    /// <summary>
+    /// 应用版本时是否顺带整理 PATH（默认只去重、保持原顺序）。
+    /// 去重是安全的；排序会改变命令解析优先级（先命中先执行），所以必须显式打开 <see cref="SortPathOnApply"/>。
+    /// </summary>
     public bool NormalizePathOnApply { get; set; } = true;
+
+    /// <summary>
+    /// 整理 PATH 时是否按字典序重排整条 PATH。默认关闭：排序会把常用目录挪到后面，
+    /// 同名 exe（python/java/git）就可能从另一个目录被命中。
+    /// </summary>
+    public bool SortPathOnApply { get; set; }
 
     /// <summary>PATH 修改作用范围：User 或 Machine（Machine 需管理员权限）。</summary>
     public string PathScope { get; set; } = "User";
@@ -158,6 +167,9 @@ public sealed class EnvWriteResult
 {
     public bool Ok { get; set; }
     public string Message { get; set; } = "";
+
+    /// <summary>写入后这个值是否仍指向不存在的路径（界面据此更新「已失效」标记，不沿用旧值）。</summary>
+    public bool Invalid { get; set; }
 }
 
 /// <summary>网页「环境变量」页的一行值；指向不存在的目录时标记失效。</summary>
@@ -165,4 +177,10 @@ public sealed class EnvVarView
 {
     public string Value { get; set; } = "";
     public bool Invalid { get; set; }
+
+    /// <summary>非字符串类型（REG_DWORD 等）：网页只能只读展示，不允许编辑。</summary>
+    public bool ReadOnly { get; set; }
+
+    /// <summary>只读项的注册表类型名，例如 REG_DWORD。</summary>
+    public string? Kind { get; set; }
 }

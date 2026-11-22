@@ -75,6 +75,22 @@ internal static class EnvService
                     Value = kv.Value,
                     Invalid = IsProbablyInvalidPath(kv.Key, kv.Value),
                 };
+
+            // 非字符串类型（REG_DWORD / REG_MULTI_SZ …）只能看不能改：写回去会把类型变成字符串
+            try
+            {
+                foreach (var kv in EnvStore.NonStringKinds(scope))
+                    result[kv.Key] = new EnvVarView
+                    {
+                        Value = $"（该值是 {kv.Value} 类型，网页只能只读查看）",
+                        ReadOnly = true,
+                        Kind = kv.Value,
+                    };
+            }
+            catch
+            {
+                // 读类型失败不影响字符串变量的展示
+            }
             return result;
         }
 
@@ -114,22 +130,35 @@ internal static class EnvService
         (v.Length >= 3 && char.IsLetter(v[0]) && v[1] == ':' && (v[2] == '\\' || v[2] == '/'))
         || v.StartsWith(@"\\", StringComparison.Ordinal);
 
+    /// <summary>
+    /// 带超时的存在性探测，全项目唯一的存在性判断入口。
+    /// 断网的网络盘 / 拔掉的移动硬盘会让 Directory.Exists 卡上几十秒，
+    /// 所以统一 1.5 秒判不了就当「存在」——宁可留一条失效路径，也不误删。
+    /// </summary>
+    internal static bool ProbeExists(string expandedPath, bool dirOnly = false, int timeoutMs = 1500)
+    {
+        if (string.IsNullOrWhiteSpace(expandedPath))
+            return false;
+        try
+        {
+            var probe = Task.Run(() => dirOnly
+                ? Directory.Exists(expandedPath)
+                : Directory.Exists(expandedPath) || File.Exists(expandedPath));
+            return probe.Wait(timeoutMs) ? probe.Result : true;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
     /// <summary>PATH 条目是否还指向存在的目录；UNC/超时等无法判断的情况一律当成存在，避免误删。</summary>
     internal static bool PathEntryExists(string entry)
     {
         var expanded = Environment.ExpandEnvironmentVariables(entry).Trim().Trim('"');
         if (string.IsNullOrWhiteSpace(expanded))
             return false;
-        var target = PathUtil.Canonical(expanded);
-        try
-        {
-            var probe = Task.Run(() => Directory.Exists(target));
-            return probe.Wait(1500) ? probe.Result : true;
-        }
-        catch
-        {
-            return true;
-        }
+        return ProbeExists(PathUtil.Canonical(expanded), dirOnly: true);
     }
 
     /// <summary>
@@ -141,15 +170,7 @@ internal static class EnvService
         var expanded = Environment.ExpandEnvironmentVariables(value ?? "").Trim().Trim('"');
         if (string.IsNullOrWhiteSpace(expanded) || !LooksLikePath(expanded))
             return false;
-        try
-        {
-            var probe = Task.Run(() => Directory.Exists(expanded) || File.Exists(expanded));
-            return probe.Wait(1500) ? !probe.Result : false; // 超时判不了，先放行
-        }
-        catch
-        {
-            return false;
-        }
+        return !ProbeExists(expanded);
     }
 
     /// <summary>PATH 值本身是不是 REG_EXPAND_SZ —— 只有这种类型，系统才会展开里面的 %变量%。</summary>
@@ -211,6 +232,27 @@ internal static class EnvService
     internal static List<ConfigError> ValidateConfig(AppConfig config)
     {
         var errors = new List<ConfigError>();
+
+        // 监听端口：0 表示自动分配，其余必须是 1–65535。越界值会让 serve 启动直接抛异常。
+        if (config.Settings.Port is < 0 or > 65535)
+            errors.Add(new ConfigError
+            {
+                Toolchain = "", Field = "port", Value = config.Settings.Port.ToString(),
+                Message = $"端口 {config.Settings.Port} 不在 1–65535 范围内（0 表示自动分配）。",
+            });
+
+        // 工具链重名：网页 /api/state 用名字当键，批量应用按名字找第一套；
+        // 重名会让状态接口 500，还会把第二套静默按第一套写，所以保存时就拦住。
+        foreach (var dup in config.Toolchains
+                     .Where(t => !string.IsNullOrWhiteSpace(t.Name))
+                     .GroupBy(t => t.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                     .Where(g => g.Count() > 1))
+            errors.Add(new ConfigError
+            {
+                Toolchain = dup.Key, Field = "name", Value = dup.Key,
+                Message = $"有 {dup.Count()} 套工具链都叫「{dup.Key}」，名称必须唯一（批量应用和状态读取都按名称找工具链）。",
+            });
+
         foreach (var tc in config.Toolchains)
         {
             var tcName = string.IsNullOrWhiteSpace(tc.Name) ? "(未命名)" : tc.Name.Trim();
@@ -360,6 +402,15 @@ internal static class EnvService
             return new EnvWriteResult { Ok = false, Message = invalid };
         try
         {
+            // 原来是非字符串类型时拒绝改写：写进去会把 REG_DWORD 变成 REG_SZ
+            var kind = EnvStore.KindOf(name.Trim(), scope);
+            if (kind is not null && !EnvStore.IsStringKind(kind.Value))
+                return new EnvWriteResult
+                {
+                    Ok = false,
+                    Message = $"{name.Trim()} 在{(scope == EnvScope.Machine ? "系统" : "用户")}侧是 {kind.Value} 类型，"
+                              + "网页只支持字符串变量，改写会破坏它的类型。请用注册表编辑器修改。",
+                };
             EnvStore.Set(name.Trim(), value, scope);
         }
         catch (UnauthorizedAccessException)
@@ -377,6 +428,8 @@ internal static class EnvService
         return new EnvWriteResult
         {
             Ok = true,
+            // 新值重新判断一次：界面直接用这个结果刷新「已失效」标记，不要沿用保存前的旧标记
+            Invalid = IsProbablyInvalidPath(name.Trim(), value),
             Message = $"已写入{(scope == EnvScope.Machine ? "系统" : "用户")}变量 {name.Trim()}{hint}",
         };
     }
@@ -387,6 +440,16 @@ internal static class EnvService
         var invalid = ValidateName(name);
         if (invalid is not null)
             return new EnvWriteResult { Ok = false, Message = invalid };
+
+        // 本来就没有这个变量时别报「已删除（不可恢复）」，否则用户会以为删掉了什么。
+        // 用类型判断（不是 GetRaw）：REG_DWORD 之类读不出字符串，但它确实存在，是可以删的。
+        if (EnvStore.KindOf(name.Trim(), scope) is null)
+            return new EnvWriteResult
+            {
+                Ok = true,
+                Message = $"{(scope == EnvScope.Machine ? "系统" : "用户")}侧没有变量 {name.Trim()}，无需删除。",
+            };
+
         try
         {
             EnvStore.Set(name.Trim(), null, scope);
@@ -480,35 +543,59 @@ internal static class EnvService
                             && !string.Equals(_orig[scope].GetValueOrDefault(n), _now[scope].GetValueOrDefault(n), StringComparison.Ordinal))
                 .ToList();
 
-        /// <summary>提交某一侧：变量逐个静默写、PATH 静默写一次。返回错误文案（null = 成功）。</summary>
-        internal string? CommitScope(EnvScope scope)
+        /// <summary>把这一侧的改动写进注册表；返回哪些项写成功了、失败原因是什么（失败前可能已写进一部分）。</summary>
+        internal CommitReport CommitScope(EnvScope scope)
         {
+            var label = scope == EnvScope.Machine ? "系统" : "用户";
             if (!HasChanges(scope))
-                return null;
+                return new CommitReport(null, []);
             if (!EnvStore.CanWrite(scope))
-                return $"写入{(scope == EnvScope.Machine ? "系统" : "用户")}侧被拒绝，请以管理员身份运行。";
+                return new CommitReport($"写入{label}侧被拒绝，请以管理员身份运行。", []);
+
+            var written = new List<string>();
+            string? names = null;
             try
             {
+                // 变量与 PATH 分开记：任一变量写失败时，能说清到底写进去了哪些
                 foreach (var name in ChangedNames(scope))
+                {
+                    names = name;
                     EnvStore.SetSilent(name, _now[scope].TryGetValue(name, out var v) ? v : null, scope);
+                    written.Add(name);
+                    names = null;
+                }
                 if (!string.Equals(_pathOrig[scope], _pathNow[scope], StringComparison.Ordinal))
+                {
+                    names = "Path";
                     EnvStore.SetSilent("Path", _pathNow[scope], scope);
+                    written.Add("Path");
+                }
+                names = null;
 
                 // 基准同步到已写入状态，同一侧不会被写第二遍
                 _orig[scope] = new Dictionary<string, string?>(_now[scope], StringComparer.OrdinalIgnoreCase);
                 _pathOrig[scope] = _pathNow[scope];
-                return null;
+                return new CommitReport(null, written);
             }
             catch (UnauthorizedAccessException)
             {
-                return $"写入{(scope == EnvScope.Machine ? "系统" : "用户")}侧被拒绝，请以管理员身份运行。";
+                return new CommitReport(
+                    $"写入{label}侧被拒绝，请以管理员身份运行。"
+                    + (names is not null ? $"（第 {written.Count + 1} 项 {names} 未写入）" : ""),
+                    written);
             }
             catch (Exception ex)
             {
-                return $"写入{(scope == EnvScope.Machine ? "系统" : "用户")}侧失败：{ex.Message}";
+                return new CommitReport(
+                    $"写入{label}侧失败：{ex.Message}"
+                    + (names is not null ? $"（第 {written.Count + 1} 项 {names} 未写入）" : ""),
+                    written);
             }
         }
     }
+
+    /// <summary>一次按侧提交的结果：错误文案（null = 成功）与已经真正写进去的项名。</summary>
+    internal sealed record CommitReport(string? Error, List<string> Written);
 
     /// <summary>
     /// 应用一套工具链的一个版本。传 <paramref name="buffer"/> 时只在内存里算与改，
@@ -523,10 +610,14 @@ internal static class EnvService
         ApplyBuffer? buffer = null,
         bool saveConfig = true)
     {
-        var tc = config.Toolchains.FirstOrDefault(t =>
-            string.Equals(t.Name, toolchainName, StringComparison.OrdinalIgnoreCase));
-        if (tc is null)
+        var matches = config.Toolchains
+            .Where(t => string.Equals(t.Name, toolchainName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (matches.Count == 0)
             return Fail($"找不到工具链：{toolchainName}");
+        if (matches.Count > 1)
+            return Fail($"配置里有 {matches.Count} 套工具链都叫 {toolchainName}，无法确定用哪一套。先改名再应用。");
+        var tc = matches[0];
         if (!tc.Enabled)
             return Fail($"工具链 {tc.Name} 处于「不生效」状态，未做任何修改。");
 
@@ -541,6 +632,18 @@ internal static class EnvService
 
         var envTarget = ParseWriteScope(tc.EnvScope);
         var pathTarget = ParseWriteScope(tc.PathScope);
+
+        // Home 里写了 %变量%：原值不是 REG_EXPAND_SZ 时系统不会展开，必须我们自己展开，
+        // 否则会出现「保存校验按展开后放行、真正写进去却是字面值」的坏变量。
+        var envValue = version.Home;
+        if (writeEnv && envValue.Contains('%')
+            && !EnvStore.IsExpandString(tc.EnvVar.Trim(), envTarget.Scope))
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(envValue);
+            if (expanded.Contains('%'))
+                return Fail($"环境变量值里的变量无法展开：{envValue}。请填具体路径，或改用能被系统展开的写法。");
+            envValue = expanded;
+        }
 
         // 本版本要写入 PATH 的条目：显式条目优先，否则用模板展开 Home；都为空表示本工具链不写 PATH
         var rawPaths = version.Paths
@@ -591,7 +694,7 @@ internal static class EnvService
                 entries = entries.Where(e => !addKeys.Contains(RealPath.Key(e))).ToList();
             entries.AddRange(toAdd);
             if (config.Settings.NormalizePathOnApply)
-                entries = PathUtil.Normalize(PathUtil.Join(entries));
+                entries = PathUtil.Normalize(PathUtil.Join(entries), sort: config.Settings.SortPathOnApply);
             pathAfter = PathUtil.Join(entries);
 
             // 「唯一」模式：把本条工具链的条目从另一侧 PATH 里移除
@@ -600,7 +703,7 @@ internal static class EnvService
                 var otherPath = buffer?.Path(pathTarget.Other) ?? GetPathRaw(pathTarget.Other);
                 var otherEntries = PathUtil.Without(PathUtil.Split(otherPath), stale.Concat(toAdd));
                 if (config.Settings.NormalizePathOnApply)
-                    otherEntries = PathUtil.Normalize(PathUtil.Join(otherEntries));
+                    otherEntries = PathUtil.Normalize(PathUtil.Join(otherEntries), sort: config.Settings.SortPathOnApply);
                 otherPathAfter = PathUtil.Join(otherEntries);
             }
         }
@@ -622,7 +725,7 @@ internal static class EnvService
             // 批量：只改内存，最后由 ApplyAll 一次性写回并广播
             if (writeEnv)
             {
-                buffer.Set(tc.EnvVar, version.Home, envTarget.Scope);
+                buffer.Set(tc.EnvVar, envValue, envTarget.Scope);
                 // 「唯一」：另一侧存在同名变量才删（存在性以内存快照为准）
                 if (envTarget.Unique && buffer.Get(tc.EnvVar, envTarget.Other) is not null)
                     buffer.Set(tc.EnvVar, null, envTarget.Other);
@@ -638,30 +741,45 @@ internal static class EnvService
         }
         else if (!dryRun)
         {
-            try
+            // 分两步写并记下已写入的部分：写环境变量成功、写 PATH 被拒时，不能只报一句「被拒绝」
+            var done = new List<string>();
+            if (writeEnv)
             {
-                if (writeEnv)
+                try
                 {
-                    EnvStore.Set(tc.EnvVar, version.Home, envTarget.Scope);
+                    EnvStore.Set(tc.EnvVar, envValue, envTarget.Scope);
                     // 「唯一」：另一侧存在同名变量才删，避免无意义地要求系统写权限
                     if (envTarget.Unique && GetEnv(tc.EnvVar, envTarget.Other) is not null)
                         EnvStore.Set(tc.EnvVar, null, envTarget.Other);
+                    done.Add($"{tc.EnvVar}（{envTarget.Label}）");
                 }
-                if (writePath)
+                catch (UnauthorizedAccessException)
+                {
+                    return FailPart(done, "写入环境变量被拒绝。修改系统变量 / 系统 PATH 需要以管理员身份运行。");
+                }
+                catch (Exception ex)
+                {
+                    return FailPart(done, $"写入环境变量失败：{ex.Message}");
+                }
+            }
+            if (writePath)
+            {
+                try
                 {
                     EnvStore.Set("Path", pathAfter, pathTarget.Scope);
                     if (otherPathAfter is not null
                         && !string.Equals(otherPathAfter, GetPathRaw(pathTarget.Other), StringComparison.Ordinal))
                         EnvStore.Set("Path", otherPathAfter, pathTarget.Other);
+                    done.Add($"PATH（{pathTarget.Label}）");
                 }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Fail("写入环境变量被拒绝。修改系统变量 / 系统 PATH 需要以管理员身份运行。");
-            }
-            catch (Exception ex)
-            {
-                return Fail($"写入环境变量失败：{ex.Message}");
+                catch (UnauthorizedAccessException)
+                {
+                    return FailPart(done, "写入 PATH 被拒绝。修改系统变量 / 系统 PATH 需要以管理员身份运行。");
+                }
+                catch (Exception ex)
+                {
+                    return FailPart(done, $"写入 PATH 失败：{ex.Message}");
+                }
             }
 
             tc.Active = version.Name;
@@ -683,7 +801,7 @@ internal static class EnvService
 
         var parts = new List<string> { $"{tc.Name} → {version.Name}" };
         parts.Add(writeEnv
-            ? $"{tc.EnvVar}={version.Home}（{envTarget.Label}）"
+            ? $"{tc.EnvVar}={envValue}（{envTarget.Label}）"
             : "未配置环境变量名，跳过环境变量");
         parts.Add(writePath
             ? $"PATH 写入{pathTarget.Label}（{toAdd.Count} 条）"
@@ -701,7 +819,7 @@ internal static class EnvService
             DryRun = dryRun,
             Message = (dryRun ? "预览：" : buffer is null ? "已应用：" : "待写入：") + string.Join("；", parts),
             EnvVar = writeEnv ? tc.EnvVar : null,
-            NewValue = writeEnv ? version.Home : null,
+            NewValue = writeEnv ? envValue : null,
             PathBefore = pathBefore,
             PathAfter = pathAfter,
             TouchedScopes = touched,
@@ -721,12 +839,26 @@ internal static class EnvService
         // 1) 先把两侧变量与 PATH 读进内存（只读一次）
         var buffer = dryRun ? null : ApplyBuffer.Load();
 
+        // 1.5) 历史坏配置里可能还留着同名工具链：Apply 按名字取第一套，第二套会被静默写成第一套的版本。
+        //      这种一套都不应用，直接报出来让用户改名（保存时已经拦住新写入的重名）。
+        var dupNames = config.Toolchains
+            .Where(t => !string.IsNullOrWhiteSpace(t.Name))
+            .GroupBy(t => t.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         // 2) 逐套在内存上处理，不碰注册表
         foreach (var tc in config.Toolchains)
         {
             if (string.IsNullOrWhiteSpace(tc.Name) || !tc.Enabled)
             {
                 skipped.Add($"{tc.Name}（不生效）");
+                continue;
+            }
+            if (dupNames.Contains(tc.Name.Trim()))
+            {
+                skipped.Add($"{tc.Name}（配置里有同名工具链，先改名再应用）");
                 continue;
             }
             if (string.IsNullOrWhiteSpace(tc.Active))
@@ -755,7 +887,8 @@ internal static class EnvService
                     : "还没有工具链，先到「工具链配置」新建。",
             };
 
-        // 3) 按侧一次写回，全部写完只广播一次
+        // 3) 按侧一次写回，全部写完只广播一次。
+        //    激活版本要在逐套 Apply 之前采集 —— Apply 会边算边改 tc.Active，事后采集拿到的是新值，回滚就成了空操作。
         var origActive = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         foreach (var tc in config.Toolchains)
             origActive[tc.Name] = tc.Active;
@@ -763,14 +896,12 @@ internal static class EnvService
         if (buffer is not null)
         {
             var hadChanges = BothScopes.Where(buffer.HasChanges).ToList();
-            var scopeErrors = new Dictionary<EnvScope, string>();
+            var reports = new Dictionary<EnvScope, CommitReport>();
             foreach (var scope in hadChanges)
-            {
-                var error = buffer.CommitScope(scope);
-                if (error is not null)
-                    scopeErrors[scope] = error;
-            }
-            if (hadChanges.Any(scope => !scopeErrors.ContainsKey(scope)))
+                reports[scope] = buffer.CommitScope(scope);
+
+            // 只要有一侧真的写进去了就广播：部分写入时另一侧也要看到新值
+            if (reports.Values.Any(r => r.Written.Count > 0))
                 EnvStore.Broadcast();
 
             // 4) 某侧没写进去：涉及该侧的工具链一律算失败，并把激活版本回滚
@@ -779,12 +910,20 @@ internal static class EnvService
                 if (!item.Ok)
                     continue;
                 var scopes = scopesOf.GetValueOrDefault(item.Toolchain) ?? [];
-                var bad = scopes.Where(scopeErrors.ContainsKey).Distinct().ToList();
+                var bad = scopes.Where(s => reports.TryGetValue(s, out var r) && r.Error is not null)
+                                .Distinct().ToList();
                 if (bad.Count == 0)
                     continue;
                 item.Ok = false;
+                var detail = bad.Select(s =>
+                {
+                    var r = reports[s];
+                    return r.Written.Count == 0
+                        ? r.Error!
+                        : $"{r.Error}（该侧已写入 {string.Join("、", r.Written)}，未回滚）";
+                }).Distinct();
                 item.Message = item.Message.Replace("待写入：", "未写入：")
-                              + "；" + string.Join("；", bad.Select(s => scopeErrors[s]).Distinct());
+                              + "；" + string.Join("；", detail);
                 var tc = config.Toolchains.FirstOrDefault(t =>
                     string.Equals(t.Name, item.Toolchain, StringComparison.OrdinalIgnoreCase));
                 if (tc is not null)
@@ -853,13 +992,17 @@ internal static class EnvService
         var user = PathUtil.Split(GetPathRaw(EnvScope.User))
             .Select(v => new Marked(v, false)).ToList();
 
-        foreach (var item in system.Concat(user))
+        // 存在性探测可能是网络 I/O，50 多条串行最坏要一分多钟；并发一轮，每条各有 1.5 秒上限
+        Parallel.ForEach(system.Concat(user), item =>
         {
             var (tc, ver) = Identify(item.Value, config);
             item.Toolchain = tc;
             item.Version = ver;
             item.Exists = PathEntryExists(item.Value);
+        });
 
+        foreach (var item in system.Concat(user))
+        {
             // 只有这侧 PATH 是普通字符串（REG_SZ）时 %变量% 才不会展开，才需要提示实际路径
             var expands = item.IsSystem ? machineExpands : userExpands;
             if (!expands && item.Value.Contains('%', StringComparison.Ordinal))
@@ -1016,7 +1159,8 @@ internal static class EnvService
     {
         foreach (var tc in config.Toolchains)
         {
-            if (string.IsNullOrWhiteSpace(tc.Name) || string.IsNullOrWhiteSpace(tc.EnvVar))
+            // 纯 PATH 工具链（EnvVar 为空）也要能认出归属，否则它在 PATH 页上一片空白
+            if (string.IsNullOrWhiteSpace(tc.Name))
                 continue;
 
             if (!string.IsNullOrWhiteSpace(tc.PathTemplate) && Eq(entry, tc.PathTemplate))
@@ -1048,4 +1192,13 @@ internal static class EnvService
     private static bool Eq(string a, string b) => PathUtil.Same(a, b);
 
     private static ApplyResult Fail(string message) => new() { Ok = false, Message = message };
+
+    /// <summary>部分写入后的失败：把已经落盘的部分点明，避免用户以为什么都没改。</summary>
+    private static ApplyResult FailPart(List<string> done, string message) => new()
+    {
+        Ok = false,
+        Message = done.Count == 0
+            ? message
+            : $"{message}（已写入 {string.Join("、", done)}，这部分不会回滚）",
+    };
 }

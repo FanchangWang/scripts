@@ -19,18 +19,22 @@ internal static class PathUtil
     /// <summary>
     /// 去掉尾部目录分隔符（盘符根 C:\ 与 UNC 根保留），
     /// 使 C:\Program Files\GitHub CLI 与 C:\Program Files\GitHub CLI\ 视为同一项。
+    /// C:/ 这种正斜杠根也要保留成 C:\，否则 TrimEnd 会把它剪成 C:（当前盘相对目录）。
     /// </summary>
     internal static string Canonical(string entry)
     {
         var p = entry.Trim();
         if (p.Length == 0)
             return p;
-        var driveRoot = Regex.Match(p, @"^([A-Za-z]:)\\+$");
-        if (driveRoot.Success)
-            return driveRoot.Groups[1].Value + "\\";
-        var uncRoot = Regex.Match(p, @"^(\\\\[^\\]+\\[^\\]+)\\+$");
+
+        // 盘符根：C:\ 或 C:/ → 统一成 C:\
+        if (p.Length == 3 && char.IsAsciiLetter(p[0]) && p[1] == ':' && (p[2] == '\\' || p[2] == '/'))
+            return p[..2] + "\\";
+
+        var uncRoot = Regex.Match(p, @"^(\\\\[^\\/]+[\\/][^\\/]+)[\\/]*$");
         if (uncRoot.Success)
-            return uncRoot.Groups[1].Value + "\\";
+            return uncRoot.Groups[1].Value.Replace('/', '\\') + "\\";
+
         return p.TrimEnd('\\', '/');
     }
 
