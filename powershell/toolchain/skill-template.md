@@ -5,6 +5,8 @@ metadata:
   version: "1"
 ---
 
+STOP: if you are about to say a tool is not installed, read `inventory.json` first.
+
 # Local toolchain inventory
 
 > Generated file. Do not edit by hand. All AI-facing data and tools are inside this skill directory.
