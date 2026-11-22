@@ -25,12 +25,29 @@ internal static class ConfigStore
         try
         {
             var json = File.ReadAllText(file);
-            return JsonSerializer.Deserialize<AppConfig>(json, JsonOptions) ?? DetectDefaultConfig();
+            var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions) ?? DetectDefaultConfig();
+            Migrate(config);
+            return config;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[警告] 配置读取失败（{file}）：{ex.Message}，已使用默认配置。");
             return DetectDefaultConfig();
+        }
+    }
+
+    /// <summary>旧配置补齐新字段：工具链没有作用域时继承全局 pathScope（再默认 User）。</summary>
+    internal static void Migrate(AppConfig config)
+    {
+        var defaultScope = string.IsNullOrWhiteSpace(config.Settings.PathScope) ? "User" : config.Settings.PathScope;
+        foreach (var t in config.Toolchains)
+        {
+            if (string.IsNullOrWhiteSpace(t.PathScope))
+                t.PathScope = defaultScope;
+            if (string.IsNullOrWhiteSpace(t.EnvScope))
+                t.EnvScope = t.PathScope;
+            // 网页已改为「有条目就写 PATH」，旧的加入/不加入标记统一归位
+            t.AddToPath = true;
         }
     }
 
@@ -62,6 +79,9 @@ internal static class ConfigStore
             EnvVar = "JAVA_HOME",
             PathTemplate = "%JAVA_HOME%\\bin",
             AddToPath = true,
+            Enabled = true,
+            EnvScope = "User",
+            PathScope = "User",
             Versions = [],
         };
 

@@ -11,15 +11,84 @@ internal static class EnvService
             ? EnvScope.Machine
             : EnvScope.User;
 
+    /// <summary>写入目标：写哪一侧，以及是否要把另一侧的残留清掉（「唯一」模式）。</summary>
+    internal readonly record struct WriteTarget(EnvScope Scope, bool Unique)
+    {
+        internal EnvScope Other => Scope == EnvScope.Machine ? EnvScope.User : EnvScope.Machine;
+
+        internal string Label =>
+            (Scope == EnvScope.Machine ? "系统" : "用户") + (Unique ? "·唯一" : "");
+    }
+
+    /// <summary>解析四值作用域：系统 / 用户 / 系统唯一 / 用户唯一。</summary>
+    internal static WriteTarget ParseWriteScope(string? value) =>
+        (value ?? "").Trim().ToLowerInvariant() switch
+        {
+            "machine" or "system" => new WriteTarget(EnvScope.Machine, false),
+            "machineonly" or "systemonly" or "machine-only" or "system-only" => new WriteTarget(EnvScope.Machine, true),
+            "useronly" or "user-only" => new WriteTarget(EnvScope.User, true),
+            _ => new WriteTarget(EnvScope.User, false),
+        };
+
     internal static string? GetEnv(string name, EnvScope scope) =>
         Environment.GetEnvironmentVariable(name, Target(scope));
 
-    internal static Dictionary<string, string> GetAll(EnvScope scope)
+    /// <summary>网页「环境变量」页：读取全部变量，并标出值所指向的目录已不存在的项。</summary>
+    internal static Dictionary<string, EnvVarView> GetAllDetailed(EnvScope scope)
     {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, EnvVarView>(StringComparer.OrdinalIgnoreCase);
         foreach (System.Collections.DictionaryEntry item in Environment.GetEnvironmentVariables(Target(scope)))
-            result[item.Key.ToString() ?? ""] = item.Value?.ToString() ?? "";
+        {
+            var name = item.Key.ToString() ?? "";
+            var value = item.Value?.ToString() ?? "";
+            result[name] = new EnvVarView
+            {
+                Value = value,
+                Invalid = IsProbablyInvalidPath(name, value),
+            };
+        }
         return result;
+    }
+
+    /// <summary>单值变量若整条值就是一个目录/文件路径，且它已不存在，则认为该变量已失效。</summary>
+    private static bool IsProbablyInvalidPath(string name, string value)
+    {
+        if (IsPath(name) || string.IsNullOrWhiteSpace(value) || value.Contains(';', StringComparison.Ordinal))
+            return false;
+        // 先展开 %USERPROFILE% 这类引用再判断
+        var expanded = Environment.ExpandEnvironmentVariables(value).Trim().Trim('"');
+        if (!LooksLikePath(expanded))
+            return false;
+        try
+        {
+            return !Directory.Exists(expanded) && !File.Exists(expanded);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool LooksLikePath(string v) =>
+        (v.Length >= 3 && char.IsLetter(v[0]) && v[1] == ':' && (v[2] == '\\' || v[2] == '/'))
+        || v.StartsWith(@"\\", StringComparison.Ordinal);
+
+    /// <summary>PATH 条目是否还指向存在的目录；UNC/超时等无法判断的情况一律当成存在，避免误删。</summary>
+    internal static bool PathEntryExists(string entry)
+    {
+        var expanded = Environment.ExpandEnvironmentVariables(entry).Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(expanded))
+            return false;
+        var target = PathUtil.Canonical(expanded);
+        try
+        {
+            var probe = Task.Run(() => Directory.Exists(target));
+            return probe.Wait(1500) ? probe.Result : true;
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     /// <summary>网页「环境变量」页：写入单个变量的值（空串即置空，不当成删除）。</summary>
@@ -104,20 +173,32 @@ internal static class EnvService
             string.Equals(t.Name, toolchainName, StringComparison.OrdinalIgnoreCase));
         if (tc is null)
             return Fail($"找不到工具链：{toolchainName}");
-        if (string.IsNullOrWhiteSpace(tc.EnvVar))
-            return Fail("该工具链未配置环境变量名（EnvVar）。");
+        if (!tc.Enabled)
+            return Fail($"工具链 {tc.Name} 处于「不生效」状态，未做任何修改。");
 
         var version = tc.Versions.FirstOrDefault(v =>
             string.Equals(v.Name, versionName, StringComparison.OrdinalIgnoreCase));
         if (version is null)
             return Fail($"工具链 {tc.Name} 中没有版本：{versionName}");
-        if (string.IsNullOrWhiteSpace(version.Home))
-            return Fail("该版本的 Home 路径为空。");
 
-        var scope = ParseScope(config.Settings.PathScope);
-        var pathBefore = GetEnv("Path", scope) ?? "";
+        var writeEnv = !string.IsNullOrWhiteSpace(tc.EnvVar);
+        if (writeEnv && string.IsNullOrWhiteSpace(version.Home))
+            return Fail("该版本的环境变量值（Home）为空，无法写入环境变量。");
 
-        // 清掉该工具链所有版本的 PATH 条目（变量形式 + 显式路径 + 展开后的实际路径），再加入当前版本
+        var envTarget = ParseWriteScope(tc.EnvScope);
+        var pathTarget = ParseWriteScope(tc.PathScope);
+
+        // 本版本要写入 PATH 的条目：显式条目优先，否则用模板展开 Home；都为空表示本工具链不写 PATH
+        var toAdd = version.Paths
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .ToList();
+        if (toAdd.Count == 0 && !string.IsNullOrWhiteSpace(tc.PathTemplate))
+            toAdd.Add(PathUtil.Expand(tc.PathTemplate, tc.EnvVar, version.Home));
+        // 网页已移除「是否加入 PATH」开关：有条目就写，没有就不写
+        var writePath = toAdd.Count > 0;
+
+        // 该工具链所有版本可能留下的 PATH 条目（变量形式 + 显式路径 + 展开后的实际路径）
         var stale = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(tc.PathTemplate))
             stale.Add(tc.PathTemplate);
@@ -125,30 +206,50 @@ internal static class EnvService
             foreach (var p in AllVersionPaths(tc, v))
                 stale.Add(p);
 
-        var entries = PathUtil.Without(PathUtil.Split(pathBefore), stale);
-        if (tc.AddToPath)
+        string pathBefore = "", pathAfter = "";
+        string? otherPathAfter = null;
+        if (writePath)
         {
-            var toAdd = version.Paths.Count > 0
-                ? version.Paths.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()).ToList()
-                : (!string.IsNullOrWhiteSpace(tc.PathTemplate) ? [tc.PathTemplate] : []);
+            pathBefore = GetEnv("Path", pathTarget.Scope) ?? "";
+            var entries = PathUtil.Without(PathUtil.Split(pathBefore), stale);
             entries.AddRange(toAdd);
+            if (config.Settings.NormalizePathOnApply)
+                entries = PathUtil.Normalize(PathUtil.Join(entries));
+            pathAfter = PathUtil.Join(entries);
+
+            // 「唯一」模式：把本条工具链的条目从另一侧 PATH 里移除
+            if (pathTarget.Unique)
+            {
+                var otherPath = GetEnv("Path", pathTarget.Other) ?? "";
+                var otherEntries = PathUtil.Without(PathUtil.Split(otherPath), stale.Concat(toAdd));
+                if (config.Settings.NormalizePathOnApply)
+                    otherEntries = PathUtil.Normalize(PathUtil.Join(otherEntries));
+                otherPathAfter = PathUtil.Join(otherEntries);
+            }
         }
-
-        if (config.Settings.NormalizePathOnApply)
-            entries = PathUtil.Normalize(PathUtil.Join(entries));
-
-        var pathAfter = PathUtil.Join(entries);
 
         if (!dryRun)
         {
             try
             {
-                Environment.SetEnvironmentVariable(tc.EnvVar, version.Home, EnvironmentVariableTarget.User);
-                Environment.SetEnvironmentVariable("Path", pathAfter, Target(scope));
+                if (writeEnv)
+                {
+                    Environment.SetEnvironmentVariable(tc.EnvVar, version.Home, Target(envTarget.Scope));
+                    // 「唯一」：另一侧存在同名变量才删，避免无意义地要求系统写权限
+                    if (envTarget.Unique && GetEnv(tc.EnvVar, envTarget.Other) is not null)
+                        Environment.SetEnvironmentVariable(tc.EnvVar, null, Target(envTarget.Other));
+                }
+                if (writePath)
+                {
+                    Environment.SetEnvironmentVariable("Path", pathAfter, Target(pathTarget.Scope));
+                    if (otherPathAfter is not null
+                        && !string.Equals(otherPathAfter, GetEnv("Path", pathTarget.Other), StringComparison.Ordinal))
+                        Environment.SetEnvironmentVariable("Path", otherPathAfter, Target(pathTarget.Other));
+                }
             }
             catch (UnauthorizedAccessException)
             {
-                return Fail("写入环境变量被拒绝。修改系统变量需要以管理员身份运行。");
+                return Fail("写入环境变量被拒绝。修改系统变量 / 系统 PATH 需要以管理员身份运行。");
             }
             catch (Exception ex)
             {
@@ -159,15 +260,21 @@ internal static class EnvService
             ConfigStore.Save(config, configPath);
         }
 
+        var parts = new List<string> { $"{tc.Name} → {version.Name}" };
+        parts.Add(writeEnv
+            ? $"{tc.EnvVar}={version.Home}（{envTarget.Label}）"
+            : "未配置环境变量名，跳过环境变量");
+        parts.Add(writePath
+            ? $"PATH 写入{pathTarget.Label}（{toAdd.Count} 条）"
+            : "没有 PATH 条目，PATH 未改动");
+
         return new ApplyResult
         {
             Ok = true,
             DryRun = dryRun,
-            Message = dryRun
-                ? $"预览：将 {tc.EnvVar} 设为 {version.Home}"
-                : $"已切换 {tc.Name} 到 {version.Name}（{tc.EnvVar}={version.Home}）",
-            EnvVar = tc.EnvVar,
-            NewValue = version.Home,
+            Message = (dryRun ? "预览：" : "已应用：") + string.Join("；", parts),
+            EnvVar = writeEnv ? tc.EnvVar : null,
+            NewValue = writeEnv ? version.Home : null,
             PathBefore = pathBefore,
             PathAfter = pathAfter,
         };
@@ -217,6 +324,9 @@ internal static class EnvService
         public string? Toolchain { get; set; }
         public string? Version { get; set; }
         public string? Conflict { get; set; }
+
+        /// <summary>这条 PATH 指向的目录是否还在；不在即「已失效」，处理后会被自动移除。</summary>
+        public bool Exists { get; set; } = true;
     }
 
     internal static PathViewResult BuildPathView(AppConfig config, bool sort, bool dedup)
@@ -231,6 +341,7 @@ internal static class EnvService
             var (tc, ver) = Identify(item.Value, config);
             item.Toolchain = tc;
             item.Version = ver;
+            item.Exists = PathEntryExists(item.Value);
         }
 
         // 规则 1：系统里已有的条目，从用户处理后列表中自动移除
@@ -268,6 +379,8 @@ internal static class EnvService
         var removedNotes = duplicateUsers.Count > 0
             ? $"；{duplicateUsers.Count} 条与系统重复的用户条目已自动移除"
             : "";
+        var missing = system.Concat(user).Count(e => !e.Exists);
+        var missingNote = missing > 0 ? $"；{missing} 条指向已不存在的目录，已从处理后列表剔除" : "";
 
         return new PathViewResult
         {
@@ -275,7 +388,7 @@ internal static class EnvService
             SystemProcessed = ToViews(Process(system, [], sort, dedup), []),
             UserCurrent = ToViews(user, duplicateUsers),
             UserProcessed = ToViews(Process(user, duplicateUsers, sort, dedup), duplicateUsers),
-            Message = $"系统 {system.Count} 条，用户 {user.Count} 条{removedNotes}。",
+            Message = $"系统 {system.Count} 条，用户 {user.Count} 条{missingNote}{removedNotes}。",
         };
     }
 
@@ -319,7 +432,8 @@ internal static class EnvService
 
     private static List<Marked> Process(List<Marked> entries, HashSet<string> removed, bool sort, bool dedup)
     {
-        var result = entries.Where(e => !removed.Contains(PathUtil.Canonical(e.Value))).ToList();
+        // 过滤：指向不存在目录的条目直接从「处理后」列表剔除（写入时也不会带上）
+        var result = entries.Where(e => e.Exists && !removed.Contains(PathUtil.Canonical(e.Value))).ToList();
         if (dedup)
             result = result.GroupBy(e => PathUtil.Canonical(e.Value), StringComparer.OrdinalIgnoreCase)
                            .Select(g => Copy(g.First(), g.Key))
@@ -330,7 +444,10 @@ internal static class EnvService
     }
 
     private static Marked Copy(Marked m, string value) =>
-        new(value, m.IsSystem) { Toolchain = m.Toolchain, Version = m.Version, Conflict = m.Conflict };
+        new(value, m.IsSystem)
+        {
+            Toolchain = m.Toolchain, Version = m.Version, Conflict = m.Conflict, Exists = m.Exists,
+        };
 
     private static List<PathEntryView> ToViews(IEnumerable<Marked> entries, HashSet<string> removed) =>
         entries.Select(e => new PathEntryView
@@ -338,9 +455,12 @@ internal static class EnvService
             Value = e.Value,
             Toolchain = e.Toolchain,
             Version = e.Version,
-            Badge = string.IsNullOrEmpty(e.Conflict)
-                ? (removed.Contains(PathUtil.Canonical(e.Value)) ? "与系统重复 · 已移除" : null)
-                : e.Conflict,
+            Exists = e.Exists,
+            Badge = !e.Exists
+                ? "已失效"
+                : string.IsNullOrEmpty(e.Conflict)
+                    ? (removed.Contains(PathUtil.Canonical(e.Value)) ? "与系统重复 · 已移除" : null)
+                    : e.Conflict,
             Removed = removed.Contains(PathUtil.Canonical(e.Value)),
         }).ToList();
 

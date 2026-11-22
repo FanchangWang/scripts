@@ -131,7 +131,7 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         var cfg = ConfigStore.Load(configPath);
         var snapshot = cfg.Toolchains.ToDictionary(
             t => t.Name,
-            t => EnvService.GetEnv(t.EnvVar, EnvScope.User) ?? "",
+            t => EnvService.GetEnv(t.EnvVar, EnvService.ParseWriteScope(t.EnvScope).Scope) ?? "",
             StringComparer.OrdinalIgnoreCase);
         return Results.Json(new
         {
@@ -144,7 +144,7 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
     });
 
     app.MapGet("/api/env", (string? scope) =>
-        Results.Json(EnvService.GetAll(EnvService.ParseScope(scope))));
+        Results.Json(EnvService.GetAllDetailed(EnvService.ParseScope(scope)), jsonOptions));
 
     app.MapPost("/api/env/set", async (HttpContext ctx) =>
     {
@@ -170,9 +170,10 @@ static async Task RunWeb(string configPath, JsonSerializerOptions jsonOptions, b
         if (incoming is null)
             return Results.BadRequest(new { ok = false, message = "配置内容为空。" });
 
-        if (incoming.Toolchains.Any(t => string.IsNullOrWhiteSpace(t.Name) || string.IsNullOrWhiteSpace(t.EnvVar)))
-            return Results.BadRequest(new { ok = false, message = "工具链的名称和环境变量名不能为空。" });
+        if (incoming.Toolchains.Any(t => string.IsNullOrWhiteSpace(t.Name)))
+            return Results.BadRequest(new { ok = false, message = "工具链名称不能为空（环境变量名可以留空，表示不写环境变量）。" });
 
+        ConfigStore.Migrate(incoming);
         ConfigStore.Save(incoming, configPath);
         return Results.Ok(new { ok = true, message = "配置已保存。" });
     });
@@ -284,8 +285,8 @@ static void PrintList(string configPath)
 
     foreach (var t in cfg.Toolchains)
     {
-        Console.WriteLine($"\n{t.Name}   [{t.EnvVar}]  加入PATH={t.AddToPath}  激活={t.Active ?? "(无)"}");
-        Console.WriteLine($"  当前值：{EnvService.GetEnv(t.EnvVar, EnvScope.User) ?? "(未设置)"}");
+        Console.WriteLine($"\n{t.Name}   [{t.EnvVar}]   生效={t.Enabled}  变量范围={t.EnvScope}  PATH范围={t.PathScope}  激活={t.Active ?? "(无)"}");
+        Console.WriteLine($"  当前值：{(string.IsNullOrWhiteSpace(t.EnvVar) ? "(未配置环境变量)" : EnvService.GetEnv(t.EnvVar, EnvService.ParseWriteScope(t.EnvScope).Scope) ?? "(未设置)")}");
         foreach (var v in t.Versions)
             Console.WriteLine($"  {(string.Equals(v.Name, t.Active, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {v.Name,-6} {v.Home}");
     }

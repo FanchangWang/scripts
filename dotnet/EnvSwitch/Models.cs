@@ -27,14 +27,23 @@ public sealed class Toolchain
 {
     public string Name { get; set; } = "";
 
-    /// <summary>要生成的环境变量名，例如 JAVA_HOME。</summary>
+    /// <summary>要生成的环境变量名，例如 JAVA_HOME；留空表示本工具链不写环境变量。</summary>
     public string EnvVar { get; set; } = "";
 
-    /// <summary>加入 PATH 的条目模板，支持 %JAVA_HOME% 形式展开，例如 %JAVA_HOME%\bin。</summary>
+    /// <summary>加入 PATH 的条目模板，支持 %JAVA_HOME% 形式展开，例如 %JAVA_HOME%\bin；留空且版本没有显式条目时不写 PATH。</summary>
     public string PathTemplate { get; set; } = "";
 
-    /// <summary>是否把 PathTemplate 加入 PATH。</summary>
+    /// <summary>是否把 PATH 条目加入 PATH（网页已改为由「条目是否为空」决定，此字段保留仅为兼容旧配置）。</summary>
     public bool AddToPath { get; set; } = true;
+
+    /// <summary>本工具链是否生效；关闭时相当于没有配置过这套工具链。</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>环境变量作用范围：User / Machine / UserOnly / MachineOnly（唯一 = 写本侧并删除另一侧同名变量）。</summary>
+    public string EnvScope { get; set; } = "";
+
+    /// <summary>PATH 作用范围：User / Machine / UserOnly / MachineOnly（唯一 = 写本侧并移除另一侧本条工具链的条目）。</summary>
+    public string PathScope { get; set; } = "";
 
     /// <summary>当前激活的版本名。</summary>
     public string? Active { get; set; }
@@ -92,6 +101,9 @@ public sealed class PathEntryView
     public string? Toolchain { get; set; }
     public string? Version { get; set; }
     public bool Removed { get; set; }
+
+    /// <summary>目录是否仍然存在；false 表示这条 PATH 已经指向不存在的目录（已失效）。</summary>
+    public bool Exists { get; set; } = true;
 }
 
 public sealed class PathViewResult
@@ -108,4 +120,11 @@ public sealed class EnvWriteResult
 {
     public bool Ok { get; set; }
     public string Message { get; set; } = "";
+}
+
+/// <summary>网页「环境变量」页的一行值；指向不存在的目录时标记失效。</summary>
+public sealed class EnvVarView
+{
+    public string Value { get; set; } = "";
+    public bool Invalid { get; set; }
 }
