@@ -8,6 +8,7 @@
 |---|---|---|---|
 | [android](android/) | Android（Kotlin / Gradle）工程 | 1 | [README](android/README.md) |
 | [api](api/) | 第三方接口调试集合（REST Client `.http` + 少量脚本） | 6 | [README](api/README.md) |
+| [dotnet](dotnet/) | .NET / C# 工程（LTS） | 1 | [README](dotnet/README.md) |
 | [nodejs](nodejs/) | Node.js 原生 ESM 项目 | 1 | [README](nodejs/README.md) |
 | [python](python/) | Python 工具 / 脚本 / Web 服务（uv 管理） | 11 | [README](python/README.md) |
 | [qinglong](qinglong/) | 青龙面板定时脚本 | 5 | [README](qinglong/README.md) |
@@ -30,6 +31,12 @@
 | [qinglong](api/qinglong/) | REST Client `.http` | 青龙面板认证、环境变量接口调试样例 | [README](api/qinglong/README.md) |
 | [stock_xueqiu](api/stock_xueqiu/) | REST Client `.http` | 雪球行情 / K 线 / 分钟线接口样例 | [README](api/stock_xueqiu/README.md) |
 | [wx_pusher](api/wx_pusher/) | REST Client `.http` | wxPusher 微信推送消息接口样例 | [README](api/wx_pusher/README.md) |
+
+### [dotnet](dotnet/)
+
+| 目录 | 技术栈 | 一句话用途 | 文档 |
+|---|---|---|---|
+| [EnvSwitch](dotnet/EnvSwitch/) | C# / .NET 10 / ASP.NET Core | 多版本环境变量切换器（网页 GUI）+ PATH 排序去重 CLI，单文件绿色 exe | [README](dotnet/EnvSwitch/README.md) |
 
 ### [nodejs](nodejs/)
 
