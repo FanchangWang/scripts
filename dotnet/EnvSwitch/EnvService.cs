@@ -111,6 +111,58 @@ internal static class EnvService
         }
     }
 
+    /// <summary>PATH 值本身是不是 REG_EXPAND_SZ —— 只有这种类型，系统才会展开里面的 %变量%。</summary>
+    internal static bool PathExpandsVariables(EnvScope scope) =>
+        EnvStore.KindOf("Path", scope) == Microsoft.Win32.RegistryValueKind.ExpandString;
+
+    /// <summary>按字面判断路径是否存在（不展开变量）。</summary>
+    private static bool LiteralExists(string entry)
+    {
+        var text = (entry ?? "").Trim().Trim('"');
+        if (text.Length == 0)
+            return false;
+        try
+        {
+            return Directory.Exists(text) || File.Exists(text);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 准备写进 PATH 的条目：PATH 是 REG_EXPAND_SZ 时系统会自己展开 %变量%，写法原样保留；
+    /// 是普通字符串（REG_SZ）时 %变量% 不会被展开，等于一条无效路径（本机用户的 Path 就是这种），
+    /// 所以先换成具体路径再写。
+    /// </summary>
+    internal static string PreparePathEntry(string entry, bool pathExpandsVariables, Toolchain? tc, VersionEntry? version)
+    {
+        var text = (entry ?? "").Trim();
+        if (text.Length == 0 || !text.Contains('%', StringComparison.Ordinal) || pathExpandsVariables)
+            return text;
+
+        string expanded;
+        try
+        {
+            expanded = (tc is not null && version is not null
+                ? ExpandForCheck(text, tc, version)
+                : Environment.ExpandEnvironmentVariables(text)).Trim();
+        }
+        catch
+        {
+            return text;
+        }
+
+        // 有变量在当前环境里没定义（展开后还留着 %），或者展开前后没变化 → 保持原样
+        if (expanded.Contains('%', StringComparison.Ordinal)
+            || string.Equals(expanded, text, StringComparison.OrdinalIgnoreCase))
+            return text;
+
+        // 只在「原写法本身无效、展开后确实存在」时替换，避免换成另一个同样无效的条目
+        return !LiteralExists(text) && PathEntryExists(expanded) ? expanded : text;
+    }
+
     /// <summary>
     /// 保存前校验：Home、每个 PATH 条目、以及「没有显式条目时才会用到」的 PATH 模板，
     /// 只要看起来是路径却不存在就拦下来，避免保存一份切换时才失败的错误配置。
@@ -353,8 +405,13 @@ internal static class EnvService
             rawPaths.Add(PathUtil.Expand(tc.PathTemplate, tc.EnvVar, version.Home));
 
         // 同一真实目录的多种写法只留一条（按配置顺序，取第一条存在的）
-        var toAdd = CollapseEquivalent(rawPaths, tc, version);
-        var mergedAway = Math.Max(0, rawPaths.Count - toAdd.Count);
+        var toAddRaw = CollapseEquivalent(rawPaths, tc, version);
+        var mergedAway = Math.Max(0, rawPaths.Count - toAddRaw.Count);
+
+        // PATH 是普通字符串（REG_SZ）时 %变量% 不会被系统展开，写入前换成具体路径
+        var pathExpands = PathExpandsVariables(pathTarget.Scope);
+        var toAdd = toAddRaw.Select(p => PreparePathEntry(p, pathExpands, tc, version)).ToList();
+        var expandedCount = toAddRaw.Zip(toAdd).Count(t => !string.Equals(t.Item1, t.Item2, StringComparison.Ordinal));
 
         // 网页已移除「是否加入 PATH」开关：有条目就写，没有就不写
         var writePath = toAdd.Count > 0;
@@ -443,6 +500,9 @@ internal static class EnvService
               + (mergedAway > 0
                   ? $"；同版本另外 {mergedAway} 条与它们指向同一目录，已按顺序合并（只留第 1 条存在的写法）"
                   : "")
+              + (expandedCount > 0
+                  ? $"；{expandedCount} 条 %变量% 已展开成具体路径（该 PATH 是普通字符串，系统不会自动展开）"
+                  : "")
             : "没有 PATH 条目，PATH 未改动");
 
         return new ApplyResult
@@ -514,7 +574,9 @@ internal static class EnvService
     internal static PathResult NormalizePath(EnvScope scope, bool sort, bool dedup, bool dryRun)
     {
         var before = GetEnv("Path", scope) ?? "";
-        var after = PathUtil.Join(PathUtil.Normalize(before, sort, dedup));
+        var expands = PathExpandsVariables(scope);
+        var entries = PathUtil.Split(before).Select(p => PreparePathEntry(p, expands, null, null)).ToList();
+        var after = PathUtil.Join(PathUtil.Normalize(PathUtil.Join(entries), sort, dedup));
 
         if (!dryRun)
         {
@@ -558,10 +620,16 @@ internal static class EnvService
 
         /// <summary>这条 PATH 指向的目录是否还在；不在即「已失效」，处理后会被自动移除。</summary>
         public bool Exists { get; set; } = true;
+
+        /// <summary>条目里含 %变量%、但这侧 PATH 不会自动展开时，展开后的实际路径（界面提示用）。</summary>
+        public string? Expanded { get; set; }
     }
 
     internal static PathViewResult BuildPathView(AppConfig config, bool sort, bool dedup)
     {
+        var machineExpands = PathExpandsVariables(EnvScope.Machine);
+        var userExpands = PathExpandsVariables(EnvScope.User);
+
         var system = PathUtil.Split(GetEnv("Path", EnvScope.Machine))
             .Select(v => new Marked(v, true)).ToList();
         var user = PathUtil.Split(GetEnv("Path", EnvScope.User))
@@ -573,6 +641,14 @@ internal static class EnvService
             item.Toolchain = tc;
             item.Version = ver;
             item.Exists = PathEntryExists(item.Value);
+
+            // 只有这侧 PATH 是普通字符串（REG_SZ）时 %变量% 才不会展开，才需要提示实际路径
+            var expands = item.IsSystem ? machineExpands : userExpands;
+            if (!expands && item.Value.Contains('%', StringComparison.Ordinal))
+            {
+                var expanded = Environment.ExpandEnvironmentVariables(item.Value).Trim();
+                item.Expanded = string.Equals(expanded, item.Value, StringComparison.OrdinalIgnoreCase) ? null : expanded;
+            }
         }
 
         // 规则 1：系统里已有的条目，从用户处理后列表中自动移除
@@ -616,21 +692,25 @@ internal static class EnvService
         return new PathViewResult
         {
             SystemCurrent = ToViews(system, []),
-            SystemProcessed = ToViews(Process(system, [], sort, dedup), []),
+            SystemProcessed = ToViews(Process(system, [], sort, dedup, machineExpands), []),
             UserCurrent = ToViews(user, duplicateUsers),
-            UserProcessed = ToViews(Process(user, duplicateUsers, sort, dedup), duplicateUsers),
+            UserProcessed = ToViews(Process(user, duplicateUsers, sort, dedup, userExpands), duplicateUsers),
             Message = $"系统 {system.Count} 条，用户 {user.Count} 条{missingNote}{removedNotes}。",
         };
     }
 
     internal static ApplyResult ApplyPathSelection(List<string>? system, List<string>? user, bool dryRun)
     {
+        // 写回前把「靠 %变量% 才有意义、但这侧 PATH 不会展开」的条目换成具体路径
+        var systemEntries = (system ?? []).Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.Machine), null, null)).ToList();
+        var userEntries = (user ?? []).Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.User), null, null)).ToList();
+
         if (!dryRun)
         {
             try
             {
-                EnvStore.Set("Path", string.Join(';', system ?? []), EnvScope.Machine);
-                EnvStore.Set("Path", string.Join(';', user ?? []), EnvScope.User);
+                EnvStore.Set("Path", string.Join(';', systemEntries), EnvScope.Machine);
+                EnvStore.Set("Path", string.Join(';', userEntries), EnvScope.User);
             }
             catch (UnauthorizedAccessException)
             {
@@ -647,8 +727,8 @@ internal static class EnvService
             Ok = true,
             DryRun = dryRun,
             Message = dryRun
-                ? $"预览：将写入 系统 {(system?.Count ?? 0)} 条、用户 {(user?.Count ?? 0)} 条（未实际修改）"
-                : $"已写入 系统 {(system?.Count ?? 0)} 条、用户 {(user?.Count ?? 0)} 条 PATH。",
+                ? $"预览：将写入 系统 {systemEntries.Count} 条、用户 {userEntries.Count} 条（未实际修改）"
+                : $"已写入 系统 {systemEntries.Count} 条、用户 {userEntries.Count} 条 PATH。",
         };
     }
 
@@ -659,10 +739,18 @@ internal static class EnvService
                .Distinct(StringComparer.OrdinalIgnoreCase)
                .ToList();
 
-    private static List<Marked> Process(List<Marked> entries, HashSet<string> removed, bool sort, bool dedup)
+    private static List<Marked> Process(List<Marked> entries, HashSet<string> removed, bool sort, bool dedup, bool expands)
     {
-        // 过滤：指向不存在目录的条目直接从「处理后」列表剔除（写入时也不会带上）
-        var result = entries.Where(e => e.Exists && !removed.Contains(PathUtil.Canonical(e.Value))).ToList();
+        // 过滤：指向不存在目录的条目直接从「处理后」列表剔除（写入时也不会带上）；
+        // 同时把 %变量% 换成实际要写入的具体路径（这侧 PATH 是 REG_SZ 时）
+        var result = entries
+            .Where(e => e.Exists && !removed.Contains(PathUtil.Canonical(e.Value)))
+            .Select(e =>
+            {
+                var write = PreparePathEntry(e.Value, expands, null, null);
+                return string.Equals(write, e.Value, StringComparison.Ordinal) ? e : Copy(e, write);
+            })
+            .ToList();
         if (dedup)
             // 按真实目录去重：C:\...\latest\jdk-21\bin 与 C:\...\jdk-21.0.13.0.2\bin 是同一目录，只留前面那条
             result = result.GroupBy(e => RealPath.Key(e.Value), StringComparer.OrdinalIgnoreCase)
@@ -677,6 +765,7 @@ internal static class EnvService
         new(value, m.IsSystem)
         {
             Toolchain = m.Toolchain, Version = m.Version, Conflict = m.Conflict, Exists = m.Exists,
+            Expanded = m.Expanded,
         };
 
     private static List<PathEntryView> ToViews(IEnumerable<Marked> entries, HashSet<string> removed) =>
@@ -686,6 +775,7 @@ internal static class EnvService
             Toolchain = e.Toolchain,
             Version = e.Version,
             Exists = e.Exists,
+            Expanded = e.Expanded,
             Badge = !e.Exists
                 ? "已失效"
                 : string.IsNullOrEmpty(e.Conflict)

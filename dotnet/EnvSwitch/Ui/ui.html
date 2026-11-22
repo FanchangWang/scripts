@@ -131,9 +131,10 @@
   .path-col h4 { font-size:12px; margin:16px 0 6px; padding-bottom:5px; border-bottom:1px solid var(--line); color:var(--muted); }
   .path-col h4:first-of-type { margin-top:0; }
   .path-list { list-style:none; margin:0; padding:0; }
-  .path-list li { display:flex; align-items:center; gap:8px; padding:5px 4px; border-bottom:1px dashed var(--line); font-size:12px; }
+  .path-list li { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:5px 4px; border-bottom:1px dashed var(--line); font-size:12px; }
   .path-list li:last-child { border-bottom:0; }
   .path-list .content { flex:1; font-family:ui-monospace,Consolas,monospace; word-break:break-all; }
+  .path-list .expanded { flex-basis:100%; color:#92400e; font-size:11px; line-height:1.5; word-break:break-all; }
   .path-list input[type=checkbox] { flex:none; margin:0; }
   .path-list li.removed .content { text-decoration:line-through; color:#9ca3af; }
   .path-list li.invalid .content { color:#9ca3af; }
@@ -699,7 +700,10 @@ function pathList(items, name) {
     const box = editable
       ? `<input type="checkbox" data-list="${name}" data-value="${esc(it.value)}" ${it.removed ? 'disabled' : 'checked'}>`
       : '';
-    return `<li class="${it.removed ? 'removed' : ''} ${invalid ? 'invalid' : ''}"><span class="content">${esc(it.value)}</span>${badge}${box}</li>`;
+    const expanded = it.expanded
+      ? `<span class="expanded">→ 实际生效的是 ${esc(it.expanded)}（这侧 PATH 是普通字符串，%变量% 不会自动展开，写入时会换成具体路径）</span>`
+      : '';
+    return `<li class="${it.removed ? 'removed' : ''} ${invalid ? 'invalid' : ''}"><span class="content">${esc(it.value)}</span>${expanded}${badge}${box}</li>`;
   }).join('')}</ul>`;
 }
 

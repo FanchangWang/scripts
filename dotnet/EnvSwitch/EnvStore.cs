@@ -39,7 +39,7 @@ internal static class EnvStore
             if (value is null)
                 key.DeleteValue(name, throwOnMissingValue: false);
             else
-                key.SetValue(name, value, KindOf(key, name));
+                key.SetValue(name, value, KindFor(key, name));
         }
         catch (System.Security.SecurityException ex)
         {
@@ -51,7 +51,7 @@ internal static class EnvStore
     }
 
     /// <summary>写 PATH 这类「值已存在」的变量时沿用原来的类型，避免把 REG_EXPAND_SZ 降级成普通字符串。</summary>
-    private static RegistryValueKind KindOf(RegistryKey key, string name)
+    private static RegistryValueKind KindFor(RegistryKey key, string name)
     {
         try
         {
@@ -63,6 +63,27 @@ internal static class EnvStore
         {
             // 值不存在时 GetValueKind 会抛异常（消息是 "The specified registry key does not exist."）
             return RegistryValueKind.String;
+        }
+    }
+
+    /// <summary>
+    /// 读取现有值的注册表类型：REG_EXPAND_SZ 里的 %VAR% 会被系统展开，REG_SZ 不会。
+    /// 值不存在时返回 null。
+    /// </summary>
+    internal static RegistryValueKind? KindOf(string name, EnvScope scope)
+    {
+        var (hive, subKey) = scope == EnvScope.Machine
+            ? (RegistryHive.LocalMachine, MachineSubKey)
+            : (RegistryHive.CurrentUser, UserSubKey);
+        try
+        {
+            using var baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Default);
+            using var key = baseKey.OpenSubKey(subKey, writable: false);
+            return key?.GetValueKind(name);
+        }
+        catch
+        {
+            return null;
         }
     }
 

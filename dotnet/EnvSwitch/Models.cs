@@ -122,6 +122,12 @@ public sealed class PathEntryView
 
     /// <summary>目录是否仍然存在；false 表示这条 PATH 已经指向不存在的目录（已失效）。</summary>
     public bool Exists { get; set; } = true;
+
+    /// <summary>
+    /// 条目里含 %变量% 但这侧 PATH 不会自动展开（值是普通字符串）时，展开后的实际路径。
+    /// 界面用它提示「真正会生效的路径是什么」，写入时也会换成这个值。
+    /// </summary>
+    public string? Expanded { get; set; }
 }
 
 public sealed class PathViewResult
