@@ -44,9 +44,32 @@ switch (argv[0].ToLowerInvariant())
         return 0;
 
     case "config":
+    {
         Console.WriteLine($"配置文件：{configPath}");
-        Console.WriteLine(File.Exists(configPath) ? File.ReadAllText(configPath) : "（尚未生成，运行一次后自动生成）");
+        try
+        {
+            Console.WriteLine(ConfigStore.ReadText(configPath));
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // 与 Load 同一口径：默认路径 / 所在目录可达 = 还没生成；目录不可达 = 这次读不了
+            var dir = Path.GetDirectoryName(configPath);
+            if (string.Equals(configPath, ConfigStore.DefaultPath, StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrEmpty(dir) || Directory.Exists(dir))
+            {
+                Console.WriteLine("（尚未生成，运行一次后自动生成）");
+                return 0;
+            }
+            Console.Error.WriteLine($"[失败] {configPath}（配置文件所在目录不存在或无法访问：{dir}）");
+            return 1;
+        }
+        catch (ConfigUnreadableException ex)
+        {
+            Console.Error.WriteLine($"[失败] {ex.Message}");
+            return 1;
+        }
         return 0;
+    }
 
     case "list" or "ls":
         PrintList(configPath);
@@ -106,13 +129,14 @@ switch (argv[0].ToLowerInvariant())
     {
         if (RejectScope("path", argv))
             return 1;
-        if (RejectUnknownOptions("path", argv, "--no-sort", "--no-dedup", "--apply"))
+        if (RejectUnknownOptions("path", argv, "--no-sort", "--no-dedup", "--apply", "--allow-empty"))
             return 1;
         return RunPathBoth(
             configPath,
             sort: !argv.Any(a => string.Equals(a, "--no-sort", StringComparison.OrdinalIgnoreCase)),
             dedup: !argv.Any(a => string.Equals(a, "--no-dedup", StringComparison.OrdinalIgnoreCase)),
-            apply: argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)));
+            apply: argv.Any(a => string.Equals(a, "--apply", StringComparison.OrdinalIgnoreCase)),
+            allowEmpty: argv.Any(a => string.Equals(a, "--allow-empty", StringComparison.OrdinalIgnoreCase)));
     }
 
     case "serve":
@@ -469,11 +493,13 @@ static void PrintHelp()
                                              切换版本：环境变量与 PATH 一起写（--dry-run 仅预览）
           EnvSwitch all [--dry-run]          把每套「生效且有激活版本」的工具链一次性应用，
                                              环境变量与 PATH 一起写（等同网页「立即应用全部」）
-          EnvSwitch path [--no-sort] [--no-dedup] [--apply]
+          EnvSwitch path [--no-sort] [--no-dedup] [--apply] [--allow-empty]
                                              打印系统 + 用户两侧 PATH 的「当前 → 处理后」
                                              （失效条目剔除、与系统重复的用户条目移除、
                                               同目录多写法合并、可选排序去重）
                                              默认只预览；--apply 把两侧 PATH 一起写回
+                                             某一侧会被清成 0 条时 --apply 会拒绝，
+                                             确实要清空那一侧再加 --allow-empty
 
           EnvSwitch config                   显示配置文件路径与内容
 
@@ -523,7 +549,7 @@ static bool RejectUnknownFlags(string cmd, List<string> argv, params string[] al
 /// path：先把系统、用户两侧 PATH 的「当前 → 处理后」都算出来并打印；
 /// 加 --apply 时把两侧一起写回。只写一侧会让两侧条目重复或错位，所以这里不提供单侧写入。
 /// </summary>
-static int RunPathBoth(string configPath, bool sort, bool dedup, bool apply)
+static int RunPathBoth(string configPath, bool sort, bool dedup, bool apply, bool allowEmpty)
 {
     var cfg = LoadConfigOrExit(configPath);
     var view = EnvService.BuildPathView(cfg, sort, dedup);
@@ -539,6 +565,21 @@ static int RunPathBoth(string configPath, bool sort, bool dedup, bool apply)
         Console.WriteLine();
         Console.WriteLine("未写入。上面的「处理后」就是将要写的完整内容；确认无误后加 --apply 才会真正落盘。");
         return 0;
+    }
+
+    // 某一侧「当前有条目、处理后 0 条」= 这次 apply 会把那一整侧 PATH 清成空值。
+    // 失效目录会被筛掉、去重也可能全并掉，所以这不该悄悄发生：要么是误伤（先查为什么全没了），要么清空需明说。
+    var cleared = new List<string>();
+    if (view.SystemCurrent.Count > 0 && view.SystemProcessed.Count == 0)
+        cleared.Add($"系统（{view.SystemCurrent.Count} 条全部被剔除）");
+    if (view.UserCurrent.Count > 0 && view.UserProcessed.Count == 0)
+        cleared.Add($"用户（{view.UserCurrent.Count} 条全部被剔除）");
+    if (cleared.Count > 0 && !allowEmpty)
+    {
+        Console.Error.WriteLine($"[失败] {string.Join("、", cleared)}，--apply 会把这一侧 PATH 写成空值，未做任何修改。");
+        Console.Error.WriteLine("失效目录会被「处理后」筛掉。确实要清空这一侧就加 --allow-empty；"
+                                + "否则先确认那些目录是否还在。");
+        return 1;
     }
 
     var result = EnvService.ApplyPathSelection(

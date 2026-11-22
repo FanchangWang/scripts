@@ -68,12 +68,19 @@ internal static class EnvService
 
         if (raw is { Count: > 0 })
         {
-            // 用注册表的原样值展示：编辑保存时不会把 %USERPROFILE% 这类写法固化成具体路径
-            foreach (var kv in raw)
-                result[kv.Key] = new EnvVarView
+            // 存在性探测是网络 I/O：逐条串行时 N 条断网路径就是 N × 1.5 秒（实测 1 条 1.5 秒、3 条 4.5 秒）。
+            // 与 PATH 页一致，先并发算 invalid，再组装结果。
+            var entries = raw.ToList();
+            var invalid = new bool[entries.Count];
+            Parallel.ForEach(Enumerable.Range(0, entries.Count), i =>
+            {
+                invalid[i] = IsProbablyInvalidPath(entries[i].Key, entries[i].Value);
+            });
+            for (var i = 0; i < entries.Count; i++)
+                result[entries[i].Key] = new EnvVarView
                 {
-                    Value = kv.Value,
-                    Invalid = IsProbablyInvalidPath(kv.Key, kv.Value),
+                    Value = entries[i].Value,
+                    Invalid = invalid[i],
                 };
 
             // 非字符串类型（REG_DWORD / REG_MULTI_SZ …）只能看不能改：写回去会把类型变成字符串
@@ -601,23 +608,25 @@ internal static class EnvService
             if (!EnvStore.CanWrite(scope))
                 return new CommitReport($"写入{label}侧被拒绝，请以管理员身份运行。", []);
 
-            var written = new List<string>();
+            var written = new List<CommitEntry>();
             string? names = null;
             try
             {
-                // 变量与 PATH 分开记：任一变量写失败时，能说清到底写进去了哪些
+                // 变量与 PATH 分开记：任一变量写失败时，能说清到底写进去了哪些。
+                // 「删除」也要记成删除：批量失败时「另一侧同名变量被删掉」和「写入了新值」是两种副作用。
                 foreach (var name in ChangedNames(scope))
                 {
                     names = name;
-                    EnvStore.SetSilent(name, _now[scope].TryGetValue(name, out var v) ? v : null, scope);
-                    written.Add(name);
+                    var deleting = !_now[scope].TryGetValue(name, out var v) || v is null;
+                    EnvStore.SetSilent(name, deleting ? null : v, scope);
+                    written.Add(new CommitEntry(name, deleting));
                     names = null;
                 }
                 if (!string.Equals(_pathOrig[scope], _pathNow[scope], StringComparison.Ordinal))
                 {
                     names = "Path";
                     EnvStore.SetSilent("Path", _pathNow[scope], scope);
-                    written.Add("Path");
+                    written.Add(new CommitEntry("Path", false));
                 }
                 names = null;
 
@@ -643,8 +652,11 @@ internal static class EnvService
         }
     }
 
-    /// <summary>一次按侧提交的结果：错误文案（null = 成功）与已经真正写进去的项名。</summary>
-    internal sealed record CommitReport(string? Error, List<string> Written);
+    /// <summary>一次按侧提交的结果：错误文案（null = 成功）与已经真正落盘的项（写入 / 删除分开记）。</summary>
+    internal sealed record CommitReport(string? Error, List<CommitEntry> Entries);
+
+    /// <summary>已落盘的一项：<see cref="Deleted"/> 为 true 表示这一侧的这个变量被删掉了。</summary>
+    internal sealed record CommitEntry(string Name, bool Deleted);
 
     /// <summary>
     /// 应用一套工具链的一个版本。传 <paramref name="buffer"/> 时只在内存里算与改，
@@ -995,8 +1007,8 @@ internal static class EnvService
             foreach (var scope in hadChanges)
                 reports[scope] = buffer.CommitScope(scope);
 
-            // 只要有一侧真的写进去了就广播：部分写入时另一侧也要看到新值
-            if (reports.Values.Any(r => r.Written.Count > 0))
+            // 只要有一侧真的落盘了（写入或删除）就广播：部分写入时另一侧也要看到新值
+            if (reports.Values.Any(r => r.Entries.Count > 0))
                 EnvStore.Broadcast();
 
             // 4) 某侧没写进去：涉及该侧的工具链一律算失败，并把激活版本回滚
@@ -1013,9 +1025,9 @@ internal static class EnvService
                 var detail = bad.Select(s =>
                 {
                     var r = reports[s];
-                    return r.Written.Count == 0
+                    return r.Entries.Count == 0
                         ? r.Error!
-                        : $"{r.Error}（该侧已写入 {string.Join("、", r.Written)}，未回滚）";
+                        : $"{r.Error}（该侧已{string.Join("、", r.Entries.Select(e => (e.Deleted ? "删除 " : "写入 ") + e.Name))}，未回滚）";
                 }).Distinct();
                 item.Message = item.Message.Replace("待写入：", "未写入：")
                               + "；" + string.Join("；", detail);
@@ -1168,6 +1180,13 @@ internal static class EnvService
             .Where(p => !string.IsNullOrWhiteSpace(p))
             .Select(p => PreparePathEntry(p, PathExpandsVariables(EnvScope.User), null, null))
             .ToList();
+
+        // 给了元素、清理后一条都不剩：拒绝。走到写入就是把整条 PATH 写成空串，且没有任何提示。
+        // 空数组（Count 0）是调用方明确要求清空该侧，不在此列——CLI 那侧另有 --allow-empty 把关。
+        if (system is { Count: > 0 } && systemEntries is { Count: 0 })
+            return Fail("系统侧提交的条目里没有有效项（元素是 null、空串或只有空白），未做任何修改。");
+        if (user is { Count: > 0 } && userEntries is { Count: 0 })
+            return Fail("用户侧提交的条目里没有有效项（元素是 null、空串或只有空白），未做任何修改。");
 
         if (!dryRun)
         {

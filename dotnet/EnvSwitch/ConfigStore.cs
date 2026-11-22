@@ -25,16 +25,32 @@ internal static class ConfigStore
     internal static AppConfig Load(string? path = null)
     {
         var file = path ?? DefaultPath;
-        if (!File.Exists(file))
+
+        string json;
+        try
         {
+            json = ReadText(file);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // 「看不到文件」有三种：真首次运行 / 目录不可达 / 没有权限（File.Exists 与 ReadAllText 在这里都可能
+            // 报成「不存在」）。显式 --config 指向的路径，只有所在目录确实可达时才敢认定是新建配置；
+            // 否则就是「这次做不了」——照默认配置继续干活会拿一份不是用户的配置去写注册表。
+            var dir = Path.GetDirectoryName(file);
+            if (path is not null && (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)))
+                throw new ConfigUnreadableException(
+                    file,
+                    new DirectoryNotFoundException($"配置文件所在目录不存在或无法访问：{dir}"));
+
             var config = DetectDefaultConfig();
             // 首次运行落盘失败（目录不可写）时不要让程序崩掉，内存里还能用
             try { Save(config, file); }
-            catch (Exception ex) { Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{ex.Message}"); }
+            catch (Exception saveException)
+            {
+                Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{saveException.Message}");
+            }
             return config;
         }
-
-        var json = ReadText(file);
 
         try
         {
@@ -51,35 +67,54 @@ internal static class ConfigStore
     }
 
     /// <summary>
-    /// 内容坏了才走这里：先备份原文件（否则下面的 Save 会把用户内容永久覆盖），再写默认配置。
+    /// 内容坏了才走这里：先备份原文件，再写默认配置。
+    /// 备份失败时**不写回**——那份配置只是解析不出来、内容还在，覆盖就真没救了。
     /// 「读不到」绝不能进这个分支。
     /// </summary>
     private static AppConfig RecoverFromBroken(string file)
     {
+        var backedUp = false;
+        var backup = $"{file}.bad-{DateTime.Now:yyyyMMdd-HHmmss}";
         try
         {
-            var backup = $"{file}.bad-{DateTime.Now:yyyyMMdd-HHmmss}";
             File.Copy(file, backup, overwrite: true);
+            backedUp = true;
             Console.Error.WriteLine($"[警告] 原配置已备份为：{backup}");
         }
-        catch { /* 备份失败也要继续，至少程序还能启动 */ }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[警告] 原配置备份失败（{ex.Message}）：为避免覆盖仍可修复的原文件，本次不写回默认配置。");
+        }
 
         var fallback = DetectDefaultConfig();
-        try { Save(fallback, file); } catch { /* 落盘失败时内存里仍可用 */ }
-        Console.Error.WriteLine("[警告] 已使用默认配置继续运行。");
+        if (backedUp)
+        {
+            try { Save(fallback, file); } catch { /* 落盘失败时内存里仍可用 */ }
+            Console.Error.WriteLine("[警告] 已使用默认配置继续运行。");
+        }
+        else
+        {
+            Console.Error.WriteLine("[警告] 已使用默认配置继续运行（原文件保持原样，未写回）。");
+        }
         return fallback;
     }
 
     /// <summary>
-    /// 读配置文本。读不到（被占用 / 无权限）时重试一次——杀软扫描、同步盘、备份软件造成的
+    /// 读配置文本。读不到（被占用 / 无权限 / 目录不可达）时重试一次——杀软扫描、同步盘、备份软件造成的
     /// 占用通常是瞬时的。重试仍失败就抛 <see cref="ConfigUnreadableException"/>：
     /// 这种情况**绝不能**当成「配置损坏」去写回默认值，那会把用户的真配置永久覆盖掉。
+    /// 只有「文件确实不存在」才把 <see cref="FileNotFoundException"/> 交给调用方判断是不是首次运行。
     /// </summary>
-    private static string ReadText(string file)
+    internal static string ReadText(string file)
     {
         try
         {
             return File.ReadAllText(file);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // 「文件/目录不存在」交给 Load 判断是首次运行还是路径不可达，不能在这里一律当成读不到
+            throw;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -87,6 +122,10 @@ internal static class ConfigStore
             try
             {
                 return File.ReadAllText(file);
+            }
+            catch (Exception retry) when (retry is FileNotFoundException or DirectoryNotFoundException)
+            {
+                throw;
             }
             catch (Exception retry)
             {
