@@ -292,6 +292,8 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
             // 配置文件在、但不可用：绝不能当成「配置损坏」走默认值，
             // 更不能顺手 Save（那会把用户的真配置覆盖掉）。这里只报错，什么都不改。
             // 两种情况分开说：真的读不到（等会再试就好）vs 内容解析不出来（得手工修，等也没用）。
+            // 配置内容坏了 vs 暂时读不到：只是日志的分类，给人看的处置句一律用异常自带的 Hint
+            // （CLI 三处也是打它）。这样「同一判断的第二份文案」只剩这一份，不会再各写各的。
             var broken = ex.InnerException is InvalidDataException;
             var key = $"{ex.File}|{ex.Message}";
             if (key != lastConfigError)
@@ -308,11 +310,7 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
             await ctx.Response.WriteAsJsonAsync(new
             {
                 ok = false,
-                message = broken
-                    ? $"配置内容无法解析，未做任何修改：{ex.Message}"
-                      + "（服务运行中不会拿内存里的默认配置顶替，也不会自动重建；请手工修好这份 JSON，或恢复一份可用配置后重试）"
-                    : $"配置文件暂时读不到，未做任何修改：{ex.Message}"
-                      + "（可能是该路径当前不可访问——网络盘断开、U 盘拔掉、缺少权限——或被其它程序占用，稍后重试即可）",
+                message = ex.Hint.Length > 0 ? $"{ex.Message}（{ex.Hint}）" : ex.Message,
             });
         }
         catch (JsonException ex)
@@ -338,11 +336,15 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
         }
     });
 
+    // Web 侧读配置的唯一入口：请求里的配置必须「已在磁盘上且可读」，所以固定 allowFirstRun: false。
+    // 各接口不要再各自写 Load(...)，否则新增一个接口就可能漏掉这个开关（第九轮 I1 就是这么漏的）。
+    AppConfig LoadForRequest() => ConfigStore.Load(configPath, allowFirstRun: false);
+
     app.MapGet("/", () => Results.Content(Ui.Html, "text/html; charset=utf-8"));
 
     app.MapGet("/api/state", () =>
     {
-        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
+        var cfg = LoadForRequest();
         // 历史坏配置（重名 / 空名）不应该让整页打不开：逐条填充，重名保留第一套
         var snapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var t in cfg.Toolchains)
@@ -431,21 +433,21 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
         if (req is null || string.IsNullOrWhiteSpace(req.Toolchain) || string.IsNullOrWhiteSpace(req.Version))
             return Results.BadRequest(new { ok = false, message = "缺少工具链或版本。" });
 
-        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
+        var cfg = LoadForRequest();
         return Results.Json(EnvService.Apply(cfg, req.Toolchain, req.Version, req.DryRun, configPath), jsonOptions);
     });
 
     app.MapPost("/api/apply/all", async (HttpContext ctx) =>
     {
         var req = await JsonSerializer.DeserializeAsync<ApplyRequest>(ctx.Request.Body, jsonOptions);
-        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
+        var cfg = LoadForRequest();
         return Results.Json(EnvService.ApplyAll(cfg, req?.DryRun ?? false, configPath), jsonOptions);
     });
 
     app.MapPost("/api/path/view", async (HttpContext ctx) =>
     {
         var req = await JsonSerializer.DeserializeAsync<PathRequest>(ctx.Request.Body, jsonOptions);
-        var cfg = ConfigStore.Load(configPath, allowFirstRun: false);
+        var cfg = LoadForRequest();
         return Results.Json(
             EnvService.BuildPathView(cfg, req?.Sort ?? true, req?.Dedup ?? true), jsonOptions);
     });

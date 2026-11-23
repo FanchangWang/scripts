@@ -560,7 +560,7 @@
 
 | 编号 | 级别 | 复核结果 | 原因 | 修复说明 |
 | --- | --- | --- | --- | --- |
-| I1 | 中 | ✔ 已实测（端到端） | S1 的 `RefuseFallbackWrites` 只拦 CLI 三条写入命令；Web 侧 `Load(allowFirstRun: false)` 只堵「首次运行」分支，`RecoverFromBroken`（内容损坏）这条兜底出口没接这个开关 → 服务运行中配置变坏且备份/写回失败时，`/api/state` 200 + 探测配置、`/api/apply` 非 dry 会按探测配置写 `JAVA_HOME`/PATH，而配置一字节未落盘；每请求还重打三行警告 | `Load` 的损坏分支：`!allowFirstRun` 时**不备份、不重建、不兜底**，直接抛 `ConfigUnreadableException`（复用 503 通道），磁盘完全不动，所以「未做任何修改」准确。中间件把 503 分成两句：`ex.InnerException is JsonException` → 「配置内容无法解析…请手工修好这份 JSON」，否则仍是「暂时读不到…稍后重试」。实测（`serve --config %TEMP%\es9i2\cfg.json`，运行中把配置改成半截 JSON）：`/api/state` **503**、`/api/apply`(dry) **503**、`/api/apply/all`(dry) **503**；目录内只有 `cfg.json`（39 字节，未变）与日志，无 `.bad-*`、无 `.tmp`；`JAVA_HOME` 仍为空 |
+| I1 | 中 | ✔ 已实测（端到端） | S1 的 `RefuseFallbackWrites` 只拦 CLI 三条写入命令；Web 侧 `Load(allowFirstRun: false)` 只堵「首次运行」分支，`RecoverFromBroken`（内容损坏）这条兜底出口没接这个开关 → 服务运行中配置变坏且备份/写回失败时，`/api/state` 200 + 探测配置、`/api/apply` 非 dry 会按探测配置写 `JAVA_HOME`/PATH，而配置一字节未落盘；每请求还重打三行警告 | `Load` 的损坏分支：`!allowFirstRun` 时**不备份、不重建、不兜底**，直接抛 `ConfigUnreadableException`（复用 503 通道），磁盘完全不动，所以「未做任何修改」准确。中间件把 503 分成两句（第十轮 J3 更正：判定类型是 `InvalidDataException`，不是 `JsonException`——后者只会出现在更内层）：是 `InvalidDataException` → 「配置内容无法解析…请手工修好这份 JSON」，否则是「暂时读不到…稍后重试」。实测（`serve --config %TEMP%\es9i2\cfg.json`，运行中把配置改成半截 JSON）：`/api/state` **503**、`/api/apply`(dry) **503**、`/api/apply/all`(dry) **503**；目录内只有 `cfg.json`（39 字节，未变）与日志，无 `.bad-*`、无 `.tmp`；`JAVA_HOME` 仍为空 |
 | I2 | 低 | ✔ 已实测 | 兜底注记写「上面这份」，而它是整段输出的第三行、真正的列表在下面，方向指反 | 改成「下面列出的这份」。实测（默认目录改名 + `icacls /deny W`）：`配置文件：…` → `[警告] 默认配置未能写入…` → `（注意：下面列出的这份是临时兜底的默认配置…）` → 空行 → `Java [JAVA_HOME] …` |
 | S5 | 低（自查） | ✔ 已实测 | I1 落地后同一份故障会被连续轮询反复记录（审计验收 21 的诉求），真正的首因被刷掉 | 中间件加 `lastConfigError`（用「文件 + 异常消息」拼成的键）：同一份故障只 `LogWarning` 一次；任何请求恢复正常（状态码 < 400）就清空，下次复发再记一条。实测：同一种坏法连打 4 次 503 只留 **1 行 `warn:`**；中间插入一次 200 后再换成另一种坏法，连打 2 次共记 **2 行**（键不同才记新的） |
 
@@ -570,3 +570,22 @@
 - `serve` **启动**那一刻仍然是 `allowFirstRun: true`：坏配置会被备份成 `.bad` 并重建一份默认配置后正常启动（审计 §5 已判为「等价于全新安装」的已知行为）。此时磁盘上就是默认配置，页面显示的也一致，不构成「拿探测配置写注册表」。
 
 **保留 / 已知代价**：`lastConfigError` 只按「文件 + 异常消息」去重，同一份文件内容有变但消息尾部的 `BytePositionInLine` 不同时会再记一条（可接受，说明内容确实变了）；`serve` 启动时坏配置仍会被重建（`.bad` 保留）；审计 §5 剔除的三项（`config` 对坏文件原样输出、备份+写回成功的恢复分支、只读 `.tmp` 残留）维持不改。
+
+---
+
+### 附录 A.10 第十轮审计（`audit/audit10.md` 的 J1–J3）+ 结构性收口
+
+| 编号 | 级别 | 复核结果 | 原因 | 修复说明 |
+| --- | --- | --- | --- | --- |
+| J1 | 中 | ✔ 已实测（三入口） | `JsonSerializer.Deserialize<AppConfig>(...) ?? DetectDefaultConfig()`：字面量 `null` 是合法 JSON，解析**不抛**，于是 `??` 把探测出来的 Java 顶上——服务显示探测配置、`/api/apply` 非 dry 按它写注册表，磁盘上仍然是 `null`、连 `.bad` 都没有。这是「拿探测配置当用户配置」的最后一处出口 | 把「内容是否合法」收敛成**一个判定点** `ParseStrict`：语法错、类型不符、字面量 `null`、`Migrate` 抛的错，统一抛 `InvalidDataException`；`Load` 只处理这一种异常（CLI 备份重建 / 服务 503）。顺带删掉 `?? DetectDefaultConfig()`（它正是「解析成功但没对象 = 没配过」这个错误等式的来源）。实测：CLI `list`/`use --dry-run` 对 `null` → 备份 `.bad` + 重建（exit 0）；`serve` 运行中改成 `null` → `/api/state` / `/api/apply` 均 **503**，文件字节不变、无 `.bad` / `.tmp` |
+| J2 | 低 | ✔ 已实测 | Web 中间件自造 503 尾句，从不看 `ex.Hint`：文件被删时正文说「已不在原位」，尾句却让人「稍后重试即可」——同一份异常在 CLI 有三处打 Hint，Web 是唯一自造文案的面 | 中间件改成只用异常自带的处置句：`message = ex.Message +（ex.Hint）`（`Hint` 为空时只给 Message，正好覆盖 `PathIsDirectory` 那种「第一行已说清」的情形）。现在 CLI 与 Web 共用同一份文案，不再各写各的。实测删文件后 503 文案含「改回原名」、不含「稍后重试」 |
+| J3 | 低 | ✔ 已改 | `FLOWS.md` 把分流条件写成 `ex.InnerException is JsonException`，代码是 `InvalidDataException`；照文档改代码会让分支永不成立 | 两处文档（FLOWS A.9、audit09 反馈区）均已更正并注明「第十轮 J3 更正」 |
+
+**结构性收口（本轮真正做的事，不只是三条补丁）**：
+
+1. **单一判定点**：`ConfigStore.ParseStrict` 是「这份内容能不能用」的唯一实现；`Load` 只编排「读 → 判位置 → 首启 / 解析 / 兜底」，不再有第二处 `Deserialize` 调用。
+2. **单一 Web 入口**：`Program.RunWeb` 里的 `LoadForRequest()`（固定 `allowFirstRun: false`）取代原先散在四个接口的 `Load(configPath, allowFirstRun: false)`——第九轮 I1 就是「新增出口忘了带这个开关」漏的，现在无处可漏。
+3. **单一文案**：503 用 `ex.Message + ex.Hint`；CLI 三处也打 `Hint`，已无第三份文案。
+4. **可执行矩阵**：`tests/acceptance.sh` 入库，把「路径类 × 文件状态 × 入口」枚举成 **38 条断言**（含 `null`、空文件、`[]`、目录改名、删文件、日志去重、文案口径）。`dotnet build -c Release && bash tests/acceptance.sh` → **PASS 38 / FAIL 0 / SKIP 0**。以后改这块先跑它，而不是等下一轮审计抽样。
+
+**保留 / 已知代价**：`ParseStrict` 对 `Migrate` 的异常只保留 `Message`（原始类型在 `InnerException` 里，服务日志会打整条堆栈）；`config` 命令仍原样输出（含 `null`），这是它「把文件内容打给你看」的定位，已加断言 A12 锁住；矩阵覆盖不到的三类（默认路径不可写、文件被独占锁定、注册表写入内容）见 `audit/acceptance.md` §5，仍需 VM / 手工。

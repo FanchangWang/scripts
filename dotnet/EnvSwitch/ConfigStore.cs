@@ -236,23 +236,46 @@ internal static class ConfigStore
 
         try
         {
-            var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions) ?? DetectDefaultConfig();
-            Migrate(config);
-            return config;
+            return ParseStrict(json);
         }
-        catch (Exception ex)
+        catch (InvalidDataException ex)
         {
             // 服务运行中（allowFirstRun: false）不备份、不重建、不兜底，直接交给 503 通道：
             // 否则每请求重打一遍警告，备份成功但写回失败时还会每秒落一个新的 .bad 文件。
             if (!allowFirstRun)
-                throw new ConfigUnreadableException(file,
-                    // 统一包成 InvalidDataException：中间件靠这个类型把「内容坏了」和「暂时读不到」分成两句，
-                    // 原始的异常可能来自 Deserialize 也可能来自 Migrate（校验旧配置），不统一就会误标成「读不到」。
-                    new InvalidDataException(ex.Message, ex),
-                    "服务运行中不使用内存兜底的默认配置，本次未做任何修改。请手工修好这份 JSON（或换一份可用配置）后重试。");
-            // 读到文本了、但解析不出来（JSON 语法坏 / 结构对不上）：这才按「损坏」处理。
+                throw new ConfigUnreadableException(file, ex, FallbackNotAllowedHint);
+            // 读到文本了、但内容不合法（JSON 语法坏 / 类型对不上 / 字面量 null / 结构自相矛盾）：
+            // 这才按「损坏」处理。
             Console.Error.WriteLine($"[警告] 配置内容无法解析（{file}）：{ex.Message}");
             return RecoverFromBroken(file, explicitPath: !IsDefaultPath(file));
+        }
+    }
+
+    private const string FallbackNotAllowedHint =
+        "服务运行中不使用内存兜底的默认配置，本次未做任何修改。请手工修好这份 JSON（或换一份可用配置）后重试。";
+
+    /// <summary>
+    /// 「这份内容是不是一份能用的配置」的唯一判定点。语法错、类型不符、字面量 <c>null</c>、
+    /// 以及 <see cref="Migrate"/> 校验旧结构时抛的错，全部收敛成 <see cref="InvalidDataException"/>——
+    /// 调用方于是只需要处理一种异常（CLI 备份重建 / 服务 503），不必逐个识别异常来源。
+    /// </summary>
+    /// <remarks>
+    /// 第十轮 J1 的根因就在这：原先写的是 <c>Deserialize(...) ?? DetectDefaultConfig()</c>，
+    /// 把「解析成功、但没有对象」当成「没配过、探测一份顶上」。字面量 <c>null</c> 是合法 JSON，
+    /// 于是它绕过了「内容坏了」这条闸，服务会拿探测出来的 Java 去显示、去写注册表，磁盘上却还是 null。
+    /// </remarks>
+    private static AppConfig ParseStrict(string json)
+    {
+        try
+        {
+            var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions)
+                         ?? throw new InvalidDataException("配置内容是 JSON null（这里需要的是一份对象，不是 null）");
+            Migrate(config);
+            return config;
+        }
+        catch (Exception ex) when (ex is not InvalidDataException)
+        {
+            throw new InvalidDataException(ex.Message, ex);
         }
     }
 

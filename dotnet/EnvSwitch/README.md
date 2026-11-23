@@ -34,6 +34,20 @@ dotnet publish -c Release -o publish
 
 产物为 `publish/EnvSwitch.exe`，自包含、单文件，拷到任意 Windows x64 机器即可运行，无需安装 .NET。
 
+## 验收（配置生命周期矩阵）
+
+改配置读写的代码前后跑一遍，别靠读代码猜：
+
+```powershell
+dotnet build -c Release
+& "C:\Program Files\Git\bin\bash.exe" tests/acceptance.sh
+```
+
+- 覆盖 **路径类**（默认 / 显式已存在文件 / 新目录 / 是目录 / 路径中一段是文件 / 黑洞 UNC / 裸文件名 / 空串）× **文件状态**（不存在 / 合法对象 / 语法坏 / 空文件 / 合法非对象 `[]` `"s"` / 字面量 `null` / 锁定 / 拒绝读）× **入口**（CLI 只读 / CLI 写入 / `serve` 启动 / `serve` 请求）。
+- 输出 `PASS` / `FAIL`（退出码 1）/ `SKIP`（缺 python 时的解析检查）。**FAIL 必须为 0。**
+- 全程只读真实环境：所有写入命令都带 `--dry-run`，不碰 `%LOCALAPPDATA%\EnvSwitch`，跑完自动清临时目录。
+- 新增一种配置状态或新入口，**先加一条断言，再改代码**；否则「历史旧 bug」就会出在没进表的地方。
+
 ## 运行
 
 ```powershell
