@@ -30,7 +30,7 @@ pwsh.exe -NoProfile -File "C:\Users\guyue\code\scripts\powershell\clean-orphan-r
 | 码 | 含义 |
 |---|---|
 | 0 | 全部成功 / 0 项 / 用户放弃 |
-| 1 | 前置条件失败（非管理员、扫描失败、异常回滚失败） |
+| 1 | 前置条件失败（非管理员、扫描失败） |
 | 2 | 存在删除失败项（部分成功） |
 | 3 | 非交互输入被拒绝（stdin 重定向） |
 

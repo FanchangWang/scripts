@@ -23,7 +23,7 @@ pwsh.exe -NoProfile -File "C:\Users\guyue\code\scripts\powershell\remove-ghost-u
 2. 将原始语言列表导出到脚本目录下 `backups/language-list-backup-<时间戳>.json`（该目录已 git 忽略），包含每种语言的 `language_tag` 与 `input_method_tips`。采用 JSON 而非 `Export-Clixml`，因为后者反序列化为 `PSObject`，无法直接传回 `Set-WinUserLanguageList -LanguageList`。
 3. `Add('en-US')` → `Set-WinUserLanguageList -Force`；重新读取确认 en-US 已加入，否则中止。
 4. 从工作列表移除全部 en-US 项 → 再次 `Set-WinUserLanguageList -Force`。
-5. 复查最终列表：若仍残留 en-US，用原始列表（本来就不含 en-US）**重试一次**；成功恢复后提示可能需注销/重启，仍失败则打印 `-RestoreFrom` 恢复命令，并以退出码 2 结束。
+5. 复查最终列表：若仍残留 en-US，用原始列表（本来就不含 en-US）**重试一次**。无论重试成功与否，主增删循环都未达成目标，统一以退出码 2 结束——重试成功时提示可能需注销/重启；仍失败则打印 `-RestoreFrom` 恢复命令。
 
 ## 异常与恢复
 
@@ -36,8 +36,8 @@ pwsh.exe -NoProfile -File "C:\Users\guyue\code\scripts\powershell\remove-ghost-u
 | 码 | 含义 |
 |---|---|
 | 0 | 成功 / 已有 en-US 未改动 / 备份恢复成功 |
-| 1 | 异常或恢复失败（已尝试自动回滚） |
-| 2 | 增删循环后 en-US 仍残留（已重试，目标未达成） |
+| 1 | 异常或恢复失败（主流程会先自动回滚；`-RestoreFrom` 失败时为恢复失败） |
+| 2 | 增删循环未达成目标（已用原始列表重试，无论重试成功与否均返回 2） |
 
 ## 安全设计
 
