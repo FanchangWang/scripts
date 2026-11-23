@@ -249,6 +249,9 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
     // 本地接口的三道闸 + 统一异常出口。
     // 只监听 127.0.0.1 挡不住浏览器：任意网页都能用 no-cors 简单请求盲打这里改环境变量 / 清空 PATH。
     var allowedHosts = new[] { "127.0.0.1", "localhost", "[::1]", "::1" };
+    // 同一份配置故障连着来（页面轮询、用户连点）只记一条日志：否则每个请求都刷一行，真正的首因被埋掉。
+    // 一旦有请求恢复正常就清空，下次复发还会再记一条。
+    string? lastConfigError = null;
     app.Use(async (ctx, next) =>
     {
         try
@@ -281,12 +284,22 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
             }
 
             await next();
+            if (ctx.Response.StatusCode < 400)
+                lastConfigError = null;   // 恢复正常：下次再坏要重新记一条
         }
         catch (ConfigUnreadableException ex)
         {
-            // 配置文件在、但暂时读不到：绝不能当成「配置损坏」走默认值，
+            // 配置文件在、但不可用：绝不能当成「配置损坏」走默认值，
             // 更不能顺手 Save（那会把用户的真配置覆盖掉）。这里只报错，什么都不改。
-            app.Logger.LogWarning(ex, "配置暂时读不到：{Method} {Path}", ctx.Request.Method, ctx.Request.Path);
+            // 两种情况分开说：真的读不到（等会再试就好）vs 内容解析不出来（得手工修，等也没用）。
+            var broken = ex.InnerException is InvalidDataException;
+            var key = $"{ex.File}|{ex.Message}";
+            if (key != lastConfigError)
+            {
+                lastConfigError = key;
+                app.Logger.LogWarning(ex, broken ? "配置内容无法解析：{Method} {Path}" : "配置暂时读不到：{Method} {Path}",
+                    ctx.Request.Method, ctx.Request.Path);
+            }
             if (ctx.Response.HasStarted)
                 return;
             ctx.Response.Clear();
@@ -295,8 +308,11 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
             await ctx.Response.WriteAsJsonAsync(new
             {
                 ok = false,
-                message = $"配置文件暂时读不到，未做任何修改：{ex.Message}"
-                          + "（可能是该路径当前不可访问——网络盘断开、U 盘拔掉、缺少权限——或被其它程序占用，稍后重试即可）",
+                message = broken
+                    ? $"配置内容无法解析，未做任何修改：{ex.Message}"
+                      + "（服务运行中不会拿内存里的默认配置顶替，也不会自动重建；请手工修好这份 JSON，或恢复一份可用配置后重试）"
+                    : $"配置文件暂时读不到，未做任何修改：{ex.Message}"
+                      + "（可能是该路径当前不可访问——网络盘断开、U 盘拔掉、缺少权限——或被其它程序占用，稍后重试即可）",
             });
         }
         catch (JsonException ex)
@@ -667,7 +683,7 @@ static void PrintList(string configPath)
     if (ConfigStore.LastLoadUsedFallback)
     {
         // 别让人把这份默认配置当成真配置（下面列的是探测结果，不是用户的工具链）
-        Console.WriteLine("（注意：上面这份是临时兜底的默认配置，真正的配置文件没读到/没能写成；"
+        Console.WriteLine("（注意：下面列出的这份是临时兜底的默认配置，真正的配置文件没读到/没能写成；"
                           + "写入类命令 use / all / path --apply 会拒绝执行）");
     }
     if (cfg.Toolchains.Count == 0)

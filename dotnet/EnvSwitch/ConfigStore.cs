@@ -53,7 +53,8 @@ internal static class ConfigStore
     /// </summary>
     /// <remarks>
     /// CLI 是单进程一次性执行，所以不做并发保护也能用；Web 请求虽然会写这个标志，
-    /// 但网页侧的 `Load` 一律 `allowFirstRun: false`，走不到兜底分支，也没有任何地方读它。
+    /// 但服务侧 `Load` 传 `allowFirstRun: false`，「首次运行」与「内容损坏」两条兜底出口都会先抛，
+    /// 走不到置位那一行，也没有任何地方读它（第九轮 I1 修的就是「内容损坏」这条漏网的出口）。
     /// </remarks>
     internal static bool LastLoadUsedFallback { get; private set; }
 
@@ -241,6 +242,14 @@ internal static class ConfigStore
         }
         catch (Exception ex)
         {
+            // 服务运行中（allowFirstRun: false）不备份、不重建、不兜底，直接交给 503 通道：
+            // 否则每请求重打一遍警告，备份成功但写回失败时还会每秒落一个新的 .bad 文件。
+            if (!allowFirstRun)
+                throw new ConfigUnreadableException(file,
+                    // 统一包成 InvalidDataException：中间件靠这个类型把「内容坏了」和「暂时读不到」分成两句，
+                    // 原始的异常可能来自 Deserialize 也可能来自 Migrate（校验旧配置），不统一就会误标成「读不到」。
+                    new InvalidDataException(ex.Message, ex),
+                    "服务运行中不使用内存兜底的默认配置，本次未做任何修改。请手工修好这份 JSON（或换一份可用配置）后重试。");
             // 读到文本了、但解析不出来（JSON 语法坏 / 结构对不上）：这才按「损坏」处理。
             Console.Error.WriteLine($"[警告] 配置内容无法解析（{file}）：{ex.Message}");
             return RecoverFromBroken(file, explicitPath: !IsDefaultPath(file));
