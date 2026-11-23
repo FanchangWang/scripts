@@ -2,7 +2,7 @@
 # @name aliyunDeepseekR1Qwen1.5BChat
 POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
 Content-Type: application/json
-Authorization: Bearer {{$dotenv ALIYUN_API_KEY}}
+Authorization: Bearer {{ALIYUN_API_KEY}}
 
 {
   "model": "deepseek-r1-distill-qwen-1.5b",

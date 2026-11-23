@@ -1,6 +1,6 @@
 # 获取 Token#
 # @name getToken
-GET {{$dotenv BASE_URL}}/open/auth/token?client_id={{$dotenv CLIENT_ID}}&client_secret={{$dotenv CLIENT_SECRET}}
+GET {{BASE_URL}}/open/auth/token?client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}
 Content-Type: application/json
 
 # response

@@ -1,8 +1,8 @@
 ### 获取每日问题信息
 # @name getQuestionInfo
-GET {{$dotenv BASE_URL}}/v1/app/special/daily/ask_info?date={{$datetime 'YYYYMMDD'}} HTTP/1.1
+GET {{BASE_URL}}/v1/app/special/daily/ask_info?date={{$datetime 'YYYYMMDD'}} HTTP/1.1
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 # response

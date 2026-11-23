@@ -1,8 +1,8 @@
 ### 获取任务列表
 # @name getTaskList
-GET {{$dotenv BASE_URL}}/v1/app/user/task/list
+GET {{BASE_URL}}/v1/app/user/task/list
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 # response

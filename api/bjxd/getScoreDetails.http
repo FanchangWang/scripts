@@ -1,10 +1,10 @@
 ### 获取积分明细
 # @name getScoreDetails
-GET {{$dotenv BASE_URL}}/v1/app/user/my_score
+GET {{BASE_URL}}/v1/app/user/my_score
     ?page_no=1
     &page_size=5
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 # response

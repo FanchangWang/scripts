@@ -2,7 +2,7 @@
 # @name sparkLiteChat
 POST https://spark-api-open.xf-yun.com/v1/chat/completions
 Content-Type: application/json
-Authorization: Bearer {{$dotenv SPARK_API_KEY}}
+Authorization: Bearer {{SPARK_API_KEY}}
 
 {
   "model": "lite",

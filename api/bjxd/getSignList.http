@@ -1,8 +1,8 @@
 ### 获取签到列表
 # @name getSignList
-GET {{$dotenv BASE_URL}}/v1/app/user/reward_list
+GET {{BASE_URL}}/v1/app/user/reward_list
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 # response

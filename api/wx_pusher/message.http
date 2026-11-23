@@ -3,11 +3,11 @@ POST https://wxpusher.zjiecode.com/api/send/message HTTP/1.1
 Content-Type: application/json
 
 {
-  "appToken": "{{$dotenv appToken}}",
+  "appToken": "{{appToken}}",
   "content": "<h1>这是标题</h1><br/><div style='white-space: pre-wrap;'>这是正文</div>",
   "summary": "这是标题",
   "contentType": 2,
-  "uids": ["{{$dotenv uids}}"],
+  "uids": ["{{uids}}"],
   "verifyPayType": 0
 }
 

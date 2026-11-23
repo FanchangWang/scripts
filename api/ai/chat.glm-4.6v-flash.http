@@ -2,7 +2,7 @@
 # @name glm46vFlashChat
 POST https://open.bigmodel.cn/api/paas/v4/chat/completions
 Content-Type: application/json
-Authorization: Bearer {{$dotenv GLM_API_KEY}}
+Authorization: Bearer {{GLM_API_KEY}}
 
 {
   "model": "glm-4.6v-flash",

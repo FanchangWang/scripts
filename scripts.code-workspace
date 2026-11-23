@@ -4,6 +4,10 @@
 			"path": "."
 		},
 		{
+			"name": "tmp 临时文件与审计记录（git 忽略）",
+			"path": "tmp"
+		},
+		{
 			"name": "powershell toolchain 本机工具链清单生成器",
 			"path": "powershell/toolchain"
 		},

@@ -1,0 +1,40 @@
+### 百度 AI 搜索（千帆 web_search）
+# 官方 API、国内直连、中文效果好，返回结构化搜索结果（标题/URL/摘要/站点等）
+# 每月免费 1500 次（约每天 50 次）
+# 鉴权：Authorization: Bearer <bce-v3/ALTAK-...>
+# 文档：https://cloud.baidu.com/doc/qianfan-api/s/Jmwbl4qxs
+# @name webSearch
+# @no-cookie-jar   # 禁用 cookieJar，避免本机 baidu.com Cookie 发到 qianfan.baidubce.com 触发域不匹配
+POST https://qianfan.baidubce.com/v2/ai_search/web_search
+Content-Type: application/json
+Authorization: Bearer {{BAIDU_API_KEY}}
+
+{
+  "messages": [
+    {"role": "user", "content": "第五代胜达 RSPA遥控智能泊车辅助 最多移动车辆距离"}
+  ],
+  "search_source": "baidu_search_v2",
+  "resource_type_filter": [
+    {"type": "web", "top_k": 5}
+  ]
+}
+
+# response 样例（真实调用返回，5 条结果；此处仅列第 1 条示意）
+# {
+#   "request_id": "552ee8db-211f-4e34-8391-c2a25a65b540",
+#   "references": [
+#     {
+#       "id": 1,
+#       "url": "https://www.qcwp.com/news/1081961",
+#       "title": "20多万预算,买家用大六座方盒子?推荐你一定要看“胜达”!",
+#       "date": "2026-11-22 09:42:31",
+#       "content": "北京现代第五代胜达值得关注!作为全球累销超570万台的传奇车型...",
+#       "snippet": "北京现代第五代胜达值得关注!...",
+#       "website": "汽车网评",
+#       "type": "web",
+#       "rerank_score": 1,
+#       "authority_score": 0.5
+#     }
+#     // ... 其余 4 条结构相同
+#   ]
+# }

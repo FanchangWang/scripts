@@ -1,8 +1,8 @@
 ### 提交文章积分
 # @name submitArticleScore
-POST {{$dotenv BASE_URL}}/v1/app/score
+POST {{BASE_URL}}/v1/app/score
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 {

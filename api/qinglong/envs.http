@@ -1,6 +1,6 @@
 ### 获取 Token
 # @name getToken
-GET {{$dotenv BASE_URL}}/open/auth/token?client_id={{$dotenv CLIENT_ID}}&client_secret={{$dotenv CLIENT_SECRET}}
+GET {{BASE_URL}}/open/auth/token?client_id={{CLIENT_ID}}&client_secret={{CLIENT_SECRET}}
 Accept: application/json
 
 # response
@@ -16,12 +16,11 @@ Accept: application/json
 
 ### 获取环境变量
 
-@auth_token = {{getToken.response.body.data.token}}
-
 # @name getEnvs
-GET {{$dotenv BASE_URL}}/open/envs?searchValue=BJXD1
+# @ref getToken
+GET {{BASE_URL}}/open/envs?searchValue=BJXD1
 Accept: application/json
-Authorization: Bearer {{auth_token}}
+Authorization: Bearer {{getToken.data.token}}
 
 # response
 # {
@@ -44,14 +43,13 @@ Authorization: Bearer {{auth_token}}
 
 ### 创建环境变量
 
-@auth_token = {{getToken.response.body.data.token}}
-
 # @name createEnv
+# @ref getToken
 
-POST {{$dotenv BASE_URL}}/open/envs
+POST {{BASE_URL}}/open/envs
 Content-Type: application/json
 Accept: application/json
-Authorization: Bearer {{auth_token}}
+Authorization: Bearer {{getToken.data.token}}
 
 [
   {
@@ -81,23 +79,19 @@ Authorization: Bearer {{auth_token}}
 # }
 
 ### 更新环境变量
-@auth_token = {{getToken.response.body.data.token}}
-@env_id = {{getEnvs.response.body.data[0].id}}
-@env_name = {{getEnvs.response.body.data[0].name}}
-@env_value = {{getEnvs.response.body.data[0].value}}
-@env_remarks = {{getEnvs.response.body.data[0].remarks}}
-
 # @name updateEnv
-PUT {{$dotenv BASE_URL}}/open/envs
+# @ref getEnvs
+# @ref getToken
+PUT {{BASE_URL}}/open/envs
 Content-Type: application/json
 Accept: application/json
-Authorization: Bearer {{auth_token}}
+Authorization: Bearer {{getToken.data.token}}
 
 {
-  "id": {{env_id}},
-  "name": "{{env_name}}",
-  "value": "{{env_value}}",
-  "remarks": "{{env_remarks}} Test"
+  "id": {{getEnvs.data[0].id}},
+  "name": "{{getEnvs.data[0].name}}",
+  "value": "{{getEnvs.data[0].value}}",
+  "remarks": "{{getEnvs.data[0].remarks}} Test"
 }
 
 # response
@@ -119,13 +113,12 @@ Authorization: Bearer {{auth_token}}
 
 ### 删除环境变量
 
-@auth_token = {{getToken.response.body.data.token}}
-
 # @name deleteEnv
-DELETE {{$dotenv BASE_URL}}/open/envs
+# @ref getToken
+DELETE {{BASE_URL}}/open/envs
 Content-Type: application/json
 Accept: application/json
-Authorization: Bearer {{auth_token}}
+Authorization: Bearer {{getToken.data.token}}
 
 [19, 20]
 

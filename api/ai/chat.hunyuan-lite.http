@@ -2,7 +2,7 @@
 # @name hunyuanLiteChat
 POST https://api.hunyuan.cloud.tencent.com/v1/chat/completions
 Content-Type: application/json
-Authorization: Bearer {{$dotenv HUNYUAN_API_KEY}}
+Authorization: Bearer {{HUNYUAN_API_KEY}}
 
 {
   "model": "hunyuan-lite",

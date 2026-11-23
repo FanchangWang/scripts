@@ -1,10 +1,10 @@
 ### 获取文章列表
 # @name getArticleList
-GET {{$dotenv BASE_URL}}/v1/app/white/article/list2
+GET {{BASE_URL}}/v1/app/white/article/list2
     ?page_no=1
     &page_size=2
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 # response

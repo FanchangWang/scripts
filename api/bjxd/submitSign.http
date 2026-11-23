@@ -1,20 +1,21 @@
 ### 获取签到列表
 # @name getSignList
-GET {{$dotenv BASE_URL}}/v1/app/user/reward_list
+GET {{BASE_URL}}/v1/app/user/reward_list
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 ### 提交签到
 # @name submitSign
-POST {{$dotenv BASE_URL}}/v1/app/user/reward_report
+# @ref getSignList
+POST {{BASE_URL}}/v1/app/user/reward_report
 Content-Type: application/json
-token: {{$dotenv BJXD}}
+token: {{BJXD}}
 device: mp
 
 {
-    "hid": "{{getSignList.response.body.data.hid}}",
-    "hash": "{{getSignList.response.body.data.rewardHash}}",
+    "hid": "{{getSignList.data.hid}}",
+    "hash": "{{getSignList.data.rewardHash}}",
     "sm_deviceId": "",
     "ctu_token": null
 }
