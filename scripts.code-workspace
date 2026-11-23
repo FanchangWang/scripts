@@ -8,6 +8,14 @@
 			"path": "powershell/toolchain"
 		},
 		{
+			"name": "powershell clean-orphan-reg HiBit 空残骸注册表清理",
+			"path": "powershell/clean-orphan-reg"
+		},
+		{
+			"name": "powershell remove-ghost-us-keyboard 幽灵美式键盘修复",
+			"path": "powershell/remove-ghost-us-keyboard"
+		},
+		{
 			"name": "android xueqiuCookie 雪球 Cookie 抓取 App",
 			"path": "android/xueqiuCookie"
 		},

@@ -84,3 +84,5 @@
 - 密钥、Token、Cookie 等敏感信息一律放 `.env` 或本地配置文件，不入库；模板见各项目 `.env.example`。
 - Python 项目统一使用 [uv](https://docs.astral.sh/uv/) 管理虚拟环境。
 - 各项目自身的环境要求、运行方式与参数说明，见其目录下 `README.md`。
+- **新增子项目必须同步加入 `scripts.code-workspace` 的 `folders`**，命名格式 `<语言> <目录名> <一句话说明>`；uv 管理的 Python 项目另需加入 `settings.python-envs.pythonProjects`。
+- Git 规则分层：根 `.gitignore` / `.gitattributes` 只管跨语言通用项，语言特异规则放 `<语言>/.gitignore` / `<语言>/.gitattributes`，项目自身产物放 `<子项目>/.gitignore` / `<子项目>/.gitattributes`。
