@@ -97,3 +97,6 @@ publish/
 
 # 第三方 AI 审计报告：只放本地、不进版本库
 dotnet/EnvSwitch/audit/
+
+# 临时目录（临时脚本 / 第三方审计报告）
+tmp/

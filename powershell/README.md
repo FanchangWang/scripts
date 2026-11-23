@@ -14,4 +14,4 @@ Windows 系统维护类 PowerShell 脚本集合，统一用 PowerShell 7（`pwsh
 
 - 均为 Windows 专用脚本，依赖 PowerShell cmdlet（Registry 提供程序、`Get-WinUserLanguageList` 等），不跨平台。
 - 统一用 `pwsh.exe -NoProfile -File <脚本路径>` 运行，不使用 Windows PowerShell 5.1 的 `powershell.exe`。
-- 涉及系统状态修改的脚本均带确认 / 备份 / 日志 / 回滚设计，详见各项目 README。
+- 涉及系统状态修改的脚本均带确认与日志；是否提供备份 / 回滚见各项目 README（注册表清理不可回滚）。

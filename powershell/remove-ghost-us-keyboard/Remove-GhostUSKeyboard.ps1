@@ -1,4 +1,5 @@
-﻿# Remove-GhostUSKeyboard.ps1
+#Requires -Version 7.0
+# Remove-GhostUSKeyboard.ps1
 # Temporarily adds and removes en-US to refresh the Windows user language list.
 # Does not edit the registry or intentionally download a language pack.
 #
@@ -7,6 +8,8 @@
 #   Write-Error inside catch threw and skipped the rest of the block.
 # - Backup is JSON and can be reapplied with -RestoreFrom (Import-Clixml returns
 #   PSObject, which Set-WinUserLanguageList cannot accept).
+# - audit13 O3: if en-US still remains after the cycle, retry once with the original
+#   list instead of only warning and returning success.
 
 [CmdletBinding()]
 param(
@@ -79,12 +82,12 @@ if ($PSBoundParameters.ContainsKey('RestoreFrom')) {
         Import-LanguageListBackup -Path $RestoreFrom
         Write-Host "Restored language list from: $RestoreFrom" -ForegroundColor Green
         Get-WinUserLanguageList | Format-List LanguageTag, InputMethodTips
+        exit 0
     }
     catch {
         Write-Failure -Message $_.Exception.Message
         exit 1
     }
-    return
 }
 
 try {
@@ -95,7 +98,7 @@ try {
     if ($existingEnglish.Count -gt 0) {
         Write-Warning "The current language list already contains en-US. No changes were made, to avoid removing an intentionally configured language."
         Write-Host "Current languages: $($originalList.LanguageTag -join ', ')"
-        return
+        exit 0
     }
 
     # Save a reconstructable backup under the script's backups/ dir (git-ignored).
@@ -131,9 +134,28 @@ try {
     $remainingEnglish = @($finalList | Where-Object { $_.LanguageTag -eq 'en-US' })
 
     if ($remainingEnglish.Count -gt 0) {
-        Write-Warning "The language list still contains en-US. Review the output below."
-        $finalList | Format-List LanguageTag, InputMethodTips
-        return
+        # audit13 O3: goal not achieved — retry once with the original list
+        # (which never contained en-US) instead of warning and reporting success.
+        Write-Warning "en-US is still present after the add/remove cycle. Retrying with the original list."
+        try {
+            Set-WinUserLanguageList -LanguageList $originalList -Force -ErrorAction Stop
+            $verify = Get-WinUserLanguageList
+            $still = @($verify | Where-Object { $_.LanguageTag -eq 'en-US' })
+            if ($still.Count -eq 0) {
+                Write-Warning "The retry restored the original list. The ghost keyboard may still appear until you sign out or restart."
+                $verify | Format-List LanguageTag, InputMethodTips
+            }
+            else {
+                Write-Warning "en-US is still present after the retry. Review the output below."
+                $verify | Format-List LanguageTag, InputMethodTips
+                Write-Warning "Recover with: pwsh.exe -NoProfile -File $PSCommandPath -RestoreFrom '$backupPath'"
+            }
+        }
+        catch {
+            Write-Warning "Retry failed: $($_.Exception.Message)"
+            Write-Warning "Recover with: pwsh.exe -NoProfile -File $PSCommandPath -RestoreFrom '$backupPath'"
+        }
+        exit 2
     }
 
     Write-Host ""
@@ -141,6 +163,7 @@ try {
     $finalList | Format-List LanguageTag, InputMethodTips
     Write-Host "If the US keyboard still appears in Win+Space, sign out and back in or restart Windows."
     Write-Host "Windows may display a warning about the display language taking effect after the next sign-in; that warning is expected."
+    exit 0
 }
 catch {
     # Roll back FIRST, then report. Reporting via Write-Error under $ErrorActionPreference='Stop'
