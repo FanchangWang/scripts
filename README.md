@@ -10,6 +10,7 @@
 | [api](api/) | 第三方接口调试集合（REST Client `.http` + 少量脚本） | 6 | [README](api/README.md) |
 | [dotnet](dotnet/) | .NET / C# 工程（LTS） | 1 | [README](dotnet/README.md) |
 | [nodejs](nodejs/) | Node.js 原生 ESM 项目 | 1 | [README](nodejs/README.md) |
+| [powershell](powershell/) | Windows 系统维护 PowerShell 脚本 | 3 | [README](powershell/README.md) |
 | [python](python/) | Python 工具 / 脚本 / Web 服务（uv 管理） | 11 | [README](python/README.md) |
 | [qinglong](qinglong/) | 青龙面板定时脚本 | 5 | [README](qinglong/README.md) |
 
@@ -43,6 +44,14 @@
 | 目录 | 技术栈 | 一句话用途 | 文档 |
 |---|---|---|---|
 | [daily-calendar-puzzle](nodejs/daily-calendar-puzzle/) | Node 原生 ESM | 日历拼版同源求解器 + 求解 / 游玩双网页 + CLI | [README](nodejs/daily-calendar-puzzle/README.md) |
+
+### [powershell](powershell/)
+
+| 目录 | 技术栈 | 一句话用途 | 文档 |
+|---|---|---|---|
+| [clean-orphan-reg](powershell/clean-orphan-reg/) | PowerShell / Registry | 定向清理 HiBit Uninstaller 留下的空镜像注册表项 | [README](powershell/clean-orphan-reg/README.md) |
+| [remove-ghost-us-keyboard](powershell/remove-ghost-us-keyboard/) | PowerShell / 语言列表 cmdlet | 临时添加再移除 en-US，刷新语言列表消除幽灵美式键盘 | [README](powershell/remove-ghost-us-keyboard/README.md) |
+| [toolchain](powershell/toolchain/) | PowerShell | 生成自包含的 `local-toolchain` skill（inventory / query / SKILL） | [README](powershell/toolchain/README.md) |
 
 ### [python](python/)
 

@@ -1,0 +1,3 @@
+# 脚本运行时生成的日志
+/logs/*
+!/logs/.gitkeep
