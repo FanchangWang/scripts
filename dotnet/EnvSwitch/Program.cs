@@ -86,9 +86,7 @@ switch (argv[0].ToLowerInvariant())
         }
         catch (ConfigUnreadableException ex)
         {
-            Console.Error.WriteLine($"[失败] {ex.Message}");
-            if (ex.Hint.Length > 0)
-                Console.Error.WriteLine(ex.Hint);
+            PrintUnreadable(ex);
             return 1;
         }
         return 0;
@@ -212,10 +210,8 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
     }
     catch (ConfigUnreadableException ex)
     {
-        Console.Error.WriteLine($"[失败] {ex.Message}");
         // 与 LoadConfigOrExit 共用同一份处置句：目录类错误不该再补一句「检查网络盘」
-        if (ex.Hint.Length > 0)
-            Console.Error.WriteLine(ex.Hint);
+        PrintUnreadable(ex);
         return 1;
     }
 
@@ -410,16 +406,14 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
 
         try
         {
+            // 写之前必须先读：此刻读侧（/api/state）已经是 503（内容坏了 / 文件被删 / 目录被搬走），
+            // 写侧就不能反过来「200 保存成功」把用户正在手修的那份整体覆盖（连 .bad 都不留）。
+            // CLI 同场景是先备份再重建，网页不能更差。抛出的 ConfigUnreadableException 交给中间件出 503。
+            LoadForRequest();
             // 服务在跑 = 用户已经在用这份配置：目录没了就是没了，不能重建一份新配置顶上
             ConfigStore.Save(incoming, configPath, allowCreateDirectory: false);
         }
-        catch (ConfigUnreadableException ex)
-        {
-            // 位置不可达：不能报「已保存」，更不能把目录重建出来写一份新配置（Save 已经拦住）
-            return Results.Json(new { ok = false, message = $"配置文件暂时读不到，未做任何修改：{ex.Message}" },
-                jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ConfigUnreadableException)
         {
             return Results.Json(new { ok = false, message = $"配置保存失败：{ex.Message}" },
                 jsonOptions, statusCode: StatusCodes.Status500InternalServerError);
@@ -720,6 +714,21 @@ static bool RefuseFallbackWrites(bool willWrite, string command)
 }
 
 /// <summary>
+/// 打印「配置不可用」的唯一实现点：第一行原因，第二行由异常自带的 <see cref="ConfigUnreadableException.Hint"/> 决定
+/// （空串表示第一行已说清，不再补）。
+/// </summary>
+/// <remarks>
+/// 以前这段在 `config` 命令、`serve` 启动、`LoadConfigOrExit` 各抄了一份，Web 中间件还自造了第三份文案——
+/// 每轮审计都能抓到其中一份没跟上（E1 / F1 / H2 / G3 / J2 / K2 同一个形态）。现在只许调这个函数。
+/// </remarks>
+static void PrintUnreadable(ConfigUnreadableException ex)
+{
+    Console.Error.WriteLine($"[失败] {ex.Message}");
+    if (ex.Hint.Length > 0)
+        Console.Error.WriteLine(ex.Hint);
+}
+
+/// <summary>
 /// CLI 统一取配置：读不到（被占用 / 无权限）时打印原因并以 1 退出，<b>不</b>写回默认配置。
 /// 与「配置损坏」分开：损坏才备份 + 重建，读不到只是这一次做不了。
 /// 第二行由异常自己决定（目录类错误不再补一句「检查网络盘」把人引偏）。
@@ -732,9 +741,7 @@ static AppConfig LoadConfigOrExit(string configPath)
     }
     catch (ConfigUnreadableException ex)
     {
-        Console.Error.WriteLine($"[失败] {ex.Message}");
-        if (ex.Hint.Length > 0)
-            Console.Error.WriteLine(ex.Hint);
+        PrintUnreadable(ex);
         Console.Out.Flush();
         Console.Error.Flush();
         Environment.Exit(1);

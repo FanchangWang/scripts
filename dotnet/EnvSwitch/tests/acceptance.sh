@@ -114,6 +114,39 @@ ckc "D6 文件被删后仍不重建"             "no" "$(test -f "$ROOT/srv/cfg.
 printf '%s' "$GOOD" > "$ROOT/srv/cfg.json"
 ckc "D7 放回配置 → state 200"           "200" "$(st $B/api/state)"
 
+echo "=== F. 写入口 POST /api/config：与读侧同一组文件状态（写之前必须先读）==="
+printf '{ "toolchains": [' > "$ROOT/srv/cfg.json"; SHA=$(sha256sum "$ROOT/srv/cfg.json" | cut -d' ' -f1)
+ckc "F1 半截 JSON → POST /api/config 503" "503" "$(st -H 'Content-Type: application/json' -d "$GOOD" $B/api/config)"
+ckc "F2 坏文件字节未变（没被整体覆盖）"    "$SHA" "$(sha256sum "$ROOT/srv/cfg.json" | cut -d' ' -f1)"
+ckc "F3 不生成 .bad（服务不备份/不重建）"   "0" "$(ls "$ROOT/srv" | grep -cE '\.bad-|\.tmp')"
+printf 'null' > "$ROOT/srv/cfg.json"
+ckc "F4 字面量 null → POST /api/config 503" "503" "$(st -H 'Content-Type: application/json' -d "$GOOD" $B/api/config)"
+ckc "F5 null 未被覆盖（仍是 null）"          "null" "$(cat "$ROOT/srv/cfg.json")"
+rm -f "$ROOT/srv/cfg.json"
+ckc "F6 文件被删 → POST /api/config 503"    "503" "$(st -H 'Content-Type: application/json' -d "$GOOD" $B/api/config)"
+ckc "F7 文件未被重建"                        "no" "$(test -f "$ROOT/srv/cfg.json" && echo yes || echo no)"
+printf '%s' "$GOOD" > "$ROOT/srv/cfg.json"
+ckc "F8 合法配置 → POST /api/config 200（正常保存没被堵死）" "200" "$(st -H 'Content-Type: application/json' -d "$GOOD" $B/api/config)"
+ckc "F9 保存后 GET /api/state 仍 200"        "200" "$(st $B/api/state)"
+mv "$ROOT/srv" "$ROOT/srv.away2"
+msg=$(body -H 'Content-Type: application/json' -d "$GOOD" $B/api/config)
+case "$msg" in
+  *"改回原名"*) ckc "F10 目录改名 → POST /api/config 503 文案复用 Hint" "ok" "ok" ;;
+  *)            ckc "F10 目录改名 → POST /api/config 503 文案复用 Hint" "has-hint" "no-hint" ;;
+esac
+mv "$ROOT/srv.away2" "$ROOT/srv"
+ckc "F11 目录改回 → POST /api/config 200"     "200" "$(st -H 'Content-Type: application/json' -d "$GOOD" $B/api/config)"
+
+echo "=== G. 读接口剩余的坏状态（除半截 JSON 外）==="
+printf 'null' > "$ROOT/srv/cfg.json"
+ckc "G1 null → path/view 503"                "503" "$(st -H 'Content-Type: application/json' -d '{}' $B/api/path/view)"
+ckc "G2 null → apply/all 503"                "503" "$(st -H 'Content-Type: application/json' -d '{"dryRun":true}' $B/api/apply/all)"
+rm -f "$ROOT/srv/cfg.json"
+ckc "G3 文件被删 → apply(dry) 503"            "503" "$(st -H 'Content-Type: application/json' -d '{"toolchain":"KeepMe","version":"1","dryRun":true}' $B/api/apply)"
+ckc "G4 文件被删 → path/view 503"             "503" "$(st -H 'Content-Type: application/json' -d '{}' $B/api/path/view)"
+printf '%s' "$GOOD" > "$ROOT/srv/cfg.json"
+ckc "G5 放回 → apply(dry) 200"                "200" "$(st -H 'Content-Type: application/json' -d '{"toolchain":"KeepMe","version":"1","dryRun":true}' $B/api/apply)"
+
 echo "=== E. 写入护栏（与服务无关的既有断言）==="
 ckc "E1 path/apply [null] → 400"       "400" "$(st -H 'Content-Type: application/json' -d '{"system":[null],"user":null,"dryRun":true}' $B/api/path/apply)"
 ckc "E2 path/apply 两侧空数组 → 400"   "400" "$(st -H 'Content-Type: application/json' -d '{"system":[],"user":[],"dryRun":true}' $B/api/path/apply)"

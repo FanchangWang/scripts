@@ -589,3 +589,40 @@
 4. **可执行矩阵**：`tests/acceptance.sh` 入库，把「路径类 × 文件状态 × 入口」枚举成 **38 条断言**（含 `null`、空文件、`[]`、目录改名、删文件、日志去重、文案口径）。`dotnet build -c Release && bash tests/acceptance.sh` → **PASS 38 / FAIL 0 / SKIP 0**。以后改这块先跑它，而不是等下一轮审计抽样。
 
 **保留 / 已知代价**：`ParseStrict` 对 `Migrate` 的异常只保留 `Message`（原始类型在 `InnerException` 里，服务日志会打整条堆栈）；`config` 命令仍原样输出（含 `null`），这是它「把文件内容打给你看」的定位，已加断言 A12 锁住；矩阵覆盖不到的三类（默认路径不可写、文件被独占锁定、注册表写入内容）见 `audit/acceptance.md` §5，仍需 VM / 手工。
+
+---
+
+### 附录 A.11 第十一轮审计（`audit/audit11.md` 的 K1–K2）+ 写入口收口
+
+| 编号 | 级别 | 复核结果 | 原因 | 修复说明 |
+| --- | --- | --- | --- | --- |
+| K1 | 🟠 中 | ✔ 已实测（三种坏状态） | `POST /api/config` 从头到尾没读过配置：内容坏 / 被删 / 被搬走时，读侧是 503，写侧却 200「配置已保存」并**整体覆盖**原文件，连 `.bad` 都不留——用户按 503 的提示手改 JSON、改错一个括号，点一次保存就永久丢失 | `Save` 之前先 `LoadForRequest()`：磁盘上那份必须「可读且合法」，否则抛 `ConfigUnreadableException` 交给中间件出 503（与读侧逐字一致）。异常不再自建 503 响应。实测：半截 JSON / `null` / 文件被删三种状态 POST → **503**，文件 SHA 不变或不被重建、无 `.bad` / `.tmp`；恢复后 POST → **200**，`GET /api/state` 仍 200 |
+| K2 | 🟢 低 | ✔ 已实测 | `/api/config` 里还有第二份 503 文案（`"配置文件暂时读不到…"`），不看 `Hint`：目录被改名时既不给「改回原名」，还把「目录已不存在」说成「暂时读不到」 | 删掉那个 `catch (ConfigUnreadableException)`，改成 `catch (Exception ex) when (ex is not ConfigUnreadableException)`——该类型一律冒到中间件，503 只有一处构造点、一份文案。实测目录改名后 POST → 503 且含「改回原名」 |
+
+**本轮再收口三处「同一判断的第二份实现」**：
+
+| 项 | 之前 | 现在 |
+| --- | --- | --- |
+| 503 响应 | 2 处（中间件 + `/api/config`） | **1 处**（中间件） |
+| 「配置不可用」打印 | 3 处各自抄（`config` 命令 / `serve` 启动 / `LoadConfigOrExit`） | **1 个函数** `PrintUnreadable(ex)`，3 处都调它 |
+| 内容合法性判定 | 1 处 `ParseStrict`（上轮已收） | 维持 1 处（`grep Deserialize<AppConfig>` = 1） |
+
+**写入口规则（新增 R5，写在这里而不是只在代码里）**：任何**要写配置文件**的入口，必须先经过一次「读」——
+
+- `POST /api/config` → `LoadForRequest()` 后 `Save`；
+- `EnvService.Apply` / `ApplyAll` → 入口已 `LoadForRequest()`，`Save` 在 `allowCreateDirectory: false` 下被 try 包住（失败返回「已写入但保存配置失败」，不会反过来说「未做任何修改」）；
+- `POST /api/env/set`、`/api/env/delete`、`/api/path/apply` **不写配置文件**（只改注册表，输入全部来自请求体），因此不受配置状态影响——这是设计，不是遗漏。
+
+**矩阵扩展**：`tests/acceptance.sh` 从 38 条扩到 **54 条**，新增
+
+- F 段（写入口 × 6 种文件状态）：半截 JSON / `null` / 文件被删 / 目录改名 / 合法保存 / 保存后可读回；
+- G 段（读接口 × 其余坏状态）：`null` 与「文件被删」下的 `/api/path/view`、`/api/apply`、`/api/apply/all`。
+
+`dotnet build -c Release && bash tests/acceptance.sh` → **PASS 54 / FAIL 0 / SKIP 0**。
+
+**保留 / 已知代价**：
+
+1. 保存仍是「最后写入者胜」：两个标签页同时保存，后写的覆盖先写的（没有版本号/乐观锁）。单机自用工具，未加。
+2. 配置在 `Load` 与 `Save` 之间被外部改坏（毫秒级窗口）仍会被覆盖——这是所有「读-改-写」的固有窗口；`/api/config` 已把它缩到一次请求内。
+3. `/api/env/set`、`/api/env/delete`、`/api/path/apply` 在配置坏时仍可用（它们不依赖配置），已在上面写明是设计。
+4. 「默认路径不可写」仍只能靠改名真实目录 + `icacls` 构造，未纳入自动脚本（会碰 `%LOCALAPPDATA%\EnvSwitch`，且 8099 常驻）。
