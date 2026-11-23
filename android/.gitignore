@@ -1,0 +1,29 @@
+# ============================================================
+# Android（Kotlin / Gradle）—— 只管 android/ 目录树
+# ============================================================
+
+# 构建产物
+build/
+release/
+.externalNativeBuild/
+.cxx/
+
+# Gradle
+.gradle/
+gradle-app.setting
+
+# IDE
+*.iml
+.idea/
+captures/
+
+# 本地配置
+local.properties
+
+# 签名密钥（绝不可提交！）
+*.keystore
+*.jks
+
+# 原生库 / 内存 dump
+*.so
+*.hprof

@@ -1,0 +1,4 @@
+# .NET 相关二进制
+*.dll binary
+*.exe binary
+*.pdb binary

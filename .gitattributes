@@ -1,8 +1,10 @@
+# 根 .gitattributes —— 只管跨语言通用项
+# 分层：语言特异规则放 <语言>/.gitattributes；项目特异规则放 <子项目>/.gitattributes
 * text=auto eol=lf
 
+# 通用二进制格式
 *.zip binary
 *.png binary
-*.jar binary
 *.jpg binary
 *.jpeg binary
 *.gif binary

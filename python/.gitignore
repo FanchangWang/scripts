@@ -1,0 +1,41 @@
+# ============================================================
+# Python（pip / uv）—— 只管 python/ 目录树
+# ============================================================
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+
+# 编译产物 / 缓存
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+
+# 打包 / 分发
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# 测试 / 覆盖率 / lint / 类型检查缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 依赖锁（按需忽略 uv.lock；通常建议提交以锁定可复现环境）
+uv.lock
+
+# PyInstaller 规格文件
+*.spec
