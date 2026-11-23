@@ -1,0 +1,23 @@
+[project]
+name = "bjxd"
+version = "0.2.0"
+description = "北京现代 APP 自动任务青龙脚本（签到/浏览文章/每日答题 + 联网搜索辅助 AI 答题）"
+requires-python = ">=3.9"
+dependencies = [
+    "requests>=2.32.0",
+    "python-dotenv>=1.2.0",
+]
+
+[project.scripts]
+bjxd = "bjxd:main"
+
+# 兼容两种运行形态：
+#   1) 青龙：pip install -r requirements.txt && python bjxd.py
+#   2) 本地：uv run python bjxd.py 或 uv run bjxd
+# 入口 bjxd.py 保持在项目根目录，不做 src/ 迁移，避免青龙下改动脚本路径。
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["bjxd"]

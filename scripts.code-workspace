@@ -179,6 +179,12 @@
 				"envManager": "ms-python.python:venv",
 				"packageManager": "ms-python.python:uv",
 				"workspace": "scripts"
+			},
+			{
+				"path": "qinglong/bjxd",
+				"envManager": "ms-python.python:venv",
+				"packageManager": "ms-python.python:uv",
+				"workspace": "scripts"
 			}
 		],
 		"powershell.cwd": "python xiangqi-bot 象棋 AI"
