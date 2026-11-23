@@ -56,10 +56,10 @@
    - 根通了再看目录本身：`Directory.Exists(dir)` → 按「还没建」（**本地盘上的新目录属于合法首次创建**，不再误报「检查网络盘是否已连接」）；`File.Exists(dir)`（目录位置其实是个文件，如 `C:\Windows\notepad.exe\cfg.json`）→ `Unreachable`；两者都不是 → 按「还没建」。
    - 不可达结论缓存 2 秒（`UnreachableStamp`）：2 秒内的后续调用直接返回同一个结论，不必每个请求重付 1.5 秒。**代价是「恢复」有滞后**——命中缓存期间不会再真探，所以路径重新可用后最多要等缓存到期（≤2 秒）才读到；缓存到期后的第一次探测成功即清掉缓存（实测 `subst` 卸载 → 503 ≤72ms，重挂立刻仍 503、+2.6 秒转 200）。
    - `Load(allowFirstRun: false)`（常驻服务在请求里用）：走到「确实要首次运行」分支时直接抛 `FirstRunNotAllowed` —— 服务启动时配置已落过盘，运行中再判成首次运行只可能是目录被改名/删除。
-2. 文件不存在 → 按首次运行：`DetectDefaultConfig()` 探测本机 Java → 立即保存（`Save` 负责 `CreateDirectory`）→ 返回。**落盘失败要分两种**：默认路径只打一行警告、内存里继续用（`%LOCALAPPDATA%` 只读时程序还能跑）；**显式 `--config` 直接抛 `CannotWrite`**（退出码 1），不拿这份「探测出来的」配置继续——否则 `use` 会把 JAVA_HOME / PATH 真写进注册表。两处首启分支（`!File.Exists` 与读时消失）共用 `FirstRunFallback(config, file, explicitPath: path is not null)`。
+2. 文件不存在 → 按首次运行：`DetectDefaultConfig()` 探测本机 Java → 立即保存（`Save` 负责 `CreateDirectory`）→ 返回。**落盘失败要分两种**：默认路径只打一行警告、内存里继续用（`%LOCALAPPDATA%` 只读时程序还能跑），并把 `LastLoadUsedFallback` 置位——这份配置只够看，`use` / `all` / `path --apply` 的真实写入会被 `Program` 的守卫直接拒绝（`list` 也会注明「临时兜底的默认配置」）；**显式 `--config` 直接抛 `CannotWrite`**（退出码 1），不拿这份「探测出来的」配置继续。两处首启分支（`!File.Exists` 与读时消失）共用 `FirstRunFallback(config, file, explicitPath: !IsDefaultPath(file))`。
 3. 文件存在 → `ReadText` 读文本（`IOException` / `UnauthorizedAccessException` 先等 80ms 重试一次，仍失败抛 `ConfigUnreadableException`）。
 4. 读到文本 → 反序列化 → `Migrate` → 返回。
-5. 反序列化失败 → **先把坏文件复制成 `config.json.bad-yyyyMMdd-HHmmss`** → 用默认配置 → 把默认配置写回原路径（保证下次能启动）。**备份失败则跳过写回**，原文件保持原样（还能手工修），只用内存里的默认配置继续。
+5. 反序列化失败 → **先把坏文件复制成 `config.json.bad-yyyyMMdd-HHmmss`** → 用默认配置 → 把默认配置写回原路径（保证下次能启动）。**备份失败则跳过写回**（原文件保持原样，还能手工修）。这里同样按显式 / 默认分流（`RecoverFromBroken(file, explicitPath: !IsDefaultPath(file))`）：**显式路径**在「备份失败」或「默认配置写不回」时抛 `CannotRecover`（退出码 1，不再「警告一下就继续」）；**默认路径**才降级为「内存默认继续」，并把 `LastLoadUsedFallback` 置位。
 6. 读取时文件却消失（极少数竞态）→ 再来一次 `ClassifyMissing`：不可达抛异常；仍判首次运行时，`allowFirstRun: false` 直接抛，否则按首次运行。
 
 `Migrate`（每次读取都跑，幂等）：
@@ -367,7 +367,9 @@
 | 配置 JSON 损坏 | 备份成 `.bad-<时间戳>` 后用默认配置继续；**备份失败则不写回**，原文件保持原样，只用内存默认继续 |
 | 配置暂时读不到（被占用 / 无读权限） | 先重试一次（间隔 80ms），仍失败则**不写回默认配置**：接口返回 503 +「未做任何修改」，CLI 打印原因并退出码 1。与上一行的「损坏」严格区分，避免偶发占用把真配置覆盖掉 |
 | 显式 `--config` 所在目录不可达（断网盘 / 拔掉的 U 盘 / 无权限目录） | 归入「读不到」：先对**盘根**做 1.5 秒上限的探测，不可达立即报错（超时给「未在 1.5 秒内响应：可能是路径不存在、网络盘断开，也可能只是慢（稍后重试可确认）」，连不上给「目录不存在或无法访问」），CLI 退出码 1、API 503；**不会**当成首次运行去写默认配置。实测黑洞 UNC 的 `config` 由 21 101ms 降到 **1 552ms**（`list` 43ms）、`Z:\cfg.json` exit=1 |
-| 显式 `--config` 的位置**写不进去**（如 `C:\Windows\System32\cfg.json`、只读共享） | 首次运行发现配置不存在、`Save` 抛权限错误时，**显式路径直接失败**（`exit=1`，「这个位置写不进去，已放弃本次操作」），不再「打一行警告后拿探测配置继续」；只有默认路径才保留「警告 + 内存默认继续」。实测 `list` / `use`（含加 `--dry-run`）均 exit=1 / 87–162ms，目标文件未创建，用户侧 `JAVA_HOME` 与 User `PATH` 逐字节未变 |
+| 显式 `--config` 的位置**写不进去**（如 `C:\Windows\System32\cfg.json`、只读共享） | 首次运行发现配置不存在、`Save` 抛权限错误时，**显式路径直接失败**（`exit=1`，「这个位置写不进去，配置文件与环境变量都未被修改」），不再「打一行警告后拿探测配置继续」；只有默认路径才保留「警告 + 内存默认继续」。实测 `list` / `use`（含加 `--dry-run`）均 exit=1 / 87–162ms，目标文件未创建，用户侧 `JAVA_HOME` 与 User `PATH` 逐字节未变 |
+| 配置内容坏了 + 该位置不可写（显式 `--config`） | 备份失败或默认配置写不回时抛 `CannotRecover`（exit=1，「配置内容无法解析，且该位置不可写…原配置文件未被修改」）；默认路径维持「内存默认继续」。实测两条分支（`icacls /deny W` 造备份失败、`.tmp` 预占只读造写回失败）均 exit=1，未再打印「已使用默认配置继续运行」 |
+| 默认路径不可写（`%LOCALAPPDATA%` 只读）+ 不带 `--config` | 只读命令可用：`list` exit=0 + 一行警告 + 开头注明「这是临时兜底的默认配置」；**真实写入被拒**：`use` / `all` / `path --apply` exit=1（「不能用它执行 … 的写入，未做任何修改」），`--dry-run` 仍 exit=0 只预览。实测 `JAVA_HOME` 前后未变 |
 | 显式 `--config` 指向本地**尚不存在的目录** | 盘根可达 + 目录不存在 = 合法首次创建：`Save` 建目录并写默认配置，exit 0。实测 `--config %TEMP%\es_f\newdir\cfg.json` exit=0 / 96ms、目录与配置都生成（不再误报「检查网络盘是否已连接」） |
 | 显式 `--config` 指到「其实是文件」的目录（`C:\Windows\notepad.exe\cfg.json`） | 目录存在性判定落到「这是个文件」→ `Unreachable`，exit 1，不写任何东西 |
 | `--config` 为空串 / 直接给一个目录 | 解析阶段拒绝，exit 1，不进入任何读写流程；当前目录不留 `.tmp`（实测 `tmp left=0`） |
@@ -396,7 +398,7 @@
 14. **批量部分写入的删除记录无法在本机实证**：`CommitEntry(Name, Deleted)` 的删除分支只在「另一侧本来就有同名变量」并且「这一侧写到一半失败」时才会出现；本机非管理员写不了 `HKLM`，碰不到这个组合，只能靠代码路径与编译保证。
 15. **路径探测本身也受网络影响**：`ClassifyMissing` 的 1.5 秒上限只保证「不会等 SMB 的主导超时」，探测线程超时后仍会在后台跑到系统返回（同 §17-11）。不可达结论缓存 2 秒（`UnreachableStamp`），同一个坏路径的连打请求不再逐次付 1.5 秒；本地盘改名这类场景不经过缓存，每次都是几毫秒的 `Directory.Exists`。默认路径不做这条探测（否则首启会被误判不可达），所以 `%LOCALAPPDATA%` 被重定向到离线漫游目录时，读配置仍可能慢，但默认路径这条路径不会被拦成 503。
 16. **「首次运行」与「运行中丢失」只能靠调用方声明区分**：同一个「目录不存在」在 CLI 首启时是合法的（要建），在常驻服务请求里是异常（不能建）。所以 `Load` / `Save` 各有一个开关（`allowFirstRun` / `allowCreateDirectory`），CLI 命令行保持 true，网页接口一律 false。若有人新增调用点却传了默认值，就会退回旧行为——这是设计上的取舍，不是遗漏（第七轮已把 `EnvService` 的两处写点也补成 false）。
-17. **「配置落盘失败」也是两种策略**：默认路径失败只警告（内存默认接着跑），显式 `--config` 失败直接 `exit=1`（第七轮 H1 起的口径）。区别在于前者「用户没指定位置，我们挑的地方坏了」，后者「用户点名的地方不可写」——后者继续执行会拿非用户配置去写注册表。因此「显式路径 + 只读目录」这类环境里程序是**不可用**的，而不是「降级可用」。
+17. **「配置落盘失败」也是两种策略**：默认路径失败只警告（内存默认接着跑），显式 `--config` 失败直接 `exit=1`。区别在于前者「用户没指定位置，我们挑的地方坏了」，后者「用户点名的地方不可写」——后者继续执行会拿非用户配置去写注册表。**但默认路径的兜底也不等于可以写**：这份内存默认会被 `LastLoadUsedFallback` 标记，`use` / `all` / `path --apply` 的真实写入一律拒绝（`list` 会注明），只有 `--dry-run` 与只读命令能用。因此「显式路径 + 只读目录」是完全不可用，「默认路径 + 只读目录」是只读可用、写入拒绝。
 
 ---
 
@@ -518,3 +520,36 @@
 ---
 
 
+
+---
+
+### 附录 A.7 第七轮审计（`audit/audit07.md` 的 H1–H5）
+
+| 编号 | 级别 | 复核结果 | 原因 | 修复说明 |
+| --- | --- | --- | --- | --- |
+| H1 | 中 | ✔ 已实测（含非 dry-run） | 显式 `--config` 指向写不进去的位置时，首启分支只打一行警告就拿探测出的默认配置继续，`exit=0`；`use` 非 dry-run 会真写 `JAVA_HOME` / PATH | 首启分支抽出 `FirstRunFallback`：显式路径 `throw CannotWrite`，默认路径才「警告 + 内存默认继续」；`--config` 空白校验扩成 `IsNullOrWhiteSpace`。实测 `C:\Windows\System32\envsw7.json` 上 `list` / `use Java 17`（非 dry）均 exit=1，注册表逐字节未变 |
+| H2 | 低 | ✔ 已实测 | CLI 兜底句只按「读不到」写：`--config <目录>` 先说是目录，又让人查网络盘 | `ConfigUnreadableException.Hint`：`PathIsDirectory` 传空串不打印第二行，`FirstRunNotAllowed` / `CannotWrite` / `Unreachable` 各给一句。实测目录场景只输出一行 |
+| H3 | 低 | ✔ 已实测 | `Timeout` 文案承诺「重试一次通常就能过」，对打错路径不成立 | 改为「可能是路径不存在、网络盘断开，也可能只是慢（稍后重试可确认）」。实测黑洞 UNC 1 549ms 打印新句 |
+| H4 | 低 | ✔ 已改口径 | 2 秒缓存让恢复滞后，文档却写「一恢复就能读到」 | 文档统一为「最多滞后缓存到期（≤2 秒）」；未采用「命中缓存再真探」方案（会让真不可达场景持续堆探测线程）。A.6 的 F5 行已加更正 |
+| H5 | 低 | ◐ 代码级 + 接口回归 | `Apply` / `ApplyAll` 两处 `Save` 仍用 `allowCreateDirectory: true`，目录在 `Load` 与 `Save` 之间被挪走会重建 | 两处改 `false`。毫秒级竞态窗口未构造实测 |
+
+**保留 / 已知代价**：缓存滞后 ≤2 秒；H5 竞态只保证「不再主动建目录」；可达共享上打错子目录名仍会建出目录（F3 的必然代价）。
+
+---
+
+### 附录 A.8 第八轮审计（`audit/audit08.md` 的 G1–G5 + 自查 S1–S3）
+
+| 编号 | 级别 | 复核结果 | 原因 | 修复说明 |
+| --- | --- | --- | --- | --- |
+| G1 | 中 | ✔ 已实测 | `explicitPath: path is not null` 恒真（`configPath` 早被 `DefaultPath` 兜上），「默认路径只警告继续」是死代码；`%LOCALAPPDATA%` 只读时 CLI 一律 exit=1，与 README / FLOWS 矛盾，提示还让用户去改没敲过的 `--config` | 新增 `ConfigStore.IsDefaultPath(file)` 作为唯一判定，`ClassifyMissing` 与 `Load` 两处分流共用（不再用编译期常量）。实测改名真实配置目录 + `icacls /deny W`：`list` exit=0 + 一行警告 + 内存默认配置照常列出；恢复后 SHA 不变 |
+| G2 | 中 | ✔ 已实测（两条分支） | H1 只堵了「配置不存在」，`RecoverFromBroken` 是另一条出口：内容损坏 + 位置不可写时仍 exit=0，`use` 能真写注册表；写回失败的 `catch {}` 静默 | `RecoverFromBroken(file, explicitPath)`：显式路径在「备份失败」或「写回失败」时抛 `CannotRecover`（exit 1），默认路径才降级并置 `LastLoadUsedFallback`；空 catch 改打印「备份成功但默认配置未能写回…（下次启动仍会按损坏处理并再备份一次）」。实测 A（deny W 造备份失败）exit=1 + 「原配置文件未被修改」；实测 B（预占只读 `.tmp` 造写回失败）exit=1 + 新警告 |
+| G3 | 低 | ✔ 已实测 | H2 只接了 `LoadConfigOrExit`，`RunWeb` 的 catch 仍是固定旧句：`serve --config <目录>` 两行自相矛盾，只读位置还说「只是暂时读不到」 | `RunWeb` catch 与另两处一致（`Hint` 非空才打印）。实测 `serve --config C:\Windows\System32` 只 1 行；只读位置 2 行且第二行是「写不进去…未被修改」 |
+| G4 | 低 | ✔ 已实测 | `config` 对不可写位置报「尚未生成，运行一次后自动生成」并 exit=0，同位置 `list` 是 exit=1；该承诺永不成立 | 两处文案改「尚未生成；第一次需要写入时才会创建，写不进去会直接报错」。实测 exit=0 + 新文案（只读命令仍不探测可写性） |
+| G5 | 低 | ✔ 已实测可见 | `CannotWrite` 说「配置文件与被修改的环境都没有回滚」（什么都没改），且对没给 `--config` 的用户建议改 `--config` | 改「配置写入被拒绝，配置文件和环境变量都没有改动」一类表述，去掉「回滚」与对默认路径用户的 `--config` 建议；G1 修好后默认路径不再走这句 |
+| S1 | 中（自查） | ✔ 已实测 | G1 只解决「不该硬失败」，但**兜底配置仍能被写入命令用**：`%LOCALAPPDATA%` 只读时 `use` / `all` / `path --apply` 会拿从未落盘的配置写 `JAVA_HOME` / PATH——H1 要防的同一件事，入口换成默认路径 | `LastLoadUsedFallback` 标记（`Load` 开头复位，首启/损坏兜底置位）+ `RefuseFallbackWrites`：三条写入命令真实写入 exit=1、`--dry-run` 与只读命令放行，`list` 开头注明「临时兜底的默认配置」。实测（改名 + deny W）：`list` 0、`use` 非 dry 1、`use --dry-run` 0、`all` 1、`path --apply` 1，`JAVA_HOME` 未变 |
+| S2 | 低（自查） | ✔ 已改 | `config` 的 `catch (ConfigUnreadableException)` 没接 `Hint`（与 G3 同类漏点，CLI 侧） | 补 `if (ex.Hint.Length > 0) Console.Error.WriteLine(ex.Hint)`，三处打印点完全一致 |
+| S3 | 中（自查） | ✔ 已实测 | S1 只拦了 CLI 写入，但 `serve` 在兜底状态仍能启动：每个请求都因「不许首启」返回 503，页面变空壳（半死状态没人说清） | `RunWeb` 在 `Load` 后判 `LastLoadUsedFallback` → `exit=1` + 「配置位置写不进去，服务无法启动：…网页与 API 都需要一份能保存的配置…只看不改请用 list / config」。实测：默认目录改名 + deny W → `serve` exit=1 三行说明，`list` 仍 exit=0；恢复后 SHA `48574EBE…9C802D` |
+
+**顺带**：`path --apply` 的兜底守卫移到 `BuildPathView` 之前（注定被拒时不再打印一份不会落盘的「处理后」），且整个命令只有这一处守卫（原先前一版在清理检查前重复加了一道，形成死代码，自查时删掉）。
+
+**保留 / 已知代价**：`LastLoadUsedFallback` 是进程内静态标记（CLI 单进程无并发问题，Web 侧 `Load` 一律 `allowFirstRun: false`，走不到兜底分支，也没有代码读它）；中间件 503 的兜底尾句对「配置损坏且写不回去」不够贴合，第一行 `ex.Message` 已给准确原因，未再分支以免动 F4 已验收文案；`config` 是只读命令，仍不探测可写性；受限账户场景用「改名 + `icacls /deny`」近似构造，未在真正受限账户里跑。

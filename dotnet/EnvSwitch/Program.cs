@@ -63,7 +63,8 @@ switch (argv[0].ToLowerInvariant())
 
         if (!File.Exists(configPath))
         {
-            Console.WriteLine("（尚未生成，运行一次后自动生成）");
+            // 只读命令不会真去写，所以这里不承诺「运行一次就会生成」——位置不可写时那是空话
+            Console.WriteLine("（尚未生成；第一次需要写入时才会创建，写不进去会直接报错）");
             return 0;
         }
 
@@ -80,12 +81,14 @@ switch (argv[0].ToLowerInvariant())
                 Console.Error.WriteLine($"[失败] {configPath}（{ConfigStore.UnreachableMessage(configPath, kind)}）");
                 return 1;
             }
-            Console.WriteLine("（尚未生成，运行一次后自动生成）");
+            Console.WriteLine("（尚未生成；第一次需要写入时才会创建，写不进去会直接报错）");
             return 0;
         }
         catch (ConfigUnreadableException ex)
         {
             Console.Error.WriteLine($"[失败] {ex.Message}");
+            if (ex.Hint.Length > 0)
+                Console.Error.WriteLine(ex.Hint);
             return 1;
         }
         return 0;
@@ -116,7 +119,11 @@ switch (argv[0].ToLowerInvariant())
             return 1;
         }
         var dryRun = argv.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
-        var result = EnvService.Apply(LoadConfigOrExit(configPath), positional[0], positional[1], dryRun, configPath);
+        var cfg = LoadConfigOrExit(configPath);
+        // 「探测出来的默认配置」只在内存里（真配置没读到/没写成）：拿它写注册表等于用假配置覆盖真环境
+        if (RefuseFallbackWrites(willWrite: !dryRun, command: "use"))
+            return 1;
+        var result = EnvService.Apply(cfg, positional[0], positional[1], dryRun, configPath);
         Console.WriteLine($"[{(result.Ok ? "OK" : "失败")}] {result.Message}");
         if (result.Ok)
         {
@@ -137,7 +144,10 @@ switch (argv[0].ToLowerInvariant())
         if (RejectUnknownOptions("all", argv, "--dry-run"))
             return 1;
         var dryRun = argv.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
-        var batch = EnvService.ApplyAll(LoadConfigOrExit(configPath), dryRun, configPath);
+        var cfg = LoadConfigOrExit(configPath);
+        if (RefuseFallbackWrites(willWrite: !dryRun, command: "all"))
+            return 1;
+        var batch = EnvService.ApplyAll(cfg, dryRun, configPath);
         Console.WriteLine($"[{(batch.Ok ? "OK" : "有失败")}] {batch.Message}");
         foreach (var item in batch.Items)
             Console.WriteLine($"  {(item.Ok ? "✔" : "✘")} {item.Toolchain} → {item.Version}：{item.Message}");
@@ -203,8 +213,19 @@ static async Task<int> RunWeb(string configPath, JsonSerializerOptions jsonOptio
     catch (ConfigUnreadableException ex)
     {
         Console.Error.WriteLine($"[失败] {ex.Message}");
-        Console.Error.WriteLine("配置文件只是暂时读不到（不是损坏），未做任何修改。"
-                                + "请检查该路径是否可访问（网络盘是否已连接、U 盘是否插着、是否有读取权限），是否被其它程序占用后重试。");
+        // 与 LoadConfigOrExit 共用同一份处置句：目录类错误不该再补一句「检查网络盘」
+        if (ex.Hint.Length > 0)
+            Console.Error.WriteLine(ex.Hint);
+        return 1;
+    }
+
+    // 配置只在内存里兜底（默认路径写不进去）：服务照常起的话，每个请求都会因为「不许首启」而 503，
+    // 页面变成空壳。网页/API 本来就需要一份能落盘的配置，这里直接拒绝启动并说清原因。
+    if (ConfigStore.LastLoadUsedFallback)
+    {
+        Console.Error.WriteLine($"[失败] 配置位置写不进去，服务无法启动：{configPath}");
+        Console.Error.WriteLine("网页与 API 都需要一份能保存的配置（否则改完的东西无处记录）。"
+                                + "请修好该位置的写入权限后重试；只看不改请用 list / config 等只读命令。");
         return 1;
     }
     var port = portOverride ?? config.Settings.Port;
@@ -580,6 +601,9 @@ static bool RejectUnknownFlags(string cmd, List<string> argv, params string[] al
 static int RunPathBoth(string configPath, bool sort, bool dedup, bool apply, bool allowEmpty)
 {
     var cfg = LoadConfigOrExit(configPath);
+    // 兜底的默认配置不能用来写 PATH：注定被拒时就不再展示一份不会落盘的「处理后」
+    if (apply && RefuseFallbackWrites(willWrite: true, command: "path --apply"))
+        return 1;
     var view = EnvService.BuildPathView(cfg, sort, dedup);
 
     PrintPathSide("系统", view.SystemCurrent, view.SystemProcessed);
@@ -640,6 +664,12 @@ static void PrintList(string configPath)
 {
     var cfg = LoadConfigOrExit(configPath);
     Console.WriteLine($"配置文件：{configPath}");
+    if (ConfigStore.LastLoadUsedFallback)
+    {
+        // 别让人把这份默认配置当成真配置（下面列的是探测结果，不是用户的工具链）
+        Console.WriteLine("（注意：上面这份是临时兜底的默认配置，真正的配置文件没读到/没能写成；"
+                          + "写入类命令 use / all / path --apply 会拒绝执行）");
+    }
     if (cfg.Toolchains.Count == 0)
     {
         Console.WriteLine("（没有工具链，请在网页界面中添加）");
@@ -653,6 +683,22 @@ static void PrintList(string configPath)
         foreach (var v in t.Versions)
             Console.WriteLine($"  {(string.Equals(v.Name, t.Active, StringComparison.OrdinalIgnoreCase) ? "*" : " ")} {v.Name,-6} {v.Home}");
     }
+}
+
+/// <summary>
+/// 配置是从「探测出来的默认配置」临时兜底的（真配置没读成或没写成）时，拒绝任何真实写入。
+/// 只读命令与 `--dry-run` 预览不受限：能让人看到问题，但不会拿假配置去改注册表。
+/// </summary>
+static bool RefuseFallbackWrites(bool willWrite, string command)
+{
+    if (!willWrite || !ConfigStore.LastLoadUsedFallback)
+        return false;
+    Console.Error.WriteLine($"[失败] 当前读到的配置是「探测出来的默认配置」临时兜底的（真正的配置文件没读到或没能写成），"
+                            + $"不能用它执行 {command} 的写入，未做任何修改。");
+    Console.Error.WriteLine("请先修好配置位置（可写、可读）后重试；只想看效果请加 --dry-run。");
+    Console.Out.Flush();
+    Console.Error.Flush();
+    return true;
 }
 
 /// <summary>

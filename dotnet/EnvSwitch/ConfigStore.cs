@@ -48,13 +48,34 @@ internal static class ConfigStore
     private static UnreachableStamp? _unreachableCache;
 
     /// <summary>
+    /// 上一次 <see cref="Load"/> 是否用了「内存里兜底的默认配置」（真配置没读成、也没写成）。
+    /// 这种配置只够拿来看，不能据此改注册表：写入类命令要先查这个标志再决定是否拒绝。
+    /// </summary>
+    /// <remarks>
+    /// CLI 是单进程一次性执行，所以不做并发保护也能用；Web 请求虽然会写这个标志，
+    /// 但网页侧的 `Load` 一律 `allowFirstRun: false`，走不到兜底分支，也没有任何地方读它。
+    /// </remarks>
+    internal static bool LastLoadUsedFallback { get; private set; }
+
+    /// <summary>
+    /// 这个路径是不是「我们默认挑的那个」。判定只有这一份：`ClassifyMissing` 与
+    /// <see cref="Load"/> 里「显式 / 默认」的分流都调它。
+    /// </summary>
+    /// <remarks>
+    /// 不能用「调用方传没传 path」来判——`Program` 早就把 `configPath ??= DefaultPath` 兜上了，
+    /// `path is not null` 恒真（第六轮 E1 已经踩过一次同型的坑）。
+    /// </remarks>
+    internal static bool IsDefaultPath(string file) =>
+        string.Equals(file, DefaultPath, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// 判断一个配置路径「看不到」时该按哪种原因处理。`Load`、`config` 命令、`Save` 共用这一份判断，
     /// 避免几处各写一遍又抄漏（默认路径的特判曾经只在 `config` 命令里有，`Load` 没跟上）。
     /// 默认路径、裸文件名（没有目录成分 = 当前目录）一律算「还没建」。
     /// </summary>
     internal static MissingConfigKind ClassifyMissing(string file)
     {
-        if (string.Equals(file, DefaultPath, StringComparison.OrdinalIgnoreCase))
+        if (IsDefaultPath(file))
             return MissingConfigKind.FirstRun;
         var dir = Path.GetDirectoryName(file);
         if (string.IsNullOrEmpty(dir))
@@ -138,8 +159,12 @@ internal static class ConfigStore
     /// <summary>显式 `--config` 的位置写不进去：不能拿「探测出来的」配置继续干活。</summary>
     private static ConfigUnreadableException CannotWrite(string file, Exception saveException) =>
         new(file, saveException,
-            "这个位置写不进去，已放弃本次操作，配置文件与被修改的环境都没有回滚。"
-            + "请换一个可写的位置，或让 --config 指向一份已存在的配置文件。");
+            "这个位置写不进去，已放弃本次操作，配置文件与环境变量都未被修改。"
+            + "请换一个可写的位置（或把配置文件放到别处，再用 --config 指向它）。");
+
+    /// <summary>显式 `--config` 的配置读不懂、又修不了（备份失败 / 写回失败）。</summary>
+    private static ConfigUnreadableException CannotRecover(string file, string reason, string hint) =>
+        new(file, new InvalidDataException(reason), hint);
 
     /// <summary>不可达 / 超时的统一异常：文案由这里决定，调用方只负责打印。</summary>
     private static ConfigUnreadableException Unreachable(string file, MissingConfigKind kind) =>
@@ -167,6 +192,7 @@ internal static class ConfigStore
     internal static AppConfig Load(string? path = null, bool allowFirstRun = true)
     {
         var file = path ?? DefaultPath;
+        LastLoadUsedFallback = false;   // 每次读取都复位，避免上一次的结果误导写入类命令
 
         // 先判「这个位置能不能访问」，再碰文件：默认路径与裸文件名不探测（前者目录本来就可能还没建，
         // 后者就是当前目录）。探测上限 1.5 秒——`File.Exists` 与 `ReadAllText` 在断开的网络盘上要等
@@ -186,7 +212,7 @@ internal static class ConfigStore
                 throw FirstRunNotAllowed(file);
 
             var config = DetectDefaultConfig();
-            return FirstRunFallback(config, file, explicitPath: path is not null);
+            return FirstRunFallback(config, file, explicitPath: !IsDefaultPath(file));
         }
 
         string json;
@@ -204,7 +230,7 @@ internal static class ConfigStore
                 throw FirstRunNotAllowed(file);
 
             var config = DetectDefaultConfig();
-            return FirstRunFallback(config, file, explicitPath: path is not null);
+            return FirstRunFallback(config, file, explicitPath: !IsDefaultPath(file));
         }
 
         try
@@ -217,7 +243,7 @@ internal static class ConfigStore
         {
             // 读到文本了、但解析不出来（JSON 语法坏 / 结构对不上）：这才按「损坏」处理。
             Console.Error.WriteLine($"[警告] 配置内容无法解析（{file}）：{ex.Message}");
-            return RecoverFromBroken(file);
+            return RecoverFromBroken(file, explicitPath: !IsDefaultPath(file));
         }
     }
 
@@ -239,6 +265,8 @@ internal static class ConfigStore
         catch (Exception saveException)
         {
             Console.Error.WriteLine($"[警告] 默认配置未能写入 {file}：{saveException.Message}");
+            // 这份配置只在内存里：只读命令还能用，写入类命令必须拒绝（见 Program 的守卫）
+            LastLoadUsedFallback = true;
         }
         return config;
     }
@@ -248,10 +276,16 @@ internal static class ConfigStore
     /// 备份失败时**不写回**——那份配置只是解析不出来、内容还在，覆盖就真没救了。
     /// 「读不到」绝不能进这个分支。
     /// </summary>
-    private static AppConfig RecoverFromBroken(string file)
+    /// <param name="explicitPath">
+    /// 显式 `--config` 时，备份失败或写回失败都直接抛：用户点名的那份配置读不懂、又修不了，
+    /// 再拿「探测出来的默认配置」接着跑（`use` 会真写注册表）正是 D1/C2/H1 一路要禁止的事。
+    /// 默认路径维持「警告 + 内存继续」，否则 `%LOCALAPPDATA%` 只读时程序就彻底起不来了。
+    /// </param>
+    private static AppConfig RecoverFromBroken(string file, bool explicitPath)
     {
         var backedUp = false;
         var backup = $"{file}.bad-{DateTime.Now:yyyyMMdd-HHmmss}";
+        var backupFailure = "";
         try
         {
             File.Copy(file, backup, overwrite: true);
@@ -260,18 +294,39 @@ internal static class ConfigStore
         }
         catch (Exception ex)
         {
+            backupFailure = ex.Message;
             Console.Error.WriteLine($"[警告] 原配置备份失败（{ex.Message}）：为避免覆盖仍可修复的原文件，本次不写回默认配置。");
         }
 
         var fallback = DetectDefaultConfig();
         if (backedUp)
         {
-            try { Save(fallback, file); } catch { /* 落盘失败时内存里仍可用 */ }
-            Console.Error.WriteLine("[警告] 已使用默认配置继续运行。");
+            try
+            {
+                Save(fallback, file);
+                // 写回成功才是「已恢复」：磁盘上现在是一份能读的默认配置，后续不再走兜底
+                Console.Error.WriteLine("[警告] 已使用默认配置继续运行。");
+            }
+            catch (Exception saveException)
+            {
+                // 以前这里是空 catch：下次启动又会判定损坏、又备份一个 .bad-<新时间戳>，
+                // 而用户以为自己「已经恢复默认配置了」，所以要明确说没写回
+                var message = $"备份成功但默认配置未能写回 {file}：{saveException.Message}"
+                              + "（下次启动仍会按损坏处理并再备份一次）";
+                if (explicitPath)
+                    throw CannotRecover(file, message, "原文件已备份为上面那个 .bad 文件，但默认配置没能写回。");
+                Console.Error.WriteLine($"[警告] {message}");
+                LastLoadUsedFallback = true;
+            }
         }
         else
         {
+            if (explicitPath)
+                throw CannotRecover(file,
+                    $"配置内容无法解析，且该位置不可写（备份失败：{backupFailure}），本次不写回默认配置",
+                    "原配置文件未被修改。请手工修好这份 JSON，或换一个可写的位置/换一份配置。");
             Console.Error.WriteLine("[警告] 已使用默认配置继续运行（原文件保持原样，未写回）。");
+            LastLoadUsedFallback = true;
         }
         return fallback;
     }
