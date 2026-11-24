@@ -49,6 +49,15 @@ void ApplyTheme(const char* utf8ThemeFile);  // NULL = 默认主题
 
 ImGui 有线程亲和性，直接从监控线程调用会崩溃。插件在 `_MN_Notify(Load)`（主线程回调）中创建 message-only 窗口，监控线程把主题名 `PostMessage` 过去，在窗口过程里调用内部函数。
 
+## 边框颜色（DWM）
+
+主题 JSON 里有 `win_border` 字段。软件自己的设置界面切换主题时会调用
+`DwmSetWindowAttribute(hwnd, 34 /*DWMWA_BORDER_COLOR*/, &color, 4)` 更新窗口最外层边框，
+但内部主题函数只更新全局颜色表，不会更新 DWM 边框。因此插件在调用内部函数后，
+会读取目标主题的 `win_border`（取低 24 位）并补上这次 DWM 调用，避免窗口主体换了主题
+而边框仍是旧颜色。动态切换实测：切到深色主题后边框变为 `0x727272`，切回 BlueWhite
+后变为 `0xC88C50`。
+
 ## 设置窗口检测（v2）
 
 ImGui docking 分支会为独立 ImGui 窗口创建原生平台窗口。实测设置窗口打开时，进程内出现：

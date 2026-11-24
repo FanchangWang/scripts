@@ -434,6 +434,48 @@ static std::wstring StatusText() {
            L"，支持 " + ToWide(SUPPORTED_VERSION_TEXT) + L"，功能已静默";
 }
 
+// The app only updates the DWM border color in its own Settings handler.
+// Replicate that step after our in-process theme apply, otherwise the outer
+// border keeps the previous theme's color.
+static DWORD BorderColorForTheme(const std::string& theme) {
+    if (theme.empty()) return 0x00BCBCBC; // Default theme border
+
+    std::wstring path = g_exeDir + L"\\theme\\" + ToWide(theme);
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return 0x00BCBCBC;
+
+    DWORD size = GetFileSize(f, nullptr);
+    std::string text;
+    if (size && size < 1024 * 1024) {
+        text.resize(size);
+        DWORD read = 0;
+        if (ReadFile(f, &text[0], size, &read, nullptr)) text.resize(read);
+        else text.clear();
+    }
+    CloseHandle(f);
+
+    size_t k = text.find("\"win_border\"");
+    if (k == std::string::npos) return 0x00BCBCBC;
+    size_t colon = text.find(':', k);
+    if (colon == std::string::npos) return 0x00BCBCBC;
+    unsigned long long v = _strtoui64(text.c_str() + colon + 1, nullptr, 0);
+    return (DWORD)(v & 0x00FFFFFF);
+}
+
+static void ApplyDwmBorder(const std::string& theme) {
+    HMODULE dwm = GetModuleHandleW(L"dwmapi.dll");
+    if (!dwm) return;
+    using PFN = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+    auto fn = (PFN)GetProcAddress(dwm, "DwmSetWindowAttribute");
+    HWND hwnd = FindAppWindow(L"_ArWin_MayeNanoLauncher");
+    if (!fn || !hwnd) return;
+
+    DWORD color = BorderColorForTheme(theme);
+    fn(hwnd, 34 /*DWMWA_BORDER_COLOR*/, &color, sizeof(color));
+    LogA("DWM border set to 0x%06X", color);
+}
+
 static bool InvokeApply(PFN_ApplyTheme fn, const char* name) {
     // Best-effort: an incorrectly discovered RVA must not kill the host.
     __try {
@@ -458,6 +500,7 @@ static void CallInternalTheme(const std::string& theme) {
         return;
     }
     LogA("internal theme applied: '%s'", theme.c_str());
+    ApplyDwmBorder(theme);
 }
 
 // ---------------------------------------------------------------------------
