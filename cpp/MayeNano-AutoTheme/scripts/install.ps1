@@ -25,11 +25,13 @@ New-Item -ItemType Directory -Path $dst -Force | Out-Null
 
 foreach ($f in @(
     @{ From = 'dist\mn.cc.arae.autotheme.dll'; To = "$pluginId.dll" },
-    @{ From = 'config\autotheme.ini';           To = 'autotheme.ini' },
-    @{ From = 'scripts\restart.ps1';            To = 'restart.ps1' }
+    @{ From = 'config\autotheme.ini';           To = 'autotheme.ini' }
 )) {
     Copy-Item -LiteralPath (Join-Path $project $f.From) -Destination (Join-Path $dst $f.To) -Force
 }
+
+# Old versions had a restart helper; it is no longer used.
+Remove-Item -LiteralPath (Join-Path $dst 'restart.ps1') -ErrorAction SilentlyContinue
 
 $cfgPath = Join-Path $TargetDir 'cfg.json'
 $cfg = Get-Content -LiteralPath $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json

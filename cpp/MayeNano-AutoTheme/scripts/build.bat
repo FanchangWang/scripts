@@ -28,7 +28,7 @@ rem version macro override makes the real MSVC STL available to Clang 21.
   -L "%VC%\lib\x64" ^
   -L "%SDK%\Lib\%SDKVER%\ucrt\x64" ^
   -L "%SDK%\Lib\%SDKVER%\um\x64" ^
-  -ladvapi32 -lshell32 -luser32 -lkernel32 ^
+  -ladvapi32 -lshell32 -luser32 -lgdi32 -lkernel32 ^
   -o dist\mn.cc.arae.autotheme.dll
 
 if errorlevel 1 (

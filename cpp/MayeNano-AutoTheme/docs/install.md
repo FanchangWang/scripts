@@ -13,36 +13,39 @@ pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 Maye Nano 安装目录\plugin\mn.cc.arae.autotheme\
 ├── mn.cc.arae.autotheme.dll   <- dist\
-├── autotheme.ini              <- config\
-└── restart.ps1                <- scripts\（回退方案才用到）
+└── autotheme.ini              <- config\
 ```
 
 并在 `cfg.json` 的 `plugin` 数组中加入 `mn.cc.arae.autotheme`。
-
-也可以手工复制并改 `cfg.json`。
 
 ## 配置（autotheme.ini）
 
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `Enable` | 1 | 是否启用自动切换 |
-| `Light` | `BlueWhite-1.json` | 系统浅色时的主题；**留空 = 默认主题** |
+| `Light` | 空 | 系统浅色时的主题；**留空 = 默认主题**（`cfg.json` 中 `"theme":""`） |
 | `Dark` | `Black-1.json` | 系统深色时的主题；留空同上 |
-| `UseInternalCall` | 1 | 1=调用软件自身主题函数（无重启，推荐）；0=回退到重启方案 |
-| `AutoRestart` | 1 | 回退方案中是否自动重启；重启等到窗口隐藏后执行 |
-| `RestartDelayMs` | 900 | 回退方案中结束旧进程前的等待 |
-| `DebugLog` | 0 | 1=写 `autotheme.log` / `restart.log` 便于排查 |
+| `OpenWithSettings` | 1 | 1=打开软件设置窗口时自动弹出插件设置窗口；0=不自动弹 |
+| `DebugLog` | 0 | 1=写 `autotheme.log` 便于排查 |
 
-`Light` / `Dark` 留空或不写，对应 `cfg.json` 中的 `"theme":""`（默认主题）。
+插件目录下会自动生成 `first-run.done` 标记：首次安装后第一次启动会自动弹一次设置窗口，之后不再因为首次安装而弹出。
+
+下拉列表从 `theme\*.json` 动态读取，第一项固定为 `Default`。
 
 ## 行为
 
 - 监听 `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme`，变化后立即切换主题。
-- 通过内部函数在进程内应用主题（主线程），**不重启应用**，不会重新注册热键。
+- 直接调用软件自身的主题应用函数（主线程），**不重启应用**，不重新注册热键。
 - 同时写回 `cfg.json` 的 `theme`，保证下次启动一致。
+- **设置窗口联动**：软件设置窗口打开时（原生窗口 class=`ImGui Platform`、title=`Settings`），插件设置窗口自动弹出；软件设置窗口关闭时，若插件窗口未被手动关闭则自动隐藏。可用 `OpenWithSettings` 关掉自动弹出。插件窗口也可手动关闭，或通过 `设置 → 插件 → AutoTheme → 右侧「···」→ 选项` 打开。
+- 窗口自动定位在软件设置窗口 / 主窗口附近，不再固定在屏幕左上角；标题为「Auto Theme 插件设置」；支持高 DPI 缩放。
+- **窗口置顶**读取软件 `cfg.json` 的 `IsTopMost`。
+- 窗口顶部说明其用途，并显示同一行的“支持版本 / 当前版本 / 匹配结果”。版本一致时显示“版本匹配，功能可用”；版本不一致时会尝试自动适配，失败则功能静默并提示更新插件或禁用插件。
+- 启动时检查 `Light` / `Dark` 配置的主题文件是否存在；丢失则自动弹出插件设置窗口并提示“主题文件丢失”，可在下拉框重新选择并保存。
 - 主题已正确时不做任何操作，无循环。
-- 在设置页禁用插件后，宿主会把它从 `cfg.json` 的 `plugin` 列表移除，不再接管。
 
-## 回退方案
+## 版本兼容
 
-若软件更新导致内部 RVA 失效：把 `UseInternalCall=0`。此时写配置后会在**窗口隐藏时**重启应用来应用主题（重启会短暂打断热键注册）。
+已内置版本表（直接查表，无需分析）：7.0.1.261107 → `0x1819D0`，6.2.0.260501 → `0x17D970`，6.1.0.260422 → `0x17D920`，6.0.0.260417 → `0x17B150`。
+
+未列入的版本如果代码结构相近，插件会尝试通过 `.\theme\{}` 字符串的引用来定位新的函数地址；定位失败则静默降级，不会崩溃。

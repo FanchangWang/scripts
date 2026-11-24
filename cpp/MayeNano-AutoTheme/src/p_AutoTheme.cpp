@@ -1,13 +1,8 @@
 // Maye Nano plugin: Auto Theme (follow Windows light/dark mode)
 //
-// Reads HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize
-// \AppsUseLightTheme and keeps cfg.json -> "theme" in sync with the
-// configured light / dark theme file.
-//
-// The application only loads the theme at startup, so by default the plugin
-// gracefully closes and relaunches Maye Nano after writing the new value.
-// Set AutoRestart=0 in autotheme.ini to only update the config (the change
-// then takes effect the next time you start Maye Nano normally).
+// Calls Maye Nano's own theme-apply routine in-process, so no restart and no
+// hotkey re-registration. Provides a settings window that follows the
+// application's own Settings window.
 
 #include <algorithm>
 #include <string>
@@ -21,10 +16,107 @@
 #include <cstdio>
 #include <cstring>
 #include <process.h>
-#include <string>
 
-static std::wstring g_logPath;
-static bool         g_debugLog = false;
+// ---------------------------------------------------------------------------
+// constants
+// ---------------------------------------------------------------------------
+
+// Known-good versions: the RVA of the internal theme-apply routine is
+// hard-coded so no runtime analysis is needed for these builds.
+struct VersionEntry { const char* version; uintptr_t rva; };
+static const VersionEntry KNOWN_VERSIONS[] = {
+    { "7.0.1.261107", 0x1819D0 },
+    { "6.2.0.260501", 0x17D970 },
+    { "6.1.0.260422", 0x17D920 },
+    { "6.0.0.260417", 0x17B150 },
+};
+static const char* SUPPORTED_VERSION_TEXT =
+    "7.0.1.261107 / 6.2.0.260501 / 6.1.0.260422 / 6.0.0.260417";
+
+#define MN_APPLY_THEME (WM_APP + 31)
+#define MN_SHOW_UI     (WM_APP + 32)
+#define MN_HIDE_UI     (WM_APP + 33)
+#define MN_REFRESH_UI  (WM_APP + 34)
+#define MN_DPI_SYNC    (WM_APP + 35)
+
+#define ID_STATIC_INFO    2001
+#define ID_STATIC_STATUS  2002
+#define ID_STATIC_NOTICE  2003
+#define ID_COMBO_LIGHT    2011
+#define ID_COMBO_DARK     2012
+#define ID_CHK_ENABLE     2013
+#define ID_CHK_FOLLOW     2014
+#define ID_BTN_SAVE       2015
+#define ID_BTN_CLOSE      2016
+
+// ---------------------------------------------------------------------------
+// globals
+// ---------------------------------------------------------------------------
+
+static std::atomic<bool> g_running{ false };
+static HANDLE            g_thread = nullptr;
+static CRITICAL_SECTION  g_stateLock;
+static bool              g_lockReady = false;
+
+static std::wstring      g_exePath;
+static std::wstring      g_exeDir;
+static std::wstring      g_pluginDir;
+static std::wstring      g_iniPath;
+static std::wstring      g_logPath;
+static std::wstring      g_firstRunFlag;
+
+static std::string       g_lightTheme;   // empty = Default ("theme": "")
+static std::string       g_darkTheme;
+static bool              g_enabled          = true;
+static bool              g_openWithSettings = true;
+static bool              g_debugLog         = false;
+
+static std::string       g_currentVersion;
+static uintptr_t         g_applyRva   = 0;
+static bool              g_functional = false;
+static bool              g_adapted    = false;
+static std::wstring      g_notice;
+
+static HWND              g_dispatcher      = nullptr;
+static HWND              g_settingsWnd     = nullptr;
+static HWND              g_comboLight      = nullptr;
+static HWND              g_comboDark       = nullptr;
+static HWND              g_chkEnable       = nullptr;
+static HWND              g_chkFollow       = nullptr;
+static HWND              g_staticStatus    = nullptr;
+static HWND              g_staticNotice    = nullptr;
+static HWND              g_appSettingsHwnd = nullptr;
+
+static bool              g_settingsOpen = false;
+static unsigned long     g_targetPid    = 0;
+
+static int               g_dpi  = 96;
+static HFONT             g_font = nullptr;
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+static int S(int v) { return MulDiv(v, g_dpi, 96); }
+
+// Physical DPI of the primary monitor. Unlike GetDpiForSystem() this is not
+// affected by a process that has not applied its DPI awareness yet.
+static int PhysicalDpi() {
+    typedef HRESULT(WINAPI* PFN_GetDpiForMonitor)(HMONITOR, int, UINT*, UINT*);
+    HMODULE sh = LoadLibraryW(L"shcore.dll");
+    int result = 96;
+    if (sh) {
+        auto fn = (PFN_GetDpiForMonitor)GetProcAddress(sh, "GetDpiForMonitor");
+        if (fn) {
+            HMONITOR hm = MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+            UINT x = 96, y = 96;
+            if (SUCCEEDED(fn(hm, 0 /*MDT_EFFECTIVE_DPI*/, &x, &y)) && x >= 96)
+                result = (int)x;
+        }
+        FreeLibrary(sh);
+    }
+    return result;
+}
 
 static void LogA(const char* fmt, ...) {
     if (!g_debugLog) return;
@@ -50,88 +142,6 @@ static void LogA(const char* fmt, ...) {
     }
 }
 
-static std::atomic<bool>   g_running{ false };
-static HANDLE              g_thread = nullptr;
-
-static std::wstring        g_exePath;
-static std::wstring        g_exeDir;
-static std::wstring        g_pluginDir;
-static std::wstring        g_iniPath;
-
-static std::wstring        g_lightTheme;   // empty = Default ("theme": "")
-static std::wstring        g_darkTheme;    // empty = Default ("theme": "")
-static bool                g_enabled    = true;
-static bool                g_autoRestart= true;
-static DWORD               g_restartDelay = 900;
-static bool                g_useInternal = true;
-
-// Internal theme-apply routine in Maye Nano.exe (RVA 0x1819D0):
-//   void ApplyTheme(const char* utf8ThemeFileName);  // nullptr = Default
-// It rebuilds the global color table from .\theme\<name>.json immediately.
-// Experimental: tied to this exact app build (7.0.1.261107).
-static bool CallInternalTheme(const std::string& theme) {
-    HMODULE mod = GetModuleHandleW(nullptr);
-    if (!mod) return false;
-    using PFN = void(__cdecl*)(const char*);
-    auto fn = (PFN)((ULONG_PTR)mod + 0x1819D0);
-    if (!fn) return false;
-    fn(theme.empty() ? nullptr : theme.c_str());
-    LogA("internal theme applied: '%s'", theme.c_str());
-    return true;
-}
-
-// ImGui is thread-affine, so the internal call must run on the app's main
-// thread. Create a message-only window during the main-thread Load callback
-// and post the request to it from the monitor thread.
-#define MN_APPLY_THEME (WM_APP + 31)
-static HWND g_msgWindow = nullptr;
-
-static LRESULT CALLBACK AutoThemeWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
-    if (msg == MN_APPLY_THEME) {
-        auto* theme = reinterpret_cast<std::string*>(lp);
-        if (theme) {
-            CallInternalTheme(*theme);
-            delete theme;
-        }
-        return 0;
-    }
-    return DefWindowProcW(hwnd, msg, wp, lp);
-}
-
-static void CreateMainThreadDispatcher() {
-    if (g_msgWindow) return;
-    HMODULE hmod = nullptr;
-    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       (LPCWSTR)&AutoThemeWndProc, &hmod);
-    WNDCLASSW wc{};
-    wc.lpfnWndProc = AutoThemeWndProc;
-    wc.hInstance = hmod;
-    wc.lpszClassName = L"MN_AutoTheme_Msg";
-    RegisterClassW(&wc);
-    g_msgWindow = CreateWindowExW(0, L"MN_AutoTheme_Msg", nullptr, 0,
-                                  0, 0, 0, 0, HWND_MESSAGE, nullptr, hmod, nullptr);
-    LogA("dispatcher hwnd=%p", g_msgWindow);
-}
-
-static bool ApplyInternalTheme(const std::string& theme) {
-    if (!g_msgWindow) return false;
-    auto* copy = new std::string(theme);
-    if (!PostMessageW(g_msgWindow, MN_APPLY_THEME, 0, (LPARAM)copy)) {
-        delete copy;
-        return false;
-    }
-    LogA("posted internal theme apply: '%s'", theme.c_str());
-    return true;
-}
-
-// A theme change is written to cfg.json immediately, but the restart is
-// deferred while the launcher window is visible.
-static std::string         g_pendingTheme;
-static bool                g_pendingRestart = false;
-
-// ---------- small helpers ----------
-
 static std::wstring ToWide(const std::string& s) {
     if (s.empty()) return std::wstring();
     int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
@@ -155,39 +165,54 @@ static std::wstring IniString(const wchar_t* key, const wchar_t* def) {
 }
 
 static void LoadIni() {
-    g_debugLog       = (IniString(L"DebugLog", L"0") == L"1");
-    g_useInternal    = (IniString(L"UseInternalCall", L"1") == L"1");
-    g_enabled     = (IniString(L"Enable", L"1") == L"1");
-    g_autoRestart = (IniString(L"AutoRestart", L"1") == L"1");
-    // Empty / missing value means "Default" -> cfg.json "theme": ""
-    g_lightTheme  = IniString(L"Light", L"");
-    g_darkTheme   = IniString(L"Dark", L"");
-
-    DWORD d = GetPrivateProfileIntW(L"AutoTheme", L"RestartDelayMs", 900, g_iniPath.c_str());
-    g_restartDelay = (d > 0 && d < 60000) ? d : 900;
+    g_debugLog         = (IniString(L"DebugLog", L"0") == L"1");
+    g_enabled          = (IniString(L"Enable", L"1") == L"1");
+    g_openWithSettings = (IniString(L"OpenWithSettings", L"1") == L"1");
+    g_lightTheme       = ToUtf8(IniString(L"Light", L""));
+    g_darkTheme        = ToUtf8(IniString(L"Dark", L"Black-1.json"));
 }
 
-// ---------- Windows theme detection ----------
+static void InitPaths() {
+    if (!g_iniPath.empty()) return;
 
-static bool IsWindowsLightMode() {
-    HKEY h = nullptr;
-    const wchar_t* sub = L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, sub, 0, KEY_READ, &h) != ERROR_SUCCESS)
-        return false; // registry missing -> assume dark
+    wchar_t path[MAX_PATH] = { 0 };
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    g_exePath = path;
 
-    DWORD value = 1, type = 0, size = sizeof(value);
-    LONG r = RegQueryValueExW(h, L"AppsUseLightTheme", nullptr, &type,
-                              (BYTE*)&value, &size);
-    RegCloseKey(h);
-    LogA("Reg AppsUseLightTheme r=%ld value=%u", (long)r, (unsigned)value);
-    return (r == ERROR_SUCCESS) ? (value != 0) : false;
+    size_t slash = 0;
+    for (size_t i = 0; i < g_exePath.size(); ++i) {
+        if (g_exePath[i] == L'\\' || g_exePath[i] == L'/') slash = i;
+    }
+    g_exeDir      = slash ? g_exePath.substr(0, slash) : std::wstring();
+    g_pluginDir   = g_exeDir + L"\\plugin\\mn.cc.arae.autotheme";
+    g_iniPath     = g_pluginDir + L"\\autotheme.ini";
+    g_logPath     = g_pluginDir + L"\\autotheme.log";
+    g_firstRunFlag = g_pluginDir + L"\\first-run.done";
 }
 
-// ---------- apply / relaunch ----------
+// ---------------------------------------------------------------------------
+// theme files
+// ---------------------------------------------------------------------------
 
-// The plugin API's GetCfgItem/SetCfgItem use a private cfg.ini inside the
-// plugin folder, not the application's cfg.json. Read cfg.json directly to
-// learn the theme the application actually has on disk.
+static bool ThemeFileExists(const std::string& name) {
+    if (name.empty()) return true; // Default
+    std::wstring p = g_exeDir + L"\\theme\\" + ToWide(name);
+    return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+static std::wstring CheckThemeFiles() {
+    std::wstring warn;
+    if (!ThemeFileExists(g_lightTheme)) {
+        warn = L"主题文件丢失：浅色主题 " + ToWide(g_lightTheme);
+    }
+    if (!ThemeFileExists(g_darkTheme)) {
+        if (!warn.empty()) warn += L"\r\n";
+        warn += L"主题文件丢失：深色主题 " + ToWide(g_darkTheme);
+    }
+    if (!warn.empty()) warn += L"\r\n请在下方重新选择主题文件。";
+    return warn;
+}
+
 static std::string ReadAppTheme() {
     std::wstring path = g_exeDir + L"\\cfg.json";
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -215,7 +240,6 @@ static std::string ReadAppTheme() {
     return text.substr(q1 + 1, q2 - q1 - 1);
 }
 
-// An empty theme means the application default: cfg.json "theme": ""
 static bool WriteAppTheme(const std::string& theme) {
     std::wstring path = g_exeDir + L"\\cfg.json";
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -244,8 +268,9 @@ static bool WriteAppTheme(const std::string& theme) {
 
     std::string updated = text.substr(0, q1 + 1) + theme + text.substr(q2);
 
-    // Atomic-ish replace so the app never reads a half-written cfg.json.
-    std::wstring tmp = path + L".autotheme.tmp";
+    // Unique per thread: the monitor thread and the UI thread can both write.
+    std::wstring tmp = path + L".autotheme." +
+                       std::to_wstring(GetCurrentThreadId()) + L".tmp";
     HANDLE o = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr,
                            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (o == INVALID_HANDLE_VALUE) return false;
@@ -260,216 +285,658 @@ static bool WriteAppTheme(const std::string& theme) {
     return true;
 }
 
-// The launcher UI runs in a child process, so scan every top-level window.
-static bool g_launcherVisible = false;
+// ---------------------------------------------------------------------------
+// Windows theme detection
+// ---------------------------------------------------------------------------
 
-static BOOL CALLBACK LauncherWindowProc(HWND hwnd, LPARAM) {
+static bool IsWindowsLightMode() {
+    HKEY h = nullptr;
+    const wchar_t* sub = L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, sub, 0, KEY_READ, &h) != ERROR_SUCCESS)
+        return false;
+
+    DWORD value = 1, type = 0, size = sizeof(value);
+    LONG r = RegQueryValueExW(h, L"AppsUseLightTheme", nullptr, &type,
+                              (BYTE*)&value, &size);
+    RegCloseKey(h);
+    return (r == ERROR_SUCCESS) ? (value != 0) : false;
+}
+
+// ---------------------------------------------------------------------------
+// app Settings window detection
+// ---------------------------------------------------------------------------
+
+static bool g_foundSettings = false;
+
+static const wchar_t* g_enumClass = nullptr;
+static HWND           g_enumFound = nullptr;
+
+static BOOL CALLBACK EnumAppWindowProc(HWND hwnd, LPARAM) {
+    DWORD owner = 0;
+    GetWindowThreadProcessId(hwnd, &owner);
+    if (owner != g_targetPid) return TRUE;
     wchar_t cls[128] = { 0 };
     GetClassNameW(hwnd, cls, 128);
-    if (_wcsicmp(cls, L"_ArWin_MayeNanoLauncher") == 0 && IsWindowVisible(hwnd)) {
-        g_launcherVisible = true;
+    if (_wcsicmp(cls, g_enumClass) == 0 && IsWindow(hwnd)) {
+        g_enumFound = hwnd;
         return FALSE;
     }
     return TRUE;
 }
 
-static bool IsLauncherVisible() {
-    g_launcherVisible = false;
-    EnumWindows(LauncherWindowProc, 0);
-    return g_launcherVisible;
+static HWND FindAppWindow(const wchar_t* cls) {
+    g_enumClass = cls;
+    g_enumFound = nullptr;
+    EnumWindows(EnumAppWindowProc, 0);
+    return g_enumFound;
 }
 
-static void LaunchRestartHelper(const std::string& theme) {
-    std::wstring ps = g_pluginDir + L"\\restart.ps1";
-    LogA("LaunchRestartHelper ps=%S", ps.c_str());
-    if (GetFileAttributesW(ps.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        LogA("restart.ps1 missing");
-        return;
-    }
+static BOOL CALLBACK EnumSettingsProc(HWND hwnd, LPARAM) {
+    DWORD owner = 0;
+    GetWindowThreadProcessId(hwnd, &owner);
+    if (owner != g_targetPid) return TRUE;
 
-    wchar_t sysdir[MAX_PATH] = { 0 };
-    GetSystemDirectoryW(sysdir, MAX_PATH);
-    std::wstring powershell = std::wstring(sysdir) + L"\\WindowsPowerShell\\v1.0\\powershell.exe";
-
-    wchar_t cmd[4096] = { 0 };
-    swprintf_s(cmd, 4096,
-        L"-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass "
-        L"-File \"%s\" -ProcId %lu -Cfg \"%s\\cfg.json\" -Exe \"%s\" -Theme \"%s\" -Delay %lu",
-        ps.c_str(), (unsigned long)GetCurrentProcessId(), g_exeDir.c_str(),
-        g_exePath.c_str(), ToWide(theme).c_str(), g_restartDelay);
-
-    SHELLEXECUTEINFOW sei{};
-    sei.cbSize = sizeof(sei);
-    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-    sei.lpVerb = L"open";
-    sei.lpFile = powershell.c_str();
-    sei.lpParameters = cmd;
-    sei.nShow = SW_HIDE;
-    BOOL ok = ShellExecuteExW(&sei);
-    LogA("ShellExecute ok=%d err=%lu cmd=%S", (int)ok, (unsigned long)GetLastError(), cmd);
-}
-
-static BOOL CALLBACK CloseMainWindowProc(HWND hwnd, LPARAM lpid) {
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    if (pid == (DWORD)lpid) {
-        wchar_t title[256] = { 0 };
-        if (GetWindowTextW(hwnd, title, 256) > 0) {
-            if (wcsstr(title, L"Maye") || wcsstr(title, L"Nano")) {
-                PostMessageW(hwnd, WM_CLOSE, 0, 0);
-                return FALSE;
-            }
-        }
+    wchar_t cls[128] = { 0 }, title[128] = { 0 };
+    GetClassNameW(hwnd, cls, 128);
+    GetWindowTextW(hwnd, title, 128);
+    if (_wcsicmp(cls, L"ImGui Platform") == 0 &&
+        wcscmp(title, L"Settings") == 0 &&
+        IsWindowVisible(hwnd)) {
+        g_foundSettings = true;
+        g_appSettingsHwnd = hwnd;
+        return FALSE;
     }
     return TRUE;
 }
 
-static void CloseApp() {
-    EnumWindows(CloseMainWindowProc, (LPARAM)GetCurrentProcessId());
+static bool IsAppSettingsVisible() {
+    g_foundSettings = false;
+    g_appSettingsHwnd = nullptr;
+    EnumWindows(EnumSettingsProc, 0);
+    return g_foundSettings;
 }
 
-static void ApplyTheme(bool light) {
-    std::string desired = ToUtf8(light ? g_lightTheme : g_darkTheme);
-    std::string current = ReadAppTheme();
-    LogA("ApplyTheme light=%d current='%s' desired='%s'", (int)light,
-         current.c_str(), desired.c_str());
+// ---------------------------------------------------------------------------
+// internal theme-apply function
+// ---------------------------------------------------------------------------
 
-    // "" and a missing theme key both mean Default.
-    // A pending restart stays pending even if cfg.json already has the right
-    // value: the running process still needs to reload the theme.
-    if (current == desired)
-        return;
+using PFN_ApplyTheme = void(__cdecl*)(const char*);
 
-    if (!WriteAppTheme(desired)) {
-        LogA("WriteAppTheme failed");
-        return;
+static uintptr_t DiscoverApplyRva() {
+    HMODULE mod = GetModuleHandleW(nullptr);
+    auto base = (BYTE*)mod;
+    auto dos = (IMAGE_DOS_HEADER*)base;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return 0;
+    auto nt = (IMAGE_NT_HEADERS64*)(base + dos->e_lfanew);
+    size_t imageSize = nt->OptionalHeader.SizeOfImage;
+
+    static const wchar_t fmt[] = L".\\theme\\{}";
+    size_t patLen = (wcslen(fmt) + 1) * sizeof(wchar_t);
+
+    uintptr_t stringVa = 0;
+    for (size_t off = 0; off + patLen <= imageSize; ++off) {
+        if (memcmp(base + off, fmt, patLen) == 0) {
+            stringVa = (uintptr_t)(base + off);
+            break;
+        }
     }
-    if (mn::_MN_API_FN && mn::_MN_CTX)
-        (void)mn::Api::SetCfgItem("theme", desired.c_str()); // plugin's own record
+    if (!stringVa) return 0;
 
-    if (g_useInternal && ApplyInternalTheme(desired)) {
-        g_pendingRestart = false;
-        g_pendingTheme.clear();
-        return; // applied in-process, no restart needed
-    }
+    static const BYTE prologue[] = {
+        0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x7C, 0x24, 0x18, 0x55
+    };
+    for (size_t off = 0; off + 4 <= imageSize; ++off) {
+        int32_t disp = *(const int32_t*)(base + off);
+        if ((uintptr_t)(base + off) + 4 + (int64_t)disp != stringVa) continue;
 
-    if (g_autoRestart) {
-        g_pendingTheme = desired;
-        g_pendingRestart = true;
-        LogA("config written; restart pending=%d visible=%d",
-             (int)g_pendingRestart, (int)IsLauncherVisible());
-    }
-}
-
-static void TryPendingRestart() {
-    if (!g_pendingRestart) return;
-    if (IsLauncherVisible()) return; // never kill the app while the window is shown
-
-    LogA("launcher hidden -> restarting for theme '%s'", g_pendingTheme.c_str());
-    LaunchRestartHelper(g_pendingTheme);
-    g_pendingRestart = false;
-    g_pendingTheme.clear();
-}
-
-// ---------- benign search callbacks (host requires them for Search plugins) ----------
-
-static mn::SEARCH_RESULT_LIST EmptySearch(const char*, const char*, const char*) {
-    return { nullptr, 0 };
-}
-
-static void EmptySearchFree() {}
-
-// ---------- monitor ----------
-
-static unsigned __stdcall MonitorThread(LPVOID) {
-    while (g_running.load()) {
-        ApplyTheme(IsWindowsLightMode());
-        TryPendingRestart();
-
-        const wchar_t* sub = L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-        HKEY h = nullptr;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, sub, 0, KEY_READ, &h) == ERROR_SUCCESS) {
-            HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-            if (ev) {
-                RegNotifyChangeKeyValue(h, FALSE, REG_NOTIFY_CHANGE_LAST_SET, ev, TRUE);
-                // Check often while a restart is waiting for the window to hide.
-                WaitForSingleObject(ev, g_pendingRestart ? 500 : 5000);
-                CloseHandle(ev);
-            } else {
-                Sleep(g_pendingRestart ? 500 : 5000);
+        for (size_t back = 1; back <= 0x1000 && back <= off; ++back) {
+            size_t p = off - back;
+            if (p + sizeof(prologue) > imageSize) continue;
+            if (memcmp(base + p, prologue, sizeof(prologue)) == 0) {
+                uintptr_t rva = (uintptr_t)(base + p) - (uintptr_t)base;
+                LogA("discovered apply rva=0x%llx", (unsigned long long)rva);
+                return rva;
             }
-            RegCloseKey(h);
-        } else {
-            Sleep(g_pendingRestart ? 500 : 5000);
         }
     }
     return 0;
 }
 
-static void InitPaths() {
-    if (!g_iniPath.empty()) return;
+static void InitThemeFunction() {
+    g_currentVersion = (mn::_MN_API_FN && mn::_MN_CTX)
+        ? mn::Api::GetVersion() : std::string();
 
-    wchar_t path[MAX_PATH] = { 0 };
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
-    g_exePath = path;
-
-    // Manual scan avoids MSVC STL's wmemchr (its intrinsics confuse Clang 21).
-    size_t slash = 0;
-    for (size_t i = 0; i < g_exePath.size(); ++i) {
-        if (g_exePath[i] == L'\\' || g_exePath[i] == L'/') slash = i;
+    bool known = false;
+    for (const auto& e : KNOWN_VERSIONS) {
+        if (g_currentVersion == e.version) {
+            g_applyRva = e.rva;
+            g_functional = true;
+            known = true;
+            break;
+        }
     }
-    g_exeDir = slash ? g_exePath.substr(0, slash) : std::wstring();
-    g_pluginDir    = g_exeDir + L"\\plugin\\mn.cc.arae.autotheme";
-    g_iniPath      = g_pluginDir + L"\\autotheme.ini";
-    g_logPath      = g_pluginDir + L"\\autotheme.log";
-    LogA("InitPaths exe=%S", g_exePath.c_str());
+    if (!known) {
+        g_applyRva = DiscoverApplyRva();
+        g_functional = (g_applyRva != 0);
+        g_adapted = g_functional;
+    }
+    LogA("version='%s' rva=0x%llx functional=%d adapted=%d",
+         g_currentVersion.c_str(), (unsigned long long)g_applyRva,
+         (int)g_functional, (int)g_adapted);
 }
 
-static void CreateMainThreadDispatcher(); // defined below
+static std::wstring StatusText() {
+    if (g_functional && !g_adapted)
+        return L"版本匹配（当前 " + ToWide(g_currentVersion) + L"），功能可用";
+    if (g_functional && g_adapted)
+        return L"版本已自动适配（当前 " + ToWide(g_currentVersion) + L"），功能可用";
+    return L"版本不匹配：当前 " + ToWide(g_currentVersion) +
+           L"，支持 " + ToWide(SUPPORTED_VERSION_TEXT) + L"，功能已静默";
+}
+
+static bool InvokeApply(PFN_ApplyTheme fn, const char* name) {
+    // Best-effort: an incorrectly discovered RVA must not kill the host.
+    __try {
+        fn(name);
+        return true;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+static void CallInternalTheme(const std::string& theme) {
+    if (!g_functional || !g_applyRva) return;
+    HMODULE mod = GetModuleHandleW(nullptr);
+    if (!mod) return;
+    auto fn = (PFN_ApplyTheme)((BYTE*)mod + g_applyRva);
+    if (!InvokeApply(fn, theme.empty() ? nullptr : theme.c_str())) {
+        if (g_lockReady) EnterCriticalSection(&g_stateLock);
+        g_functional = false; // disable the feature instead of crashing again
+        if (g_lockReady) LeaveCriticalSection(&g_stateLock);
+        LogA("internal theme call faulted; feature disabled");
+        return;
+    }
+    LogA("internal theme applied: '%s'", theme.c_str());
+}
+
+// ---------------------------------------------------------------------------
+// settings UI
+// ---------------------------------------------------------------------------
+
+static HWND MakeCtrl(HWND parent, const wchar_t* cls, const wchar_t* text,
+                     int id, DWORD style) {
+    HWND h = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
+        0, 0, 0, 0, parent, (HMENU)(INT_PTR)id, nullptr, nullptr);
+    if (h && g_font) SendMessageW(h, WM_SETFONT, (WPARAM)g_font, TRUE);
+    return h;
+}
+
+static void CreateFontForDpi(int dpi) {
+    if (g_font) DeleteObject(g_font);
+    g_font = CreateFontW(-MulDiv(12, dpi, 96), 0, 0, 0, FW_NORMAL,
+        0, 0, 0, DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS,
+        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft YaHei UI");
+    if (!g_font) g_font = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+}
+
+static void LayoutControls(HWND hwnd) {
+    struct Item { HWND h; int x, y, w, ht; };
+    Item items[] = {
+        { GetDlgItem(hwnd, ID_STATIC_INFO),   16,  14, 480, 44 },
+        { g_staticStatus,                     16,  64, 480, 22 },
+        { g_staticNotice,                     16,  92, 480, 58 },
+        { GetDlgItem(hwnd, 2101),             16, 160, 110, 20 }, // label Light
+        { g_comboLight,                      132, 156, 280, 200 },
+        { GetDlgItem(hwnd, 2102),             16, 194, 110, 20 }, // label Dark
+        { g_comboDark,                       132, 190, 280, 200 },
+        { g_chkEnable,                        16, 228, 396, 24 },
+        { g_chkFollow,                        16, 260, 396, 24 },
+        { GetDlgItem(hwnd, 2103),             16, 296, 480, 36 }, // hint
+        { GetDlgItem(hwnd, ID_BTN_SAVE),      16, 342, 110, 30 },
+        { GetDlgItem(hwnd, ID_BTN_CLOSE),    136, 342, 110, 30 },
+    };
+    for (const auto& it : items) {
+        if (it.h) {
+            MoveWindow(it.h, S(it.x), S(it.y), S(it.w), S(it.ht), TRUE);
+            if (g_font) SendMessageW(it.h, WM_SETFONT, (WPARAM)g_font, TRUE);
+        }
+    }
+}
+
+static void FillCombo(HWND combo, const std::string& current) {
+    if (!combo) return;
+    SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+    SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)L"Default");
+
+    std::wstring pattern = g_exeDir + L"\\theme\\*.json";
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::wstring name(fd.cFileName);
+            if (name.size() > 5 &&
+                _wcsicmp(name.c_str() + name.size() - 5, L".json") == 0) {
+                name.resize(name.size() - 5);
+                SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)name.c_str());
+            }
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+
+    std::wstring want = current.empty() ? L"Default" : ToWide(current);
+    if (want.size() > 5 && _wcsicmp(want.c_str() + want.size() - 5, L".json") == 0)
+        want.resize(want.size() - 5);
+    LRESULT idx = SendMessageW(combo, CB_FINDSTRINGEXACT, (WPARAM)-1, (LPARAM)want.c_str());
+    SendMessageW(combo, CB_SETCURSEL, idx < 0 ? 0 : idx, 0);
+}
+
+static std::wstring ComboSelection(HWND combo) {
+    if (!combo) return L"";
+    LRESULT i = SendMessageW(combo, CB_GETCURSEL, 0, 0);
+    if (i == CB_ERR) return L"";
+    wchar_t buf[512] = { 0 };
+    LRESULT n = SendMessageW(combo, CB_GETLBTEXT, (WPARAM)i, (LPARAM)buf);
+    if (n <= 0) return L"";
+    if (wcscmp(buf, L"Default") == 0) return L"";
+    return std::wstring(buf) + L".json";
+}
+
+static void RefreshSettingsUI() {
+    if (!g_settingsWnd) return;
+
+    const wchar_t* infoText =
+        L"本窗口用于设置 Maye Nano 自动跟随 Windows 浅色 / 深色模式切换应用主题。\r\n"
+        L"修改后点击「保存」立即生效，无需重启软件。";
+    SetWindowTextW(GetDlgItem(g_settingsWnd, ID_STATIC_INFO), infoText);
+    SetWindowTextW(g_staticStatus, StatusText().c_str());
+    SetWindowTextW(g_staticNotice, g_notice.c_str());
+    SetWindowTextW(GetDlgItem(g_settingsWnd, 2103),
+        L"也可通过 设置 → 插件 → AutoTheme → 右侧「···」→ 选项 打开本窗口。");
+
+    SendMessageW(g_chkEnable, BM_SETCHECK, g_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(g_chkFollow, BM_SETCHECK, g_openWithSettings ? BST_CHECKED : BST_UNCHECKED, 0);
+    FillCombo(g_comboLight, g_lightTheme);
+    FillCombo(g_comboDark, g_darkTheme);
+}
+
+// Place the window next to / above the app Settings window, or the launcher.
+static void PlaceWindow() {
+    HWND anchor = g_appSettingsHwnd;
+    if (!anchor || !IsWindow(anchor)) {
+        anchor = FindAppWindow(L"_ArWin_MayeNanoLauncher");
+        if (anchor && !IsWindowVisible(anchor)) anchor = nullptr;
+    }
+
+    // Use the same DPI as the application window (the process can be
+    // DPI-virtualized while the app itself is per-monitor aware).
+    if (anchor) {
+        int d = (int)GetDpiForWindow(anchor);
+        if (d >= 96 && d != g_dpi) {
+            g_dpi = d;
+            CreateFontForDpi(g_dpi);
+            LayoutControls(g_settingsWnd);
+        }
+    }
+
+    int w = S(520), h = S(420); // logical size, keep it stable
+
+    int x = 0, y = 0;
+    RECT ar{};
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoW(MonitorFromWindow(anchor ? anchor : g_settingsWnd,
+                                     MONITOR_DEFAULTTONEAREST), &mi);
+    ar = mi.rcWork;
+
+    if (anchor) {
+        RECT a{};
+        GetWindowRect(anchor, &a);
+        x = a.left;
+        y = a.top - h - 12; // just above the Settings window
+        if (y < ar.top) {
+            x = a.right + 12; // otherwise to its right
+            y = a.top;
+        }
+        if (x + w > ar.right) x = a.left - w - 12;
+    } else {
+        x = ar.left + (ar.right - ar.left - w) / 2;
+        y = ar.top + (ar.bottom - ar.top - h) / 2;
+    }
+    if (x < (int)ar.left) x = (int)ar.left;
+    if (y < (int)ar.top) y = (int)ar.top;
+    if (x + w > ar.right) x = ar.right - w;
+    if (y + h > ar.bottom) y = ar.bottom - h;
+
+    bool topMost = false;
+    HANDLE f = CreateFileW((g_exeDir + L"\\cfg.json").c_str(), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f != INVALID_HANDLE_VALUE) {
+        DWORD size = GetFileSize(f, nullptr);
+        std::string text;
+        if (size && size < 4 * 1024 * 1024) {
+            text.resize(size);
+            DWORD read = 0;
+            if (ReadFile(f, &text[0], size, &read, nullptr)) text.resize(read);
+        }
+        CloseHandle(f);
+        topMost = text.find("\"IsTopMost\":true") != std::string::npos;
+    }
+
+    SetWindowTextW(g_settingsWnd, L"Auto Theme 插件设置");
+    SetWindowPos(g_settingsWnd, topMost ? HWND_TOPMOST : HWND_TOP,
+                 x, y, w, h, SWP_SHOWWINDOW);
+    ShowWindow(g_settingsWnd, SW_SHOW);
+    SetForegroundWindow(g_settingsWnd);
+    LogA("show settings at %d,%d %dx%d dpi=%d", x, y, w, h, g_dpi);
+}
+
+static void SaveSettingsUI() {
+    std::wstring light = ComboSelection(g_comboLight);
+    std::wstring dark  = ComboSelection(g_comboDark);
+    bool enabled = SendMessageW(g_chkEnable, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    bool follow  = SendMessageW(g_chkFollow, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+    WritePrivateProfileStringW(L"AutoTheme", L"Light", light.c_str(), g_iniPath.c_str());
+    WritePrivateProfileStringW(L"AutoTheme", L"Dark", dark.c_str(), g_iniPath.c_str());
+    WritePrivateProfileStringW(L"AutoTheme", L"Enable", enabled ? L"1" : L"0", g_iniPath.c_str());
+    WritePrivateProfileStringW(L"AutoTheme", L"OpenWithSettings", follow ? L"1" : L"0", g_iniPath.c_str());
+
+    if (g_lockReady) EnterCriticalSection(&g_stateLock);
+    g_lightTheme = ToUtf8(light);
+    g_darkTheme  = ToUtf8(dark);
+    g_enabled    = enabled;
+    g_openWithSettings = follow;
+    if (g_lockReady) LeaveCriticalSection(&g_stateLock);
+
+    if (g_functional && g_enabled) {
+        std::string desired = IsWindowsLightMode() ? g_lightTheme : g_darkTheme;
+        if (ThemeFileExists(desired) && WriteAppTheme(desired)) CallInternalTheme(desired);
+    }
+    g_notice.clear();
+    RefreshSettingsUI();
+    MessageBoxW(g_settingsWnd, L"配置已保存，立即生效。", L"Auto Theme",
+                MB_OK | MB_ICONINFORMATION);
+}
+
+static LRESULT CALLBACK SettingsWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE:
+        // g_dpi is set once in CreateWindows(); do not change it here.
+        LogA("WM_CREATE dpi=%d", g_dpi);
+        CreateFontForDpi(g_dpi);
+        MakeCtrl(hwnd, L"Static", L"", ID_STATIC_INFO, SS_LEFT);
+        g_staticStatus = MakeCtrl(hwnd, L"Static", L"", ID_STATIC_STATUS, SS_LEFT);
+        g_staticNotice = MakeCtrl(hwnd, L"Static", L"", ID_STATIC_NOTICE, SS_LEFT);
+        MakeCtrl(hwnd, L"Static", L"浅色主题 (Light)", 2101, SS_LEFT);
+        g_comboLight = MakeCtrl(hwnd, L"ComboBox", L"", ID_COMBO_LIGHT,
+                                CBS_DROPDOWNLIST | WS_TABSTOP);
+        MakeCtrl(hwnd, L"Static", L"深色主题 (Dark)", 2102, SS_LEFT);
+        g_comboDark = MakeCtrl(hwnd, L"ComboBox", L"", ID_COMBO_DARK,
+                               CBS_DROPDOWNLIST | WS_TABSTOP);
+        g_chkEnable = MakeCtrl(hwnd, L"Button", L"启用自动切换主题", ID_CHK_ENABLE,
+                               BS_AUTOCHECKBOX | WS_TABSTOP);
+        g_chkFollow = MakeCtrl(hwnd, L"Button", L"打开软件设置窗口时自动弹出本窗口",
+                               ID_CHK_FOLLOW, BS_AUTOCHECKBOX | WS_TABSTOP);
+        MakeCtrl(hwnd, L"Static", L"", 2103, SS_LEFT);
+        MakeCtrl(hwnd, L"Button", L"保存", ID_BTN_SAVE, BS_PUSHBUTTON | WS_TABSTOP);
+        MakeCtrl(hwnd, L"Button", L"关闭", ID_BTN_CLOSE, BS_PUSHBUTTON | WS_TABSTOP);
+        LayoutControls(hwnd);
+        return 0;
+
+    case WM_DPICHANGED: {
+        LogA("WM_DPICHANGED dpiX=%u dpiY=%u", LOWORD(wp), HIWORD(wp));
+        g_dpi = HIWORD(wp);
+        if (g_dpi < 96) g_dpi = 96;
+        CreateFontForDpi(g_dpi);
+        RECT* suggested = (RECT*)lp;
+        // Windows suggests a physical-pixel rect that can shrink the window;
+        // keep our logical size instead.
+        SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
+                     S(520), S(420), SWP_NOZORDER | SWP_NOACTIVATE);
+        LayoutControls(hwnd);
+        RefreshSettingsUI();
+        return 0;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case ID_BTN_SAVE:  SaveSettingsUI(); return 0;
+        case ID_BTN_CLOSE: ShowWindow(hwnd, SW_HIDE); return 0;
+        }
+        return 0;
+    case WM_CLOSE:
+        ShowWindow(hwnd, SW_HIDE);
+        return 0;
+    case WM_DESTROY:
+        if (g_font) { DeleteObject(g_font); g_font = nullptr; }
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static LRESULT CALLBACK DispatcherWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case MN_APPLY_THEME: {
+        auto* theme = reinterpret_cast<std::string*>(lp);
+        if (theme) { CallInternalTheme(*theme); delete theme; }
+        return 0;
+    }
+    case MN_SHOW_UI:   PlaceWindow(); RefreshSettingsUI(); return 0;
+    case MN_HIDE_UI:   if (g_settingsWnd) ShowWindow(g_settingsWnd, SW_HIDE); return 0;
+    case MN_REFRESH_UI: RefreshSettingsUI(); return 0;
+    case MN_DPI_SYNC:
+        if (wp >= 96) {
+            g_dpi = (int)wp;
+            CreateFontForDpi(g_dpi);
+            if (g_settingsWnd) {
+                LayoutControls(g_settingsWnd);
+                RefreshSettingsUI();
+                PlaceWindow();
+            }
+        }
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void CreateWindows() {
+    HMODULE hmod = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCWSTR)&DispatcherWndProc, &hmod);
+
+    WNDCLASSW wc{};
+    wc.lpfnWndProc = DispatcherWndProc;
+    wc.hInstance = hmod;
+    wc.lpszClassName = L"MN_AutoTheme_Msg";
+    RegisterClassW(&wc);
+    g_dispatcher = CreateWindowExW(0, L"MN_AutoTheme_Msg", nullptr, 0,
+        0, 0, 0, 0, HWND_MESSAGE, nullptr, hmod, nullptr);
+
+    WNDCLASSW sc{};
+    sc.lpfnWndProc = SettingsWndProc;
+    sc.hInstance = hmod;
+    sc.lpszClassName = L"MN_AutoTheme_Settings";
+    sc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    sc.style = CS_HREDRAW | CS_VREDRAW;
+    RegisterClassW(&sc);
+
+    int dpi = 0;
+    HWND appWin = FindAppWindow(L"_ArWin_MayeNanoLauncher");
+    if (appWin) dpi = (int)GetDpiForWindow(appWin);
+    if (dpi < 96) dpi = PhysicalDpi();
+    if (dpi < 96) dpi = (int)GetDpiForSystem();
+    if (dpi < 96) dpi = 96;
+    g_dpi = dpi;
+    LogA("create windows dpi=%d appWin=%p", g_dpi, appWin);
+    g_settingsWnd = CreateWindowExW(0, L"MN_AutoTheme_Settings",
+        L"Auto Theme 插件设置", WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, S(520), S(420),
+        nullptr, nullptr, hmod, nullptr);
+
+    LogA("dispatcher=%p settings=%p dpi=%d", g_dispatcher, g_settingsWnd, g_dpi);
+}
+
+static void Post(UINT msg) {
+    if (g_dispatcher) PostMessageW(g_dispatcher, msg, 0, 0);
+}
+
+// ---------------------------------------------------------------------------
+// monitor
+// ---------------------------------------------------------------------------
+
+static void ApplyTheme(bool light) {
+    bool enabled = false, functional = false;
+    std::string desired;
+    if (g_lockReady) EnterCriticalSection(&g_stateLock);
+    enabled = g_enabled;
+    functional = g_functional;
+    desired = light ? g_lightTheme : g_darkTheme;
+    if (g_lockReady) LeaveCriticalSection(&g_stateLock);
+
+    if (!enabled || !functional) return;
+
+    std::string current = ReadAppTheme();
+    if (current == desired) return;
+    if (!ThemeFileExists(desired)) {
+        LogA("theme file missing, skip apply: '%s'", desired.c_str());
+        return;
+    }
+    if (!WriteAppTheme(desired)) return;
+    if (mn::_MN_API_FN && mn::_MN_CTX)
+        (void)mn::Api::SetCfgItem("theme", desired.c_str());
+
+    auto* copy = new std::string(desired);
+    if (!PostMessageW(g_dispatcher, MN_APPLY_THEME, 0, (LPARAM)copy)) delete copy;
+}
+
+static unsigned __stdcall MonitorThread(LPVOID) {
+    int lastPostedDpi = 0;
+    while (g_running.load()) {
+        ApplyTheme(IsWindowsLightMode());
+
+        // The launcher window appears after plugins load. Ask the UI thread
+        // (via our dispatcher) to adopt its DPI; never touch controls here.
+        HWND appWin = FindAppWindow(L"_ArWin_MayeNanoLauncher");
+        if (appWin) {
+            int d = (int)GetDpiForWindow(appWin);
+            if (d >= 96 && d != lastPostedDpi) {
+                lastPostedDpi = d;
+                PostMessageW(g_dispatcher, MN_DPI_SYNC, (WPARAM)d, 0);
+                LogA("dpi sync posted: %d", d);
+            }
+        }
+
+        // Maye Nano re-asserts its own topmost state; keep our popup above it.
+        if (g_settingsWnd && IsWindowVisible(g_settingsWnd)) {
+            LONG_PTR ex = GetWindowLongPtr(g_settingsWnd, GWL_EXSTYLE);
+            HWND z = (ex & WS_EX_TOPMOST) ? HWND_TOPMOST : HWND_TOP;
+            SetWindowPos(g_settingsWnd, z, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+
+        bool nowOpen = IsAppSettingsVisible();
+        if (nowOpen && !g_settingsOpen && g_openWithSettings) Post(MN_SHOW_UI);
+        if (!nowOpen && g_settingsOpen && g_settingsWnd && IsWindowVisible(g_settingsWnd))
+            Post(MN_HIDE_UI);
+        g_settingsOpen = nowOpen;
+
+        HKEY h = nullptr;
+        const wchar_t* sub = L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, sub, 0, KEY_READ, &h) == ERROR_SUCCESS) {
+            HANDLE ev = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+            if (ev) {
+                RegNotifyChangeKeyValue(h, FALSE, REG_NOTIFY_CHANGE_LAST_SET, ev, TRUE);
+                WaitForSingleObject(ev, 300);
+                CloseHandle(ev);
+            } else {
+                Sleep(300);
+            }
+            RegCloseKey(h);
+        } else {
+            Sleep(300);
+        }
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// plugin entry points
+// ---------------------------------------------------------------------------
+
+static mn::SEARCH_RESULT_LIST EmptySearch(const char*, const char*, const char*) {
+    return { nullptr, 0 };
+}
+static void EmptySearchFree() {}
 
 static void StartMonitor() {
     InitPaths();
-    LogA("StartMonitor called");
-    if (g_running.exchange(true)) { LogA("already running"); return; }
+    if (g_running.exchange(true)) return;
 
+    g_targetPid = GetCurrentProcessId();
+    if (!g_lockReady) {
+        InitializeCriticalSection(&g_stateLock);
+        g_lockReady = true;
+    }
     LoadIni();
-    if (g_useInternal) CreateMainThreadDispatcher();
-    if (!g_enabled) { g_running = false; LogA("disabled by ini"); return; }
-    LogA("ini: light=%S dark=%S autoRestart=%d enabled=%d",
-         g_lightTheme.c_str(), g_darkTheme.c_str(), (int)g_autoRestart, (int)g_enabled);
+    InitThemeFunction();
+    CreateWindows();
+
+    bool firstRun = (GetFileAttributesW(g_firstRunFlag.c_str()) == INVALID_FILE_ATTRIBUTES);
+    if (firstRun) {
+        HANDLE f = CreateFileW(g_firstRunFlag.c_str(), GENERIC_WRITE, 0, nullptr,
+                               CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+        g_notice += L"首次安装：请确认下面的主题选择，然后点击「保存」。\r\n"
+                    L"之后仅在主题文件丢失或打开软件设置时才会弹出。";
+    }
+
+    if (!g_functional) {
+        if (!g_notice.empty()) g_notice += L"\r\n";
+        g_notice += L"版本不匹配，自动主题功能已静默：请更新插件或禁用本插件。";
+    }
+
+    std::wstring missing = CheckThemeFiles();
+    if (!missing.empty()) {
+        if (!g_notice.empty()) g_notice += L"\r\n";
+        g_notice += missing;
+    }
+
+    if (!g_notice.empty()) {
+        Post(MN_REFRESH_UI);
+        Post(MN_SHOW_UI);
+    }
+    if (!g_enabled || !g_functional) return;
 
     g_thread = (HANDLE)_beginthreadex(nullptr, 0, MonitorThread, nullptr, 0, nullptr);
-    LogA("monitor thread=%p", g_thread);
 }
 
 static void StopMonitor() {
     g_running = false;
     if (g_thread) {
-        WaitForSingleObject(g_thread, 1500);
+        WaitForSingleObject(g_thread, 1000);
         CloseHandle(g_thread);
         g_thread = nullptr;
     }
+    if (g_lockReady) {
+        DeleteCriticalSection(&g_stateLock);
+        g_lockReady = false;
+    }
 }
 
-// ---------- plugin entry points ----------
-
 mn::_MN_RESULT _MN_Notify(unsigned int msg, void* p1, void* /*p2*/) {
-    LogA("_MN_Notify msg=%u", msg);
     switch (msg) {
     case mn::code::notify::Load:
     case mn::code::notify::Enable:
         StartMonitor();
         break;
-
     case mn::code::notify::Disable:
     case mn::code::notify::Destroy:
         StopMonitor();
         break;
-
     case mn::code::notify::Search_Init: {
-        // The host only keeps Search-type plugins alive. Register a keyword
-        // that is never used in practice so this stays invisible to users.
-        LogA("Search_Init");
         auto info = (mn::_SEARCH_INFO*)p1;
         if (!info) return 0;
         info->name = "Auto Theme";
@@ -481,13 +948,8 @@ mn::_MN_RESULT _MN_Notify(unsigned int msg, void* p1, void* /*p2*/) {
         info->fn_free = EmptySearchFree;
         return True;
     }
-
     case mn::code::notify::Open_Option:
-        MessageBoxW(nullptr,
-            L"Auto Theme follows Windows light/dark mode.\n\n"
-            L"Edit autotheme.ini next to this plugin to choose the light and "
-            L"dark theme files.",
-            L"Auto Theme", MB_OK | MB_ICONINFORMATION);
+        Post(MN_SHOW_UI);
         break;
     }
     return 0;
@@ -502,7 +964,7 @@ __MN_PLUGIN_IN__ mn::_PLUGIN_INFO _MN_Info(void* fn, void* ctx) {
         .sdk_version = MN_SDK_VERSION,
         .name        = "Auto Theme",
         .description = "Auto-switch Maye Nano theme with Windows light/dark mode",
-        .version     = "1.0.0.0",
+        .version     = "2.2.0.0",
         .author      = "guyuexuan",
         .email       = "",
         .homepage    = "",
