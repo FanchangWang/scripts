@@ -24,6 +24,10 @@
 			"path": "android/xueqiuCookie"
 		},
 		{
+			"name": "cpp MayeNano-AutoTheme 自动深浅色主题插件",
+			"path": "cpp/MayeNano-AutoTheme"
+		},
+		{
 			"name": "nodejs daily-calendar-puzzle 日历拼版",
 			"path": "nodejs/daily-calendar-puzzle"
 		},
