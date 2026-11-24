@@ -60,6 +60,7 @@ Convenience only. The authoritative copy of everything below is `config_facts` i
 - **TShark/capinfos** are Wireshark 4.6.10 without Npcap: offline pcap parsing only, live capture remains Reqable.
 - **Kuna 1.1003** is installed, but REA 6.10.1 expects 1.1000 and reports `unsupported_host` on Windows. That warning is expected.
 - **Ghidra 12.2** requires Java 25; `rea-mcp.cmd` overrides `JAVA_HOME` to the active JDK 25 even though the process `JAVA_HOME` is JDK 17.
+- **Visual Studio 18 Community** is at `C:\Program Files\Microsoft Visual Studio\18\Community` with MSVC 14.52.37025, MSBuild, CMake 4.3.1 and Ninja 1.13.2. `cl`/`link` are not on PATH; call `vcvars64.bat` first. Discovery CLI: `C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe`.
 
 ## Maintenance
 

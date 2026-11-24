@@ -63,7 +63,9 @@
     "rea_note": "REA MCP is disabled by default. Connect/disconnect temporarily through the OpenCode experimental MCP API. Do not run rea-agents setup --client; skill-only updates are safe.",
     "java_home_note": "Process JAVA_HOME is C:\\Program Files\\Java\\jdk-17, but rea-mcp.cmd overrides JAVA_HOME to the winget-installed Microsoft JDK 25 at C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot, required by Ghidra 12.2.",
     "java_alias_note": "Prefer non-versioned Java junctions when a path is needed: C:\\Program Files\\Java\\latest\\jdk-21, C:\\Program Files\\Java\\latest\\jre-1.8, C:\\Program Files (x86)\\Java\\latest\\jre-1.8, and C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\java8path. They track the installed patch version automatically; JDK 17 and Zulu 11 paths are already version-free.",
-    "encoding_note": "rea-mcp.cmd is GBK/CP936 with CRLF and no BOM. This toolchain JSON/Markdown is UTF-8 no BOM."
+    "encoding_note": "rea-mcp.cmd is GBK/CP936 with CRLF and no BOM. This toolchain JSON/Markdown is UTF-8 no BOM.",
+    "visual_studio_note": "Visual Studio 18 Community (18.12.12412.261) is installed at C:\\Program Files\\Microsoft Visual Studio\\18\\Community. It bundles MSVC 14.52.37025 (cl 19.52.37029), MSBuild, CMake 4.3.1-msvc1 and Ninja 1.13.2. cl/link/lib/dumpbin are NOT on PATH: call VC\\Auxiliary\\Build\\vcvars64.bat or Common7\\Tools\\VsDevCmd.bat first. vswhere.exe lives under C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer.",
+    "msvc_version_note": "MSVC tool versions are recorded from file version metadata because cl/link/MSBuild print localized banners on this host. Use absolute paths from the inventory."
   },
   "config_facts": [
     {
@@ -195,6 +197,22 @@
       "scope": "user",
       "usage": "When a command or script needs a Java home, prefer these stable junctions instead of versioned directories such as jdk-21.0.13.0.2 or jre1.8.0_513. All four were verified to resolve to the current installs (21.0.13.0.2 and 1.8.0_513).",
       "notes": "JDK 17 (C:\\Program Files\\Java\\jdk-17) and Zulu 11 JRE are already version-free. Java 25 has no junction; the only installed JDK 25 is the winget Microsoft install at C:\\Program Files\\Microsoft\\jdk-25.0.5.102-hotspot. The Java 8 JDK and the earlier code-tools JDK 25 ZIP copy were both removed in 2026-11."
+    },
+    {
+      "id": "visual-studio",
+      "title": "Visual Studio 18 Community",
+      "value": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community",
+      "scope": "user",
+      "usage": "IDE + bundled MSVC/MSBuild/CMake/Ninja. Launch devenv.exe by absolute path; use vswhere.exe to locate installs. No VS tool is on the default PATH.",
+      "notes": "devenv 18.12.12412.261; MSBuild 18.12.3.55912; inventory ids: visual-studio, vswhere, msbuild, msvc-*, msvc-env, vs-cmake, vs-ninja."
+    },
+    {
+      "id": "msvc-environment",
+      "title": "MSVC build environment",
+      "value": "VC\\Auxiliary\\Build\\vcvars64.bat (or Common7\\Tools\\VsDevCmd.bat)",
+      "scope": "manual convention",
+      "usage": "Before invoking cl.exe / link.exe / lib.exe / dumpbin.exe from a plain shell, initialize the x64 environment by calling vcvars64.bat in that shell.",
+      "notes": "MSVC toolchain version 14.52.37025; cl 19.52.37029. Versions are stored from file metadata because command banners are localized."
     }
   ]
 }
