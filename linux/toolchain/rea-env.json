@@ -1,0 +1,19 @@
+{
+  "wrapper_path": "~/.local/bin/rea-mcp",
+  "expected_launch": "~/code-tools/nodejs/bin/npx -y rea-agents@latest mcp",
+  "notes": "Read-only validation config for the generated Linux REA wrapper. Only FREE tools are mapped; paid IDA/JEB/Hopper are intentionally absent. Kuna is Windows-only per REA docs and is skipped.",
+  "env_map": [
+    { "env": "JAVA_HOME", "tool": "java25", "kind": "ancestor" },
+    { "env": "GHIDRA_INSTALL_DIR", "tool": "ghidra", "kind": "ancestor" },
+    { "env": "REA_OBJDUMP_COMMAND", "tool": "objdump", "kind": "exact" },
+    { "env": "REA_RIZIN_COMMAND", "tool": "rizin", "kind": "exact" },
+    { "env": "REA_WABT_BIN_DIRECTORY", "tool": "wabt", "kind": "ancestor" },
+    { "env": "REA_TSHARK_COMMAND", "tool": "tshark", "kind": "exact" },
+    { "env": "REA_CAPINFOS_COMMAND", "tool": "capinfos", "kind": "exact" },
+    { "env": "REA_JADX_MCP_JAR", "tool": "jadx-headless-mcp", "kind": "exact" },
+    { "env": "REA_APKTOOL_COMMAND", "tool": "apktool", "kind": "exact" },
+    { "env": "REA_ADB_PATH", "tool": "adb", "kind": "exact" },
+    { "env": "REA_ILSPY_CMD_PATH", "tool": "ilspycmd", "kind": "exact" },
+    { "env": "REA_BROWSER_EXECUTABLE", "tool": "chrome", "kind": "exact" }
+  ]
+}

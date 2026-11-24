@@ -56,7 +56,7 @@
       "raw.githubusercontent.com"
     ],
     "github_release_raw_accelerator": "https://github.allproxy.dpdns.org",
-    "github_accelerator_rule": "For GitHub release assets and raw.githubusercontent.com URLs, replace the original host with the accelerator host. Keep normal github.com for GitHub API and git clone unless the user says otherwise.",
+    "github_accelerator_rule": "For GitHub release assets and raw.githubusercontent.com URLs, prefix the FULL original https:// URL with the accelerator host: https://github.allproxy.dpdns.org/https://github.com/OWNER/REPO/... (verified 2026-11). Do NOT merely replace the host with owner/repo path — that returns 404/502. Keep normal github.com for GitHub API and git clone unless the user says otherwise.",
     "windows_shell_note": "On Windows automation, prefer .cmd launchers for node-family tools: npm.cmd, npx.cmd, pnpm.cmd, bun.cmd. PowerShell .ps1 shims work interactively but some external launchers only handle .cmd.",
     "git_bash_note": "Get-Command bash resolves to C:\\WINDOWS\\system32\\bash.exe (WSL/Windows launcher), not Git Bash. Use C:\\Program Files\\Git\\bin\\bash.exe for Git Bash.",
     "tshark_note": "TShark was installed without Npcap. It can parse offline pcap/pcapng files but cannot do native live capture. Use Reqable for live traffic.",
@@ -121,8 +121,8 @@
       "title": "GitHub release/raw accelerator",
       "value": "https://github.allproxy.dpdns.org",
       "scope": "manual convention",
-      "usage": "Use this host for GitHub release assets and raw.githubusercontent.com content. Example: rewrite https://github.com/OWNER/REPO/releases/... to https://github.allproxy.dpdns.org/OWNER/REPO/releases/...",
-      "notes": "Do not use this accelerator for github.com API calls or git clone unless the user explicitly asks."
+      "usage": "Use this host for GitHub release assets and raw.githubusercontent.com content. Example: https://github.com/OWNER/REPO/releases/download/v1/a.zip becomes https://github.allproxy.dpdns.org/https://github.com/OWNER/REPO/releases/download/v1/a.zip. The full original URL is the PATH after the accelerator host.",
+      "notes": "Host-only replacement (accelerator/OWNER/REPO/...) returns 404/502 and is WRONG. Verified correct on 2026-11-25 for Ghidra release downloads. Do not use this accelerator for github.com API calls or git clone unless the user explicitly asks."
     },
     {
       "id": "general-proxy",

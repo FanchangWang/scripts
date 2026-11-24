@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "scope": "user-global-linux",
+  "generated_by": "manual; merged by toolchain.sh refresh",
+  "skill_id": "local-toolchain-linux",
+  "generated_skill_dir": "~/.agents/skills/local-toolchain-linux",
+  "project_dirs": {
+    "own_projects": "~/code",
+    "third_party_sources": "~/code-ref",
+    "portable_tools": "~/code-tools"
+  },
+  "path_roots": [
+    "~/.local/bin",
+    "~/code-tools/nodejs/bin",
+    "~/code-tools/sysroot/bin",
+    "~/code-tools/android-sdk/platform-tools",
+    "~/code-tools/android-sdk/cmdline-tools/latest/bin",
+    "~/code-tools/jdk-17/bin",
+    "~/code-tools/jdk-25/bin"
+  ],
+  "env_facts": {
+    "JAVA_HOME": "apt openjdk-17-jdk (system default)",
+    "JDK17_HOME": "derived from `readlink -f $(command -v java)`",
+    "JDK25_HOME": "~/code-tools/jdk-25 (Adoptium, for Ghidra/REA)",
+    "ANDROID_HOME": "~/code-tools/android-sdk",
+    "ANDROID_SDK_ROOT": "~/code-tools/android-sdk",
+    "ANDROID_NDK_HOME": "~/code-tools/android-sdk/ndk/30.0.16248370",
+    "ANDROID_NDK_ROOT": "~/code-tools/android-sdk/ndk/30.0.16248370",
+    "NPM_CONFIG_PREFIX": "~/.local"
+  },
+  "conventions": [
+    "Python is uv-managed; use `uv run python ...`, `uvx <tool>`, `uv tool install <tool>`.",
+    "Node.js uses the latest LTS (26.x) from the official tarball; npm prefix is ~/.local, registry is registry.npmmirror.com.",
+    "Two JDKs: JAVA_HOME from apt openjdk-17-jdk for Android 4.4 builds; JDK25_HOME=~/code-tools/jdk-25 (java25 wrapper) for Ghidra/REA.",
+    "Android SDK includes API 19 (Android 4.4) and API 37 (Android 17), build-tools 19.1/35/37, NDK 29/30.",
+    "Android SDK lives in ~/code-tools/android-sdk; adb is under platform-tools.",
+    "REA MCP is launched by ~/.local/bin/rea-mcp via `npx -y rea-agents@latest mcp`; never run `rea-agents setup --client`.",
+    "All installs are user-space; no sudo required after `apt update/upgrade`.",
+    "Proxy 192.168.31.50:7890 is used on-demand only by setup.sh download helpers (or explicit `proxy` wrapper); never exported from ~/.bashrc. LAN and direct downloads bypass it."
+  ],
+  "config_facts": [
+    {
+      "id": "python-uv",
+      "title": "Python is uv-managed",
+      "value": "uv run python script.py | uvx <tool> | uv tool install <tool>",
+      "scope": "user",
+      "usage": "Prefer uv-managed CPython 3.12. A system python3 exists from apt, but project work should use `uv run` so dependencies come from uv.lock.",
+      "notes": "Python 3.12.16, uv 0.13.9."
+    },
+    {
+      "id": "npm-registry",
+      "title": "npm registry mirror",
+      "value": "https://registry.npmmirror.com/",
+      "scope": "user",
+      "usage": "npm install / npx use the npmmirror registry; no proxy is configured in npm itself.",
+      "notes": "npm 11.20.0 (bundled with Node 26.13.1)."
+    },
+    {
+      "id": "pnpm-registry",
+      "title": "pnpm registry mirror",
+      "value": "https://registry.npmmirror.com/",
+      "scope": "user",
+      "usage": "pnpm uses the same npmmirror registry as npm.",
+      "notes": "pnpm 12.23.0 installed globally into ~/.local/bin."
+    },
+    {
+      "id": "github-accelerator",
+      "title": "GitHub release/raw accelerator",
+      "value": "https://github.allproxy.dpdns.org",
+      "scope": "manual convention",
+      "usage": "For GitHub release assets and raw.githubusercontent.com URLs, prefix the FULL original https:// URL with the accelerator host: https://github.allproxy.dpdns.org/https://github.com/OWNER/REPO/releases/... Host-only replacement returns 404/502.",
+      "notes": "Verified 2026-11-25 for Ghidra release download. Keep normal github.com for GitHub API and git clone unless the user says otherwise."
+    },
+    {
+      "id": "general-proxy",
+      "title": "On-demand HTTP(S) proxy",
+      "value": "http://192.168.31.50:7890",
+      "scope": "manual convention",
+      "usage": "Use only for specific blocked downloads via download helpers in setup.sh / rea-setup.sh. Never export globally from ~/.bashrc; LAN and direct traffic must bypass it.",
+      "notes": "GitHub API and small files use the proxy; PyPI and Android SDK downloads are direct (proxy causes TLS errors / bad_record_mac)."
+    },
+    {
+      "id": "git-proxy-and-identity",
+      "title": "Git identity and helpers",
+      "value": "user.name=FanchangWang; user.email=2651919937@qq.com; gh is the GitHub credential helper",
+      "scope": "global",
+      "usage": "Use gh for GitHub auth/API; it also backs git credentials. core.autocrlf is intentionally unset on Linux.",
+      "notes": "Configure with `git config --global user.name FanchangWang` and `git config --global user.email 2651919937@qq.com` if missing."
+    },
+    {
+      "id": "gh-cli",
+      "title": "GitHub CLI",
+      "value": "~/.local/bin/gh",
+      "scope": "user",
+      "usage": "Use gh for GitHub auth/API operations. `gh auth login` has been completed; it is also the git credential helper for github.com.",
+      "notes": "gh 2.105.0. For non-Git tools that need the proxy, set it per command; gh does not read git http.proxy for API calls."
+    },
+    {
+      "id": "install-order",
+      "title": "Install preference",
+      "value": "apt (sudo, user-run) -> official tarball / GitHub release via accelerator -> user-space tools",
+      "scope": "manual convention",
+      "usage": "Prefer apt for system packages (run by user), then official release archives downloaded through the accelerator, then uv/npm user-space installs.",
+      "notes": "No sudo is available to the agent; apt commands are handed to the user."
+    },
+    {
+      "id": "rea-wrapper",
+      "title": "REA MCP single source of truth",
+      "value": "~/.local/bin/rea-mcp",
+      "scope": "user",
+      "usage": "Clients point to this absolute wrapper path with no environment/env block. REA is disabled by default; connect only when needed. Never run `rea-agents setup --client`; skill-only updates are safe.",
+      "notes": "Launch: ~/code-tools/nodejs/bin/npx -y rea-agents@latest mcp. Only free tools are configured; IDA/JEB/Hopper are paid and skipped; Kuna is Windows-only per REA docs."
+    }
+  ],
+  "tool_ids": [
+    "python3", "uv", "node", "npm", "npx", "pnpm", "git", "gh", "opencode",
+    "java", "javac", "java17", "java25", "adb", "sdkmanager", "apktool", "jadx",
+    "androguard", "ghidra", "jadx-headless-mcp", "rizin", "tshark", "capinfos", "wabt", "ilspycmd", "chrome", "rea-mcp", "jq", "curl", "wget", "unzip", "zip", "tar"
+  ]
+}

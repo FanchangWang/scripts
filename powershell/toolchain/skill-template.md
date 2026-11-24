@@ -50,7 +50,7 @@ Convenience only. The authoritative copy of everything below is `config_facts` i
 - **npm / npx / pnpm** use `https://registry.npmmirror.com/`. npm and npx are 12.2.3; pnpm is 12.21.0.
 - **Go** uses `GOPROXY=https://goproxy.cn,direct`.
 - **Proxy** is `http://192.168.31.50:7890` for GitHub, Google, and other blocked hosts. Git already has `http.proxy` and `https.proxy` set in `C:\Users\guyue\.gitconfig`; other tools may need `HTTP_PROXY`/`HTTPS_PROXY` in their own process.
-- **GitHub release and raw URLs** use the accelerator `https://github.allproxy.dpdns.org`. Keep normal `github.com` for API and git clone unless the user says otherwise.
+- **GitHub release and raw URLs** use the accelerator `https://github.allproxy.dpdns.org/<FULL https://github.com/... URL>` - the full original URL is the path, e.g. `https://github.allproxy.dpdns.org/https://github.com/OWNER/REPO/releases/download/v1/a.zip`. Host-only replacement returns 404/502. Keep normal `github.com` for API and git clone unless the user says otherwise.
 - **Git** is 2.56.1 with `core.autocrlf=true`, VS Code as editor, and `gh.exe` as the GitHub credential helper.
 - **gh CLI** is 2.105.0.
 - **Android**: SDK root is `C:\Users\guyue\AppData\Local\Android\Sdk`; Android Studio is `...\AppData\Local\Programs\Android Studio\bin\studio64.exe`; Android CLI is `...\Sdk\cmdline-tools\latest\bin\android.exe` (1.1.16919734) and replaces deprecated `sdkmanager`. The SDK also has NDK 29/30, emulator 37.3.10.0, build-tools, platforms, and system images. REA only uses `platform-tools\adb.exe`.
