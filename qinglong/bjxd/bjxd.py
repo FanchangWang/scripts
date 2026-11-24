@@ -24,8 +24,10 @@ import os
 import random
 import re
 import time
+import json
+import base64
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
@@ -224,7 +226,7 @@ class BeiJingHyundai:
     def get_user_info(self) -> Dict[str, Any]:
         """获取用户信息，失败返回空字典"""
         response = self.make_request("GET", self.API_USER_INFO)
-        self.log(f"get_user_info API response ——> {response}")
+        print(f"get_user_info API response ——> {response}")
 
         if response.get("code") == 0:
             data = response.get("data", {})
@@ -247,7 +249,7 @@ class BeiJingHyundai:
         """显示积分详情，包括总积分、今日变动和最近记录"""
         params = {"page_no": "1", "page_size": "10"}
         response = self.make_request("GET", self.API_MY_SCORE, params=params)
-        self.log(f"get_score_details API response ——> {response}")
+        print(f"get_score_details API response ——> {response}")
 
         if response.get("code") != 0:
             return
@@ -266,7 +268,10 @@ class BeiJingHyundai:
             for record in today_records
         )
         today_score_str = f"+{today_score}" if today_score > 0 else str(today_score)
-        self.log(f"🎉 总积分: {data.get('score', 0)} | 今日积分变动: {today_score_str}")
+        self.log(
+            f"🎉 总积分: {data.get('score', 0)} | 今日积分变动: {today_score_str} | "
+            f"当月到期: {data.get('current_month', 0)} | 半年内到期: {data.get('half_year', 0)}"
+        )
 
         if today_records:
             self.log("今日积分记录：")
@@ -282,7 +287,7 @@ class BeiJingHyundai:
     def check_task_status(self, user: Dict[str, Any]) -> None:
         """检查任务状态"""
         response = self.make_request("GET", self.API_TASK_LIST)
-        self.log(f"get_task_status API response ——> {response}")
+        print(f"get_task_status API response ——> {response}")
 
         if response.get("code") != 0:
             self.log(f'❌ 获取任务列表失败: {response.get("msg", "未知错误")}')
@@ -310,7 +315,7 @@ class BeiJingHyundai:
 
         for attempt in range(max_attempts):
             response = self.make_request("GET", self.API_SIGN_LIST)
-            self.log(f"get_sign_info (attempt {attempt + 1}) API response ——> {response}")
+            print(f"get_sign_info (attempt {attempt + 1}) API response ——> {response}")
 
             if response.get("code") != 0:
                 self.log(f'❌ 获取签到列表失败: {response.get("msg", "未知错误")}')
@@ -354,7 +359,7 @@ class BeiJingHyundai:
             "ctu_token": None,
         }
         response = self.make_request("POST", self.API_SIGN_SUBMIT, json=json_data)
-        self.log(f"submit_sign API response ——> {response}")
+        print(f"submit_sign API response ——> {response}")
 
         if response.get("code") == 0:
             self.log(f"✅ 签到成功 | 积分 +{score}")
@@ -367,7 +372,7 @@ class BeiJingHyundai:
         """获取文章列表，随机挑最多 3 篇"""
         params = {"page_no": "1", "page_size": "20", "type_hid": ""}
         response = self.make_request("GET", self.API_ARTICLE_LIST, params=params)
-        self.log(f"get_article_list API response ——> {response}")
+        print(f"get_article_list API response ——> {response}")
 
         if response.get("code") == 0:
             data = response.get("data", {})
@@ -400,7 +405,7 @@ class BeiJingHyundai:
         response = self.make_request(
             "POST", self.API_ARTICLE_SCORE_SUBMIT, json=json_data
         )
-        self.log(f"submit_article_score API response ——> {response}")
+        print(f"submit_article_score API response ——> {response}")
 
         if response.get("code") == 0:
             score = response.get("data", {}).get("score", 0)
@@ -414,7 +419,7 @@ class BeiJingHyundai:
         """执行答题任务"""
         params = {"date": datetime.now().strftime("%Y%m%d")}
         response = self.make_request("GET", self.API_QUESTION_INFO, params=params)
-        self.log(f"get_question_info API response ——> {response}")
+        print(f"get_question_info API response ——> {response}")
         if response.get("code") != 0:
             self.log(f'❌ 获取问题失败: {response.get("msg", "未知错误")}')
             return
@@ -472,6 +477,43 @@ class BeiJingHyundai:
         # 形如 "D.功率103kw，扭矩211N·m" -> 取首位字母
         match = re.match(r"^([A-D])[\.．、:：\s]", raw)
         return match.group(1) if match else raw
+
+    # -- JWT 解析（与 Android 版 User.parseJwt* 行为一致）--------------------
+
+    @staticmethod
+    def _parse_jwt_payload(token: str) -> Dict[str, Any]:
+        """解析 JWT payload（URL-safe base64，无 padding）；解析失败返回空字典"""
+        try:
+            parts = token.split(".")
+            if len(parts) < 2:
+                return {}
+            padded = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = base64.urlsafe_b64decode(padded.encode("ascii"))
+            data = json.loads(payload.decode("utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _jwt_exp(token: str) -> int:
+        """JWT 中的 exp（秒级 Unix 时间戳），解析失败返回 0"""
+        value = BeiJingHyundai._parse_jwt_payload(token).get("exp", 0)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _jwt_hid(token: str) -> str:
+        """JWT 中的 user_hid，解析失败返回空串"""
+        return str(BeiJingHyundai._parse_jwt_payload(token).get("user_hid") or "")
+
+    @staticmethod
+    def _format_expire(exp: int) -> str:
+        """把秒级时间戳格式化为可读时间；0 返回未知"""
+        if not exp:
+            return "未知"
+        return datetime.fromtimestamp(exp).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
     def _build_search_query(question: str) -> str:
@@ -539,7 +581,7 @@ class BeiJingHyundai:
                 json=json_data,
                 timeout=60,
             )
-            self.log(f"通用 AI API response status ——> {response.status_code}")
+            print(f"通用 AI API response status ——> {response.status_code}")
             response.raise_for_status()
             response_json = response.json()
 
@@ -618,7 +660,7 @@ class BeiJingHyundai:
         """从已答题账号获取答案"""
         params = {"date": datetime.now().strftime("%Y%m%d")}
         response = self.make_request("GET", self.API_QUESTION_INFO, params=params)
-        self.log(f"get_answered_question API response ——> {response}")
+        print(f"get_answered_question API response ——> {response}")
         if response.get("code") != 0:
             self.log(f'❌ 从已答题账号获取问题失败: {response.get("msg", "未知错误")}')
             return
@@ -644,7 +686,7 @@ class BeiJingHyundai:
             json_data["share_user_hid"] = share_user_hid
 
         response = self.make_request("POST", self.API_QUESTION_SUBMIT, json=json_data)
-        self.log(f"submit_question_answer API response ——> {response}")
+        print(f"submit_question_answer API response ——> {response}")
 
         if response.get("code") == 0:
             data = response.get("data", {})
@@ -728,8 +770,12 @@ class BeiJingHyundai:
         self.log("⚠️ 未设置 AI_API_KEY/AI_REQUEST_URL/AI_MODEL，答题将走随机或历史答案")
 
     @staticmethod
-    def _load_tokens() -> List[str]:
-        """读取并去重 token，保持环境变量顺序"""
+    def _load_tokens() -> Tuple[List[Tuple[str, int, str]], List[Tuple[str, int, str]]]:
+        """读取并去重 token，保持环境变量顺序。
+
+        返回 (有效列表, 过期列表)，元素为 (token, exp秒, hid)。
+        解析 JWT 可提前排除已过期 token；解析失败（exp=0）保留，走接口实测。
+        """
         tokens: List[str] = []
         seen = set()
 
@@ -753,7 +799,17 @@ class BeiJingHyundai:
                 seen.add(token)
             index += 1
 
-        return tokens
+        valid: List[Tuple[str, int, str]] = []
+        expired: List[Tuple[str, int, str]] = []
+        now = int(time.time())
+        for token in tokens:
+            exp = BeiJingHyundai._jwt_exp(token)
+            hid = BeiJingHyundai._jwt_hid(token)
+            if exp and now > exp:
+                expired.append((token, exp, hid))
+            else:
+                valid.append((token, exp, hid))
+        return valid, expired
 
     # -- 主流程 -------------------------------------------------------------
 
@@ -767,13 +823,18 @@ class BeiJingHyundai:
         except ImportError:
             self.log("⚠️ 缺少 dotenv 库, 青龙环境请忽略, 本地运行请安装此库")
 
-        tokens = self._load_tokens()
+        tokens, expired_tokens = self._load_tokens()
+        for _token, exp, hid in expired_tokens:
+            self.log(
+                f"⏰ 账号已过期，跳过（JWT hid={hid or '未知'}, "
+                f"exp={self._format_expire(exp)}）"
+            )
         if not tokens:
-            self.log("⛔️ 未获取到 tokens, 请检查环境变量 BJXD 或 BJXD1/BJXD2/... 是否填写")
+            self.log("⛔️ 未获取到有效 token, 请检查环境变量 BJXD 或 BJXD1/BJXD2/...（或 token 已全部过期）")
             self.push_notification()
             return
 
-        self.log(f"👻 共获取到用户 token {len(tokens)} 个")
+        self.log(f"👻 共获取到用户 token {len(tokens)} 个（已排除 JWT 中已过期的）")
         self._load_ai_config()
         self._load_search_config()
 
@@ -786,11 +847,23 @@ class BeiJingHyundai:
                 self.log("❌ 预设答案格式错误，仅支持 A/B/C/D")
 
         self.log("获取用户信息")
-        for token in tokens:
+        for token, exp, jwt_hid in tokens:
             self.token = token
+            # JWT 解析出的 hid 先存着：即使接口失败也能确认 token 对应谁；
+            # 仍调用接口获取昵称/手机号，同时验证 token 在有效期内确实可用。
             user = self.get_user_info()
             if user:
+                user["token_expire"] = exp
+                if not user.get("hid") and jwt_hid:
+                    user["hid"] = jwt_hid
                 self.users.append(user)
+                self.log(
+                    f"✅ 账号有效: {user.get('nickname', '未知')} "
+                    f"({user.get('phone', '未知')}, hid={user.get('hid', '')}), "
+                    f"Token过期: {self._format_expire(exp)}"
+                )
+            else:
+                self.log(f"⚠️ token 获取账号信息失败（JWT hid={jwt_hid or '未知'}, exp={self._format_expire(exp)}），已跳过")
             time.sleep(random.randint(3, 5))
 
         if not self.users:
@@ -822,7 +895,8 @@ class BeiJingHyundai:
                 f"手机号: {user.get('phone', '未知')} | "
                 f"积分: {user.get('score_value', 0)}\n"
                 f"🆔 用户hid: {user.get('hid', '')}\n"
-                f"🆔 分享hid: {user.get('share_user_hid', '')}"
+                f"🆔 分享hid: {user.get('share_user_hid', '')}\n"
+                f"⏰ Token过期: {self._format_expire(user.get('token_expire', 0))}"
             )
 
             self.check_task_status(user)
@@ -870,7 +944,8 @@ class BeiJingHyundai:
             self.log(f"\n======== ▷ 第 {index} 个账号 ◁ ========")
             self.log(
                 f"👻 用户名: {user.get('nickname', '未知')} | "
-                f"手机号: {user.get('phone', '未知')}"
+                f"手机号: {user.get('phone', '未知')} | "
+                f"⏰ Token过期: {self._format_expire(user.get('token_expire', 0))}"
             )
             self.get_score_details()
 
