@@ -2,8 +2,8 @@
 name = "stock-save"
 version = "0.2.0"
 description = "股票分钟线数据保存 & Web 展示服务"
+readme = "README.md"
 requires-python = ">=3.12"
-
 dependencies = [
     "fastapi>=0.143.0",
     "uvicorn>=0.54.0",
@@ -12,16 +12,15 @@ dependencies = [
     "python-dotenv>=1.2.4",
 ]
 
-[build-system]
-requires = ["uv_build>=0.13.0,<0.14.0"]
-build-backend = "uv_build"
-
-[tool.uv.build-backend]
-module-name = "stock_save"
-module-root = "src"
-
 [project.scripts]
 cli = "stock_save.cli:main"
 web = "stock_save.web.app:run"
 web-dev = "stock_save.web.app:run_dev"
 
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "stock_save"
+module-root = "src"

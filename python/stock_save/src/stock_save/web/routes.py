@@ -100,7 +100,19 @@ async def cookie_page(request: Request):
 
 @router.get("/chart", response_class=HTMLResponse)
 async def chart_page(request: Request):
-    return templates.TemplateResponse(request, "chart.html.jinja")
+    initial_mode = request.query_params.get("mode", "trend")
+    if initial_mode not in ("trend", "compare"):
+        initial_mode = "trend"
+    try:
+        initial_weeks = int(request.query_params.get("weeks", "1"))
+    except ValueError:
+        initial_weeks = 1
+    initial_weeks = min(4, max(1, initial_weeks))
+    return templates.TemplateResponse(
+        request,
+        "chart.html.jinja",
+        {"initial_mode": initial_mode, "initial_weeks": initial_weeks},
+    )
 
 
 @router.get("/api/stock-data")

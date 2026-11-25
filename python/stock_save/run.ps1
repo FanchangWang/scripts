@@ -42,7 +42,7 @@ Set-Location -LiteralPath $PSScriptRoot
 
 if (-not (HasImage)) {
     Info "未检测到镜像，直接编译并启动..."
-    docker compose -f $COMPOSE_FILE build --no-cache
+    docker compose -f $COMPOSE_FILE build
     docker compose -f $COMPOSE_FILE up -d
 } elseif (Read-YesNo "是否重新编译镜像?") {
     if (IsRunning) {
@@ -50,7 +50,7 @@ if (-not (HasImage)) {
         docker compose -f $COMPOSE_FILE down
     }
     Info "开始编译镜像..."
-    docker compose -f $COMPOSE_FILE build --no-cache
+    docker compose -f $COMPOSE_FILE build
     Info "启动 Compose..."
     docker compose -f $COMPOSE_FILE up -d
 } else {

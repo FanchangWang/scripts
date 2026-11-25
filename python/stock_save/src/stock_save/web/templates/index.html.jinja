@@ -1,45 +1,93 @@
 {% extends "base.html.jinja" %}
-{% block title %}主页 - 股票数据服务{% endblock %}
+{% block title %}总览 - 股票数据服务{% endblock %}
 {% block extra_css %}
-.entry-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 20px;
-    margin-bottom: 32px;
+.page-head { margin-bottom: 24px; }
+.page-head h1 { font-size: clamp(23px, 5vw, 30px); line-height: 1.25; margin: 0 0 8px; }
+.page-head p { color: var(--text-dim); font-size: 15px; max-width: 62ch; margin: 0; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.card-link {
+    display: flex; flex-direction: column; align-items: flex-start;
+    min-height: 176px; padding: 22px 24px;
+    background: var(--surface); border: 1px solid var(--border-soft);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    text-decoration: none; color: var(--text);
+    transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
 }
-.entry-card {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    padding: 40px 28px; text-decoration: none; color: inherit;
-    transition: transform 0.2s; min-height: 180px;
+.card-link:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: 0 12px 30px rgba(20, 27, 38, .14); }
+.card-link__tag { align-self: flex-end; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--text-faint); }
+.card-link__icon {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; flex: none; margin: 6px 0 auto;
+    color: var(--accent);
 }
-.entry-card:hover { transform: translateY(-2px); }
-.entry-icon { font-size: 40px; margin-bottom: 12px; }
+.card-link__icon svg { display: block; width: 36px; height: 36px; }
+.card-link h2 { font-size: 17px; margin: 14px 0 5px; font-weight: 600; }
+.card-link p { color: var(--text-dim); font-size: 14px; margin: 0; line-height: 1.6; }
+.panel {
+    background: var(--surface); border: 1px solid var(--border-soft);
+    border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow);
+}
+.panel h2 { font-size: 16px; margin: 0 0 6px; font-weight: 600; }
+.panel__sub { color: var(--text-faint); font-size: 12px; margin-bottom: 12px; font-family: var(--mono); }
+.file-list { list-style: none; padding: 0; margin: 0; }
+.file-list li {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 2px; border-bottom: 1px solid var(--border-soft); font-size: 15px;
+}
+.file-list li:last-child { border-bottom: 0; }
+.file-list .date { font-family: var(--mono); color: var(--text); letter-spacing: .02em; }
+.file-list .wd { color: var(--accent); font-size: 13px; font-weight: 600; }
+.empty { color: var(--text-dim); font-size: 15px; }
+@media (max-width: 900px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .cards { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .card-link:hover { transform: none; } }
 {% endblock %}
 {% block content %}
-<div class="entry-grid">
-    <a href="/cookie" class="entry-card">
-        <div class="entry-icon">🍪</div>
-        <h2 style="color:#2c3e50;margin-bottom:8px;">Cookie 管理</h2>
-        <p style="color:#666;font-size:14px;">配置雪球 Cookie，测试有效性</p>
-    </a>
-    <a href="/chart" class="entry-card">
-        <div class="entry-icon">📈</div>
-        <h2 style="color:#2c3e50;margin-bottom:8px;">数据曲线</h2>
-        <p style="color:#666;font-size:14px;">查看历史交易数据折线图</p>
-    </a>
+<div class="page-head rise">
+    <div class="eyebrow">Market Data / Terminal</div>
+    <h1>分钟线数据台</h1>
+    <p>定时抓取并归档个股分钟线，按交易日留存，支持多周曲线对照与连续趋势查看。</p>
 </div>
-
-<div style="background:white;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);padding:24px;">
-    <h2 style="color:#2c3e50;margin-bottom:16px;font-size:18px;">最近数据文件</h2>
+<section class="cards rise" style="animation-delay: .06s">
+    <a class="card-link" href="/cookie">
+        <span class="card-link__tag">01 / AUTH</span>
+        <span class="card-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="8" cy="14.5" r="1"/><circle cx="12" cy="14.5" r="1"/></svg>
+        </span>
+        <h2>Cookie 管理</h2>
+        <p>配置并验证雪球访问凭证，失效时在此更新。</p>
+    </a>
+    <a class="card-link" href="/chart?mode=trend">
+        <span class="card-link__tag">02 / TREND</span>
+        <span class="card-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-5 3 3 5-7"/></svg>
+        </span>
+        <h2>连续趋势</h2>
+        <p>把所选周数按时间串成一条线，看总走势。</p>
+    </a>
+    <a class="card-link" href="/chart?mode=compare">
+        <span class="card-link__tag">03 / COMPARE</span>
+        <span class="card-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M6 16l4-3 3 2 5-6"/><path d="M6 11l4-2 3 3 5-5" opacity=".55"/></svg>
+        </span>
+        <h2>多轴对比</h2>
+        <p>本周 / 上周 / 更早各画一条线，逐周比对。</p>
+    </a>
+</section>
+<section class="panel rise" style="animation-delay: .12s">
+    <h2>最近归档</h2>
+    <div class="panel__sub">/ latest files</div>
     {% if recent_files %}
-    <ul style="list-style:none;">
+    <ul class="file-list">
         {% for file in recent_files %}
-        <li style="padding:8px 0;border-bottom:1px solid #eee;color:#555;font-size:14px;">📄 {{ file.weekday }} {{ file.date }}.json</li>
+        <li>
+            <span class="date">{{ file.date }}.json</span>
+            <span class="wd">{{ file.weekday }}</span>
+        </li>
         {% endfor %}
     </ul>
     {% else %}
-    <p style="color:#999;font-size:14px;">暂无数据文件</p>
+    <p class="empty">暂无数据文件，定时任务落盘后会自动出现在这里。</p>
     {% endif %}
-</div>
+</section>
 {% endblock %}

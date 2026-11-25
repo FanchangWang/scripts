@@ -2,31 +2,86 @@
 {% block title %}数据曲线 - 股票数据服务{% endblock %}
 {% block extra_css %}
 html, body { height: 100%; overflow: hidden; }
-.container { max-width: none; width: 100%; padding: 0; height: calc(100vh - 48px); }
-.chart-wrapper {
-    width: 100%; height: 100%; padding: 8px;
-    position: relative;
+body { display: flex; flex-direction: column; }
+.app-nav { flex: 0 0 auto; }
+.container {
+    flex: 1 1 auto; min-height: 0; max-width: none;
+    width: 100%; margin: 0; padding: 0; overflow: hidden;
 }
+.chart-wrapper { width: 100%; height: 100%; padding: 12px clamp(8px, 2vw, 18px); display: flex; flex-direction: column; }
+.chart-head {
+    flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap;
+    gap: 10px 16px; padding: 2px 2px 10px;
+}
+.chart-head .legend-title {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-dim); font-weight: 600;
+}
+.seg {
+    display: inline-flex; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px; gap: 2px;
+}
+.seg button {
+    flex: none; padding: 5px 13px; font-size: 13px; font-weight: 600;
+    border: 0; border-radius: 999px; background: transparent;
+    color: var(--text-dim); cursor: pointer; font-family: inherit;
+    transition: background .18s ease, color .18s ease;
+}
+.seg button:hover { color: var(--text); background: var(--surface); }
+.seg button.active { background: var(--accent); color: #ffffff; }
+.field-inline { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); }
+.hint-line { font-size: 12px; color: var(--text-dim); }
+.canvas-holder { flex: 1 1 auto; min-height: 0; position: relative; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); }
 canvas { display: block; width: 100% !important; height: 100% !important; }
 .loading, .error {
     position: absolute; inset: 0; display: flex;
     align-items: center; justify-content: center;
-    font-size: 18px; color: #666;
+    font-size: 16px; color: var(--text-dim);
 }
-.error { color: #e74c3c; flex-direction: column; gap: 12px; }
+.error { flex-direction: column; gap: 14px; color: #8a1c1c; }
 .error button {
-    padding: 8px 20px; background: #3498db; color: white;
-    border: none; border-radius: 4px; cursor: pointer; font-size: 14px;
+    flex: none; padding: 8px 20px; background: var(--accent); color: #ffffff;
+    border: 0; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+}
+@media (max-width: 600px) {
+    .chart-wrapper { padding: 8px 6px; }
+    .chart-head { gap: 8px 10px; padding-bottom: 8px; }
+    .seg button { padding: 5px 10px; font-size: 12px; }
+    .hint-line { display: none; }
 }
 {% endblock %}
 {% block content %}
+<h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;">数据曲线</h1>
 <div class="chart-wrapper">
-    <div class="loading" id="loading">加载数据中...</div>
-    <div class="error" id="error" style="display:none;">
-        <span id="errorMsg"></span>
-        <button onclick="fetchData()">重试</button>
+    <div class="chart-head">
+        <span class="legend-title">View</span>
+        <div class="seg" role="group" aria-label="展示模式">
+            <button id="modeTrend" class="{{ 'active' if initial_mode == 'trend' else '' }}" onclick="setMode('trend')">连续趋势</button>
+            <button id="modeCompare" class="{{ 'active' if initial_mode == 'compare' else '' }}" onclick="setMode('compare')">多轴对比</button>
+        </div>
+        <span id="weeksControl" class="field-inline" style="{{ 'display:none' if initial_mode == 'compare' else '' }}">
+            <span>周数</span>
+            <div class="seg" id="weeksSeg" role="group" aria-label="选择周数">
+                <button data-weeks="1" class="{{ 'active' if initial_weeks == 1 else '' }}" onclick="setWeeks(1)">1</button>
+                <button data-weeks="2" class="{{ 'active' if initial_weeks == 2 else '' }}" onclick="setWeeks(2)">2</button>
+                <button data-weeks="3" class="{{ 'active' if initial_weeks == 3 else '' }}" onclick="setWeeks(3)">3</button>
+                <button data-weeks="4" class="{{ 'active' if initial_weeks == 4 else '' }}" onclick="setWeeks(4)">4</button>
+            </div>
+        </span>
+        <span id="seriesControl" class="field-inline" style="display:none">
+            <span>显示</span>
+            <div class="seg" id="seriesSeg" role="group" aria-label="选择显示的周"></div>
+        </span>
+        <span class="hint-line" id="modeHint" style="{{ 'display:none' if initial_mode == 'compare' else '' }}">连续趋势：把所选周数按时间串成一条线，便于看总走势</span>
     </div>
-    <canvas id="stockChart" style="display:none;"></canvas>
+    <div class="canvas-holder">
+        <div class="loading" id="loading">加载数据中…</div>
+        <div class="error" id="error" style="display:none;">
+            <span id="errorMsg"></span>
+            <button onclick="fetchData()">重试</button>
+        </div>
+        <canvas id="stockChart" style="display:none;" role="img" aria-label="股票分钟线走势图"></canvas>
+    </div>
 </div>
 {% endblock %}
 {% block extra_js %}
@@ -34,8 +89,8 @@ canvas { display: block; width: 100% !important; height: 100% !important; }
 <script src="/static/hammerjs@2.0.8.min.js"></script>
 <script src="/static/chartjs-plugin-zoom.min.js"></script>
 <script>
-const COLORS = ['#e74c3c','#f39c12','#9b59b6','#3498db','#1abc9c','#e67e22','#34495e'];
-const WEEKDAYS = ['周一','周二','周三','周四','周五'];
+const COLORS = ['#b45309', '#2563eb', '#7c3aed', '#15803d', '#be123c', '#a16207', '#475569'];
+const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五'];
 
 const TRADING_SLOTS = [];
 for (let d = 0; d < 5; d++) {
@@ -45,42 +100,109 @@ for (let d = 0; d < 5; d++) {
             if (h === 11 && m > 30) continue;
             if (h === 12) continue;
             if (h === 15 && m > 0) continue;
-            TRADING_SLOTS.push(`${WEEKDAYS[d]} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+            TRADING_SLOTS.push(`${WEEKDAYS[d]} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
         }
     }
 }
 
 let chart = null;
+let allData = null;
+let mode = '{{ initial_mode }}';
+let weekCount = {{ initial_weeks }};
 const loadingEl = document.getElementById('loading');
 const errorEl = document.getElementById('error');
 const errorMsgEl = document.getElementById('errorMsg');
 const canvasEl = document.getElementById('stockChart');
+const weeksControl = document.getElementById('weeksControl');
+const seriesControl = document.getElementById('seriesControl');
+const seriesSeg = document.getElementById('seriesSeg');
 
-document.addEventListener('DOMContentLoaded', fetchData);
+// 初始模式/周数由服务端根据 ?mode=&weeks= 渲染，这里直接取数即可
+syncUrl();
+fetchData();
+
+// 让 URL 跟随当前视图（模式 / 周数），便于分享与刷新
+function syncUrl() {
+    var params = new URLSearchParams();
+    params.set('mode', mode);
+    if (mode === 'trend') params.set('weeks', String(weekCount));
+    history.replaceState(null, '', location.pathname + '?' + params.toString());
+}
+
+// 用 Chart.js 自带 API 切换数据集可见性
+// 关键：读写都用 isDatasetVisible（渲染真实状态），不要用 getDataVisibility
+// —— 该版本里两者脱节，用 getDataVisibility 会导致「取消后无法再选中」
+function toggleSeries(index) {
+    if (!chart) return;
+    chart.setDatasetVisibility(index, !chart.isDatasetVisible(index));
+    chart.update();
+    syncSeriesButtons();
+}
+
+function syncSeriesButtons() {
+    if (!chart) return;
+    seriesSeg.querySelectorAll('button').forEach(function (b) {
+        var i = parseInt(b.getAttribute('data-index'), 10);
+        b.classList.toggle('active', chart.isDatasetVisible(i));
+    });
+}
+
+function buildSeriesButtons() {
+    seriesSeg.innerHTML = '';
+    if (!allData || mode !== 'compare') return;
+    allData.weeks.forEach(function (week, i) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = week.week_display;
+        btn.setAttribute('data-index', String(i));
+        btn.setAttribute('aria-pressed', 'true');
+        // 点击时从 dataset 读取索引，避免闭包捕获到循环结束后的 i
+        btn.onclick = function () { toggleSeries(parseInt(btn.getAttribute('data-index'), 10)); };
+        seriesSeg.appendChild(btn);
+    });
+    syncSeriesButtons();
+}
 
 async function fetchData() {
     loadingEl.style.display = 'flex';
     errorEl.style.display = 'none';
     canvasEl.style.display = 'none';
-
     try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 15000);
         const resp = await fetch('/api/stock-data', { signal: controller.signal });
         clearTimeout(timer);
         if (!resp.ok) throw new Error('网络请求失败');
-        const allData = await resp.json();
-        drawChart(prepareChartData(allData));
+        allData = await resp.json();
+        redraw();
     } catch (err) {
         console.error('获取数据失败:', err);
         showError(err.name === 'AbortError' ? '请求超时，请检查网络连接' : '获取数据失败，请检查服务器是否运行');
     }
 }
 
-function prepareChartData(allData) {
-    const datasets = allData.weeks.map((week, i) => {
+function setMode(next) {
+    mode = next;
+    document.getElementById('modeTrend').classList.toggle('active', next === 'trend');
+    document.getElementById('modeCompare').classList.toggle('active', next === 'compare');
+    document.getElementById('modeHint').style.display = next === 'compare' ? 'none' : '';
+    syncUrl();
+    refreshNav();
+    redraw();
+}
+
+// 切换模式后让顶部菜单高亮跟随
+function refreshNav() {
+    document.querySelectorAll('.nav-link').forEach(function (a) {
+        var wanted = a.getAttribute('data-mode');
+        if (wanted) a.classList.toggle('active', wanted === mode);
+    });
+}
+
+function prepareCompareData(data) {
+    const datasets = data.weeks.map((week, i) => {
         const color = COLORS[i % COLORS.length];
-        const data = TRADING_SLOTS.map(time => {
+        const values = TRADING_SLOTS.map(time => {
             for (const day of week.days) {
                 const item = day.items.find(it => it.time === time);
                 if (item) return item.price;
@@ -88,28 +210,64 @@ function prepareChartData(allData) {
             return null;
         });
         return {
-            label: week.week_display,
-            data,
-            borderColor: color,
-            backgroundColor: color + '33',
-            tension: 0.1,
-            pointRadius: 0,
-            pointHoverRadius: 5,
-            pointHoverBackgroundColor: color,
-            pointHoverBorderColor: '#fff',
-            pointHoverBorderWidth: 2,
+            label: week.week_display, data: values,
+            borderColor: color, backgroundColor: color + '18',
+            tension: 0.1, pointRadius: 0, pointHoverRadius: 5,
+            pointHoverBackgroundColor: color, pointHoverBorderColor: '#ffffff', pointHoverBorderWidth: 2,
         };
     });
     return { labels: TRADING_SLOTS, datasets };
+}
+
+function prepareTrendData(data, weekCount) {
+    const weeks = data.weeks.slice(0, weekCount).slice().reverse();
+    const points = [];
+    for (const week of weeks) {
+        for (const day of week.days) {
+            for (const item of day.items) {
+                const time = (item.time || '').split(' ')[1] || item.time || '';
+                points.push({ label: `${day.date} ${time}`.trim(), value: item.price, ts: item.timestamp || 0 });
+            }
+        }
+    }
+    points.sort((a, b) => a.ts - b.ts);
+    const color = COLORS[0];
+    return {
+        labels: points.map(p => p.label),
+        datasets: [{
+            label: `${weekCount}周连续趋势`, data: points.map(p => p.value),
+            borderColor: color, backgroundColor: color + '12',
+            tension: 0.1, pointRadius: 0, pointHoverRadius: 4,
+            pointHoverBackgroundColor: color, pointHoverBorderColor: '#ffffff', pointHoverBorderWidth: 2,
+        }],
+    };
+}
+
+function setWeeks(n) {
+    weekCount = n;
+    document.querySelectorAll('#weeksSeg button').forEach(function (b) {
+        b.classList.toggle('active', parseInt(b.getAttribute('data-weeks'), 10) === n);
+    });
+    syncUrl();
+    redraw();
+}
+
+function redraw() {
+    if (!allData) return;
+    weeksControl.style.display = mode === 'compare' ? 'none' : 'inline-flex';
+    seriesControl.style.display = mode === 'compare' ? 'inline-flex' : 'none';
+    const chartData = mode === 'compare' ? prepareCompareData(allData) : prepareTrendData(allData, weekCount);
+    drawChart(chartData);
+    if (mode === 'compare') buildSeriesButtons();
 }
 
 function drawChart(chartData) {
     loadingEl.style.display = 'none';
     errorEl.style.display = 'none';
     canvasEl.style.display = 'block';
-
     if (chart) chart.destroy();
 
+    const small = window.innerWidth < 600;
     chart = new Chart(canvasEl.getContext('2d'), {
         type: 'line',
         data: chartData,
@@ -119,10 +277,10 @@ function drawChart(chartData) {
             interaction: { mode: 'index', intersect: false },
             plugins: {
                 tooltip: {
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    padding: 12,
-                    titleFont: { size: 14 },
-                    bodyFont: { size: 13 },
+                    backgroundColor: '#ffffff',
+                    titleColor: '#141b26', bodyColor: '#141b26',
+                    borderColor: '#cbd3de', borderWidth: 1,
+                    padding: 12, titleFont: { size: 13 }, bodyFont: { size: 12 },
                     callbacks: {
                         label(ctx) {
                             const label = ctx.dataset.label || '';
@@ -130,20 +288,39 @@ function drawChart(chartData) {
                         }
                     }
                 },
-                legend: { position: 'bottom', labels: { usePointStyle: true, padding: 12, boxWidth: 12, font: { size: 11 } } },
+                legend: {
+                    position: 'bottom',
+                    labels: { usePointStyle: true, padding: 14, boxWidth: 8, color: '#3f4b5e', font: { size: small ? 11 : 12 } },
+                    onClick: function (e, item) {
+                        // Chart.js legend item 用 datasetIndex（不是 index）
+                        var idx = item.datasetIndex;
+                        chart.setDatasetVisibility(idx, !chart.isDatasetVisible(idx));
+                        chart.update();
+                        syncSeriesButtons();
+                    }
+                },
                 zoom: {
                     zoom: {
-                        wheel: { enabled: true },
-                        pinch: { enabled: true },
-                        mode: 'x',
+                        wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x',
                         limits: { x: { min: 'original', max: 'original' }, y: { min: 0.1, max: 10 } }
                     },
                     pan: { enabled: true, mode: 'x', threshold: 5 }
                 }
             },
             scales: {
-                x: { title: { display: true, text: '交易时间' }, grid: { display: false } },
-                y: { title: { display: true, text: '价格 (元)' }, beginAtZero: false, grid: { color: 'rgba(0,0,0,0.05)' } }
+                x: {
+                    title: { display: !small, text: '交易时间', color: '#566173' },
+                    grid: { display: false },
+                    ticks: { color: '#3f4b5e', maxTicksLimit: small ? 6 : 12, font: { size: 11 } },
+                    border: { color: '#cbd3de' }
+                },
+                y: {
+                    title: { display: !small, text: '价格 (元)', color: '#566173' },
+                    beginAtZero: false,
+                    grid: { color: 'rgba(63, 75, 94, .10)' },
+                    ticks: { color: '#3f4b5e', font: { size: 11 } },
+                    border: { color: '#cbd3de' }
+                }
             }
         }
     });

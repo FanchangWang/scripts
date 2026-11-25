@@ -1,91 +1,113 @@
 {% extends "base.html.jinja" %}
 {% block title %}Cookie 管理 - 股票数据服务{% endblock %}
+{% block extra_css %}
+.page-head { margin-bottom: 22px; }
+.page-head h1 { font-size: clamp(23px, 5vw, 29px); margin: 0; }
+.card {
+    background: var(--surface); border: 1px solid var(--border-soft);
+    border-radius: var(--radius); padding: clamp(20px, 4vw, 30px);
+    max-width: 540px; box-shadow: var(--shadow);
+}
+.field { margin-bottom: 18px; }
+.field label {
+    display: block; font-size: 13px; color: var(--text-dim);
+    margin-bottom: 8px; font-family: var(--mono); font-weight: 600;
+}
+.field input {
+    width: 100%; padding: 11px 13px; font-size: 14px; font-family: var(--mono);
+    color: var(--text); background: #fbfcfe;
+    border: 1px solid #7d8a9c; border-radius: var(--radius-sm);
+    transition: border-color .18s ease, box-shadow .18s ease;
+}
+.field input::placeholder { color: var(--text-faint); }
+.field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.actions { display: flex; gap: 10px; margin-top: 6px; }
+button {
+    flex: 1; padding: 11px; font-size: 14px; font-weight: 600;
+    border-radius: var(--radius-sm); cursor: pointer;
+    border: 1px solid transparent; transition: filter .18s ease, transform .1s ease;
+    font-family: inherit;
+}
+button:active { transform: translateY(1px); }
+button:hover { filter: brightness(1.06); }
+button:disabled { opacity: .55; cursor: wait; }
+.btn-primary { background: var(--accent); color: #ffffff; }
+.btn-ghost { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+#result {
+    margin-top: 18px; padding: 12px 14px; border-radius: var(--radius-sm);
+    font-size: 14px; display: none; line-height: 1.65;
+}
+.ok { background: #e7f6ec; color: #14532d; border: 1px solid #86cfa1; }
+.bad { background: #fdeaea; color: #8a1c1c; border: 1px solid #e59a9a; }
+.hint { color: var(--text-dim); font-size: 13px; margin: 16px 0 0; line-height: 1.7; }
+.hint code { font-family: var(--mono); color: var(--text); background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+@media (max-width: 420px) { .actions { flex-direction: column; } }
+{% endblock %}
 {% block content %}
-<div style="background:white;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);padding:28px;max-width:520px;margin:0 auto;">
-    <h2 style="color:#2c3e50;margin-bottom:20px;">🍪 雪球 Cookie 配置</h2>
-
-    <div style="margin-bottom:16px;">
-        <label style="display:block;margin-bottom:6px;font-size:14px;color:#555;">xq_a_token</label>
-        <input id="xq_a_token" type="text" placeholder="输入 xq_a_token" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:14px;">
-    </div>
-
-    <div style="margin-bottom:24px;">
-        <label style="display:block;margin-bottom:6px;font-size:14px;color:#555;">u</label>
-        <input id="u" type="text" placeholder="输入 u" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:14px;">
-    </div>
-
-    <div style="display:flex;gap:12px;">
-        <button id="saveBtn" style="flex:1;padding:10px;background:#3498db;color:white;border:none;border-radius:4px;font-size:15px;cursor:pointer;" onclick="saveCookie()">保存</button>
-        <button id="testBtn" style="flex:1;padding:10px;background:#2ecc71;color:white;border:none;border-radius:4px;font-size:15px;cursor:pointer;" onclick="testCookie()">测试</button>
-    </div>
-
-    <div id="result" style="margin-top:16px;padding:12px;border-radius:4px;display:none;"></div>
+<div class="page-head rise">
+    <div class="eyebrow">Settings / Credentials</div>
+    <h1>Cookie 管理</h1>
 </div>
-
+<div class="card rise" style="animation-delay: .06s">
+    <div class="field">
+        <label for="xq_a_token">xq_a_token</label>
+        <input id="xq_a_token" type="text" placeholder="粘贴 xq_a_token" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+        <label for="u">u</label>
+        <input id="u" type="text" placeholder="粘贴 u" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="actions">
+        <button class="btn-primary" id="saveBtn" onclick="saveCookie()">保存</button>
+        <button class="btn-ghost" id="testBtn" onclick="testCookie()">测试连接</button>
+    </div>
+    <div id="result" role="status" aria-live="polite"></div>
+    <p class="hint">凭证仅保存在服务端 <code>config/cookie.json</code>，不会写入仓库。测试通过且当天数据未落盘时，会自动保存一次。</p>
+</div>
+{% endblock %}
+{% block extra_js %}
 <script>
 function getVal(id) { return document.getElementById(id).value.trim(); }
-
-async function saveCookie() {
-    const body = {};
-    const xq = getVal('xq_a_token');
-    const u = getVal('u');
-    if (xq) body.xq_a_token = xq;
-    if (u) body.u = u;
-
-    const r = await fetch('/api/cookie', {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(body),
-    });
-    const d = await r.json();
+function showResult(ok, msg) {
     const el = document.getElementById('result');
     el.style.display = 'block';
-    el.style.background = '#d4edda';
-    el.style.color = '#155724';
-    el.textContent = '保存成功';
+    el.className = ok ? 'ok' : 'bad';
+    el.textContent = msg;
 }
-
+async function saveCookie() {
+    const body = {};
+    const xq = getVal('xq_a_token'), u = getVal('u');
+    if (xq) body.xq_a_token = xq;
+    if (u) body.u = u;
+    try {
+        const r = await fetch('/api/cookie', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        showResult(true, '✓ 已保存');
+    } catch (e) { showResult(false, '保存失败：' + e.message); }
+}
 async function testCookie() {
     const btn = document.getElementById('testBtn');
-    btn.disabled = true;
-    btn.textContent = '测试中...';
+    btn.disabled = true; btn.textContent = '测试中…';
     try {
         const body = {};
-        const xq = getVal('xq_a_token');
-        const u = getVal('u');
+        const xq = getVal('xq_a_token'), u = getVal('u');
         if (xq) body.xq_a_token = xq;
         if (u) body.u = u;
-
         const r = await fetch('/api/cookie/test', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
         const d = await r.json();
-        const el = document.getElementById('result');
-        el.style.display = 'block';
         if (d.valid) {
-            el.style.background = '#d4edda';
-            el.style.color = '#155724';
-            let msg = '✅ 有效，最新数据日期：' + d.date;
-            if (d.save_status) {
-                msg += ' | 保存状态：' + d.save_status;
-            }
-            el.textContent = msg;
+            let msg = '✓ 有效 · 最新数据 ' + d.date;
+            if (d.save_status) msg += ' · ' + d.save_status;
+            showResult(true, msg);
         } else {
-            el.style.background = '#f8d7da';
-            el.style.color = '#721c24';
-            el.textContent = '❌ ' + (d.error || '无效');
+            showResult(false, '✗ ' + (d.error || '无效'));
         }
-    } catch (e) {
-        const el = document.getElementById('result');
-        el.style.display = 'block';
-        el.style.background = '#f8d7da';
-        el.style.color = '#721c24';
-        el.textContent = '❌ 网络错误: ' + e.message;
-    }
-    btn.disabled = false;
-    btn.textContent = '测试';
+    } catch (e) { showResult(false, '网络错误：' + e.message); }
+    finally { btn.disabled = false; btn.textContent = '测试连接'; }
 }
 </script>
 {% endblock %}

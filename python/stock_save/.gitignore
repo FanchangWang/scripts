@@ -5,3 +5,5 @@ log/
 __pycache__/
 *.pyc
 .venv/
+# uv.lock 按 uv 官方建议入库，保证各平台构建可复现（覆盖 python/ 语言级忽略）
+!uv.lock

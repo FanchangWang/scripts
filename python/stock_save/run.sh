@@ -42,7 +42,7 @@ cd "$(dirname "$0")"
 
 if ! has_image; then
     info "未检测到镜像，直接编译并启动..."
-    docker compose -f "$COMPOSE_FILE" build --no-cache
+    docker compose -f "$COMPOSE_FILE" build
     docker compose -f "$COMPOSE_FILE" up -d
 elif read_yesno "是否重新编译镜像?"; then
     if is_running; then
@@ -50,7 +50,7 @@ elif read_yesno "是否重新编译镜像?"; then
         docker compose -f "$COMPOSE_FILE" down
     fi
     info "开始编译镜像..."
-    docker compose -f "$COMPOSE_FILE" build --no-cache
+    docker compose -f "$COMPOSE_FILE" build
     info "启动 Compose..."
     docker compose -f "$COMPOSE_FILE" up -d
 else
