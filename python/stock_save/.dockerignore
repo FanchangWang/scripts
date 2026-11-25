@@ -1,0 +1,13 @@
+# 构建上下文瘦身 + 避免把本机残留打进镜像
+.venv/
+**/__pycache__/
+*.pyc
+.git/
+.gitignore
+data/
+log/
+config/
+.env
+.env.example
+run.ps1
+run.sh
