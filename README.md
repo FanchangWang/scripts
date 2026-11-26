@@ -14,6 +14,7 @@
 | [powershell](powershell/) | Windows 系统维护 PowerShell 脚本 | 3 | [README](powershell/README.md) |
 | [python](python/) | Python 工具 / 脚本 / Web 服务（uv 管理） | 11 | [README](python/README.md) |
 | [qinglong](qinglong/) | 青龙面板定时脚本 | 5 | [README](qinglong/README.md) |
+| [skill](skill/) | 给 AI agent 用的 skill 源码与发布脚本 | 3 | [README](skill/README.md) |
 
 ## 项目索引
 
@@ -86,6 +87,14 @@
 | [iptv_cc](qinglong/iptv_cc/) | Python / requests | iptv.cc 签到、自动回帖、查积分 | [README](qinglong/iptv_cc/README.md) |
 | [oshwhub](qinglong/oshwhub/) | Python / requests + PyQt5 | 开源平台签到 / 7 天与月度好礼；另附抓 Cookie 的 GUI 工具 | [README](qinglong/oshwhub/README.md) |
 | [stock](qinglong/stock/) | Python / requests | 股票实时监控，检查交易事件并计算持仓盈亏 | [README](qinglong/stock/README.md) |
+
+### [skill](skill/)
+
+| 目录 | 技术栈 | 一句话用途 | 文档 |
+|---|---|---|---|
+| [ui-android-compose](skill/ui-android-compose/) | Markdown skill / Jetpack Compose | Android Compose UI 设计，遵循 Google 最新 Material 3 规范，两阶段流程 + 反 AI slop 自检 | [README](skill/ui-android-compose/README.md) |
+| [audit-android-compose](skill/audit-android-compose/) | Markdown skill / Kotlin | Android Kotlin/Compose 项目全工程审计，证据驱动，分域清单 + 工作流 + 报告模板 | [README](skill/audit-android-compose/README.md) |
+| [ui-web-windows](skill/ui-web-windows/) | Markdown skill / CSS | Windows Web 应用 UI 设计，深浅色双轨主题、Fluent 风格、对比度与无障碍自检 | [README](skill/ui-web-windows/README.md) |
 
 ## 约定
 

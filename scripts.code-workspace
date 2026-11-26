@@ -118,6 +118,18 @@
 		{
 			"name": "api wx_pusher 微信推送接口",
 			"path": "api/wx_pusher"
+		},
+		{
+			"name": "skill ui-android-compose Compose UI 设计规范",
+			"path": "skill/ui-android-compose"
+		},
+		{
+			"name": "skill audit-android-compose Android 项目审计",
+			"path": "skill/audit-android-compose"
+		},
+		{
+			"name": "skill ui-web-windows Windows Web UI 深浅色",
+			"path": "skill/ui-web-windows"
 		}
 	],
 	"settings": {

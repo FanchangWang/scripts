@@ -1,0 +1,87 @@
+# ui-android-compose slop-blocking detekt rules. Merge into the project's existing config/detekt/detekt.yml.
+# 插件版本、Gradle DSL 与任务名以项目实际配置为准；不要把这里的示例版本当成硬性要求。
+# Active bans: {{ACTIVE_BANS}}
+#
+# Apply via app/build.gradle.kts:
+#
+# plugins {
+#   id("io.gitlab.arturbosch.detekt") version "<project version>"
+# }
+# detekt {
+#   config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+#   buildUponDefaultConfig = true
+#   allRules = false
+# }
+# tasks.named("check") { dependsOn("detekt") }
+
+style:
+  ForbiddenComment:
+    active: true
+    # [Ban 14] Buzzwords in comments
+    comments:
+      - reason: "Banned buzzword. Replace with a concrete property from your anchor recipe."
+        value: "(?i)\\b(clean|modern|professional|sleek|premium|beautiful|elegant)\\b"
+
+  MagicNumber:
+    active: true
+    # Encourage spacing/dp/sp values to come from theme tokens.
+    excludes:
+      - '**/ui/theme/**'
+      - '**/test/**'
+      - '**/androidTest/**'
+    ignoreNumbers: ['-1', '0', '1', '2']
+
+  ForbiddenMethodCall:
+    active: true
+    methods:
+      # [Ban 5] Glassmorphism — Modifier.blur on cards
+      - reason: "Banned: Modifier.blur() on regular surfaces. Allowed only on bottom-sheet scrims if anchor explicitly permits."
+        value: "androidx.compose.ui.draw.blur"
+
+# ─── Custom regex rules (style/ForbiddenPattern via detekt-rules-style) ─────
+# Detekt does not natively support custom regex rules without a plugin. Use
+# a Konsist test (https://github.com/LemonAppDev/konsist) OR a Gradle Verify
+# task with a `grep` step on src/**/*.kt for the patterns below.
+#
+# Example Gradle task to wire into `check`:
+#
+#   tasks.register("detektDesign") {
+#     group = "verification"
+#     dependsOn("detekt")
+#     doLast {
+#       val srcDirs = fileTree("src/main/java") + fileTree("src/main/kotlin")
+#       val violations = mutableListOf<String>()
+#
+#       val patterns = mapOf(
+#         "Hardcoded dp literal outside theme"         to Regex("""\b\d+\.dp\b"""),
+#         "Hardcoded sp literal outside Type.kt"       to Regex("""\b\d+\.sp\b"""),
+#         "Color literal Color(0x...) outside Color.kt" to Regex("""Color\(0x[0-9A-Fa-f]+\)"""),
+#         "Generic gradient (purple→pink etc.)"        to Regex("""(?i)Brush\.\w*Gradient\([^)]*(?:purple|pink|magenta|fuchsia|violet|indigo)"""),
+#         "Filler copy"                                to Regex("""(?i)(Lorem ipsum|Lightning fast|Blazing fast|Powered by AI|Built for the modern|Get started in seconds|Beautiful and intuitive|Seamlessly integrate|Effortlessly|The future of|Reimagined|Unleash the power of)"""),
+#         "Generic CTA"                                to Regex(""""(Get Started|Learn More|Click Here|Submit)""""),
+#         "Buzzword in code/copy"                      to Regex("""(?i)"[^"]*\b(clean|modern|professional|sleek|premium|beautiful|elegant)\b[^"]*""""),
+#         "Inline FontFamily('Inter')"                 to Regex("""FontFamily\("Inter"\)"""),
+#         "Infinite transition decoration"             to Regex("""rememberInfiniteTransition"""),
+#       )
+#
+#       srcDirs.forEach { f ->
+#         if (f.isFile && f.extension == "kt" && !f.path.contains("/ui/theme/")) {
+#           val text = f.readText()
+#           patterns.forEach { (label, regex) ->
+#             regex.findAll(text).forEach { match ->
+#               val line = text.substring(0, match.range.first).count { it == '\n' } + 1
+#               violations += "${f.relativeTo(rootDir)}:$line  [$label]  ${match.value}"
+#             }
+#           }
+#         }
+#       }
+#
+#       if (violations.isNotEmpty()) {
+#         throw GradleException("design rule violations:\n" + violations.joinToString("\n"))
+#       }
+#     }
+#   }
+#
+#   tasks.named("check") { dependsOn("detektDesign") }
+#
+# Run via: ./gradlew detekt detektDesign lint

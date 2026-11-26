@@ -1,0 +1,23 @@
+# 设计规则片段模板（写入项目 agent 指令文件）
+
+**不要原样生成独立 `DESIGN_RULES.md`。** 把下面内容合并进项目实际使用的 agent 指令文件：
+OpenCode / Codex 用 `AGENTS.md`，Claude Code 用 `CLAUDE.md`。若项目两者都没有，先问用户再创建。
+
+token 的具体值留在 `ui/theme/Color.kt` / `Type.kt` / `Shape.kt` / `Spacing.kt`；指令文件只记录决策与索引。
+
+```markdown
+## UI design rules (ui-android-compose)
+
+- 锚点：<从 anchors.md 选出的 1-3 套，标明主锚点及贡献维度>
+- 禁用模式：<从 ban-patterns.md 确认开启的项>
+- 主题 token：ui/theme/Color.kt, Type.kt, Shape.kt, Spacing.kt, Theme.kt
+- 规范尺度：spacing xs=4 sm=8 md=16 lg=24 xl=32 xxl=48；颜色/字体/圆角只走 MaterialTheme.*
+- 内容密度：<airy / balanced / dense>
+- 深色主题：<required / optional / none>（M3 默认 required）
+- 动态配色：<on / off>；seed 色：<hex 或 N/A>
+- minSdk / targetSdk：<项目实际值>
+- Edge-to-edge：<on>，insets 统一走 Scaffold innerPadding / consumeWindowInsets
+- 导航 / 自适应：<Navigation3 / Navigation Compose + WindowSizeClass 策略>
+- 验证命令：<项目实际命令，如 ./gradlew detekt detektDesign lint>
+- 禁止：Material 2、裸 .dp/.sp/Color(0x...)、紫粉渐变、占位文案、装饰性无限动画
+```

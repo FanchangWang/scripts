@@ -1,0 +1,22 @@
+package {{PACKAGE}}.ui.theme
+
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
+import androidx.compose.ui.unit.dp
+
+/**
+ * Shape tokens — 唯一圆角来源。
+ * 非主题文件禁止 RoundedCornerShape(<字面量>.dp)，一律引用 MaterialTheme.shapes.*。
+ * Material 3 Expressive 允许在此之外定义具名 shape library（morph 等），但必须具名并登记到设计规则。
+ */
+val Shapes = Shapes(
+    extraSmall = RoundedCornerShape({{SHAPE_EXTRA_SMALL}}.dp),
+    small = RoundedCornerShape({{SHAPE_SMALL}}.dp),
+    medium = RoundedCornerShape({{SHAPE_MEDIUM}}.dp),
+    large = RoundedCornerShape({{SHAPE_LARGE}}.dp),
+    extraLarge = RoundedCornerShape({{SHAPE_EXTRA_LARGE}}.dp),
+)
+
+// 占位符填写规则：
+// - 按 anchors.md 选中的锚点填值，五档必须递增。
+// - 不要五档全用同一个值；Button 通常不超过 medium。

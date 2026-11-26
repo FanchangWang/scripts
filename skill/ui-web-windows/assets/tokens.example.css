@@ -1,0 +1,140 @@
+/* ============================================================
+ * ui-web-windows / tokens.example.css
+ * 可复制的深浅色 token 样板。按项目品牌替换 --brand-* 与中性色阶。
+ * 组件只引用 Semantic alias 段；不要直接引用 Raw 段。
+ * ============================================================ */
+
+/* ---------- 1. Raw / global ---------- */
+:root {
+  /* 中性色阶（深浅共用，按品牌调整） */
+  --neutral-0:  #ffffff;
+  --neutral-1:  #f5f5f5;
+  --neutral-2:  #e5e5e5;
+  --neutral-3:  #c8c8c8;
+  --neutral-4:  #8a8a8a;
+  --neutral-5:  #616161;
+  --neutral-6:  #303030;
+  --neutral-7:  #242424;
+  --neutral-8:  #1b1b1b;
+
+  --brand-60:   #0f6cbd;  /* Windows 蓝示例 */
+  --brand-70:   #115ea3;
+  --brand-80:   #0c3b5e;
+  --brand-40:   #60cdff;  /* 深色主题强调色 */
+
+  --success-l:  #107c10;
+  --success-d:  #6ecc6e;
+  --warning-l:  #9c6500;
+  --warning-d:  #fde300;
+  --danger-l:   #c4314b;
+  --danger-d:   #ff99a4;
+
+  /* Type ramp (px -> rem, 16px root) */
+  --font-12: 0.75rem;
+  --font-14: 0.875rem;
+  --font-18: 1.125rem;
+  --font-20: 1.25rem;
+  --font-28: 1.75rem;
+  --font-40: 2.5rem;
+  --font-68: 4.25rem;
+
+  --font-body:    "Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, "Microsoft YaHei UI", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, "Microsoft YaHei UI", sans-serif;
+
+  /* Spacing: 4px grid only */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-control: 4px;
+  --radius-card:    8px;
+
+  --duration-fast:   100ms;
+  --duration-normal: 200ms;
+  --ease-standard:   cubic-bezier(0.33, 0, 0.67, 1);
+}
+
+/* ---------- 2. Semantic alias ---------- */
+:root {
+  color-scheme: light dark;
+
+  --bg-base:       light-dark(var(--neutral-0), var(--neutral-8));
+  --bg-subtle:     light-dark(var(--neutral-1), #242424);
+  --bg-raised:     light-dark(var(--neutral-0), #2b2b2b);
+  --fg-primary:    light-dark(var(--neutral-7), #f5f5f5);
+  --fg-muted:      light-dark(var(--neutral-5), #b5b5b5);
+  --border-subtle: light-dark(var(--neutral-2), #3a3a3a);
+  --border-strong: light-dark(var(--neutral-3), #5a5a5a);
+
+  --accent:        light-dark(var(--brand-60), var(--brand-40));
+  --accent-fg:     light-dark(#ffffff, #003b5e);
+  --accent-hover:  color-mix(in oklab, var(--accent) 88%, white);
+
+  --success:       light-dark(var(--success-l), var(--success-d));
+  --warning:       light-dark(var(--warning-l), var(--warning-d));
+  --danger:        light-dark(var(--danger-l), var(--danger-d));
+
+  --focus-ring:    light-dark(var(--brand-60), #ffffff);
+}
+
+/* ---------- 3. Explicit scheme override ---------- */
+:root[data-scheme="light"] { color-scheme: light; }
+:root[data-scheme="dark"]  { color-scheme: dark; }
+
+/* ---------- 4. Fallback for older browsers ---------- */
+@supports not (color: light-dark(red, blue)) {
+  :root {
+    --bg-base: var(--neutral-0);
+    --fg-primary: var(--neutral-7);
+    --accent: var(--brand-60);
+  }
+  :root[data-scheme="dark"] {
+    --bg-base: var(--neutral-8);
+    --fg-primary: #f5f5f5;
+    --accent: var(--brand-40);
+  }
+}
+
+/* ---------- 5. Base element styles ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--fg-primary);
+  font: 400 var(--font-14)/20px var(--font-body);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+h1 { font-size: var(--font-28); }
+h2 { font-size: var(--font-20); }
+h3 { font-size: var(--font-18); }
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline: 2px solid Highlight; }
+}
