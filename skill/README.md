@@ -10,7 +10,7 @@ C:\Users\guyue\.agents\skills\
 
 ```text
 skill/
-├── manifest.txt          # 发布清单（单一事实来源）：[skills] / [retired]
+├── manifest.txt          # 发布清单（单一事实来源）：[skills]
 ├── publish.ps1           # PowerShell 7 发布脚本
 ├── publish.sh            # Git Bash / POSIX sh 发布脚本
 ├── AGENTS.md             # 在本目录工作时的 agent 约定
@@ -71,7 +71,6 @@ bash "C:/Users/guyue/code/scripts/skill/publish.sh"
 | `-SkillsDir DIR` | `--skills-dir DIR` | 改发布目标目录（默认 `~/.agents/skills`） |
 | `-Skill NAME` | `--skill NAME` | 只发布指定 skill，可重复 |
 | `-DryRun` | `--dry-run` | 只打印计划，不写文件 |
-| `-NoRemoveLegacy` | `--no-remove-legacy` | 不删除 `manifest.txt` 里 `[retired]` 的旧 skill |
 | `-List` | `--list` | 列出清单后退出 |
 
 示例：
@@ -79,21 +78,22 @@ bash "C:/Users/guyue/code/scripts/skill/publish.sh"
 ```powershell
 pwsh.exe -NoProfile -File .\publish.ps1 -DryRun
 pwsh.exe -NoProfile -File .\publish.ps1 -Skill ui-android-compose
-pwsh.exe -NoProfile -File .\publish.ps1 -SkillsDir C:\tmp\skills -NoRemoveLegacy
+pwsh.exe -NoProfile -File .\publish.ps1 -SkillsDir C:\tmp\skills
 ```
 
 发布脚本会：
 
 1. 读取 `manifest.txt`；
 2. 校验源目录、目录名格式、`SKILL.md` frontmatter；
-3. 把 `[skills]` 中每个目录镜像覆盖到目标 skills 目录；
-4. 删除 `[retired]` 中列出的旧 skill（旧 skill 不会再被加载）。
+3. 把 `[skills]` 中每个目录镜像覆盖到目标 skills 目录。
+
+脚本**只发布清单里列出的 skill，不删除目标目录里的任何其他 skill**。当初整理项目时删除三个旧 skill（`ui-android`、`mobile-android-design`、`android-compose-code-audit`）是一次性人工操作，不属于发布流程。
 
 ## 新增 / 修改 skill
 
 1. 按命名格式新建目录，写好 `SKILL.md`（frontmatter `name` 必须等于目录名）。
 2. 大体量内容拆到 `references/`、`templates/` 等子目录，`SKILL.md` 保持精简（部分 agent 有正文 8 KB 上限）。
-3. 在 `manifest.txt` 的 `[skills]` 加一行；若需淘汰旧 skill，加到 `[retired]`。
+3. 在 `manifest.txt` 的 `[skills]` 加一行；不再需要的 skill 请自行人工清理发布目录，不要往脚本里加删除名单。
 4. 按仓库约定，把新子项目加入根目录 `scripts.code-workspace` 的 `folders`。
 5. 先 `-DryRun` 检查，再正式发布；**不要直接手改发布目录里的副本**。
 
@@ -101,5 +101,5 @@ pwsh.exe -NoProfile -File .\publish.ps1 -SkillsDir C:\tmp\skills -NoRemoveLegacy
 
 - 源码只在本目录维护；发布目录（`~/.agents/skills/`）中的副本会被下次发布覆盖。
 - `manifest.txt` 是发布行为的唯一配置来源，不要在两个脚本里硬编码 skill 名单。
-- 发布是覆盖式操作：目标里的同名目录会被先删除再复制。
+- 发布是覆盖式操作：目标里的同名目录会被先删除再复制；不同名的 skill 一律不动。
 - 不要生成 / 提交密钥、Cookie、绝对路径等机器相关内容到 skill 正文里；环境相关信息用参数或相对路径表达。

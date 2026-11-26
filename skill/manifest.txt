@@ -2,10 +2,10 @@
 # 两个发布脚本都读这个文件：publish.ps1 (PowerShell 7) / publish.sh (Git Bash / POSIX sh)
 #
 # 格式：
-#   [skills]   要发布的 skill 源码目录名，位于 skill/ 下
-#   [retired]  发布时要从目标 skills 目录删除的旧 skill 目录名
+#   [skills]  要发布的 skill 源码目录名，位于 skill/ 下
 # 注释以 # 开头；空行忽略。
 #
+# 发布脚本只复制这里列出的 skill，不会删除目标目录中的任何其他 skill。
 # 命名格式：类别-作用大类-作用小类[-其他补充]
 #   类别      ui / audit / 其他
 #   作用大类  android / windows / web / ...
@@ -15,8 +15,3 @@
 ui-android-compose
 audit-android-compose
 ui-web-windows
-
-[retired]
-ui-android
-mobile-android-design
-android-compose-code-audit

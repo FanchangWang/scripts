@@ -3,10 +3,10 @@
     把 skill/ 下的 skill 源码发布到 agent 的 skills 目录（默认 ~/.agents/skills）。
 
 .DESCRIPTION
-    读取同目录 manifest.txt：
-      - [skills]  逐个镜像复制到目标目录（覆盖同名目录）
-      - [retired] 从目标目录删除旧 skill（可用 -NoRemoveLegacy 关闭）
+    读取同目录 manifest.txt 的 [skills]，把每个 skill 镜像复制到目标目录（覆盖同名目录）。
     发布前校验目录名格式、SKILL.md 存在性、frontmatter name 与目录名一致。
+
+    本脚本只发布 manifest 中列出的 skill，永远不会删除目标目录里的其他 skill。
 
     必须用 PowerShell 7：pwsh.exe -NoProfile -File publish.ps1
 
@@ -14,7 +14,7 @@
     pwsh.exe -NoProfile -File .\publish.ps1
     pwsh.exe -NoProfile -File .\publish.ps1 -DryRun
     pwsh.exe -NoProfile -File .\publish.ps1 -Skill ui-android-compose
-    pwsh.exe -NoProfile -File .\publish.ps1 -SkillsDir C:\tmp\skills -NoRemoveLegacy
+    pwsh.exe -NoProfile -File .\publish.ps1 -SkillsDir C:\tmp\skills
     pwsh.exe -NoProfile -File .\publish.ps1 -List
 #>
 [CmdletBinding()]
@@ -22,8 +22,7 @@ param(
     [string]$SkillsDir,
     [string[]]$Skill,
     [switch]$List,
-    [switch]$DryRun,
-    [switch]$NoRemoveLegacy
+    [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
@@ -44,7 +43,6 @@ function Read-Manifest {
     }
 
     $skills = [System.Collections.Generic.List[string]]::new()
-    $retired = [System.Collections.Generic.List[string]]::new()
     $section = ''
 
     foreach ($line in [System.IO.File]::ReadAllLines($Path)) {
@@ -54,16 +52,13 @@ function Read-Manifest {
             $section = $Matches[1].ToLowerInvariant()
             continue
         }
-        switch ($section) {
-            'skills'  { $skills.Add($text) }
-            'retired' { $retired.Add($text) }
-        }
+        if ($section -eq 'skills') { $skills.Add($text) }
     }
 
-    return @{
-        Skills  = $skills.ToArray()
-        Retired = $retired.ToArray()
+    if ($skills.Count -eq 0) {
+        throw "manifest 中没有 [skills] 条目：$Path"
     }
+    return $skills.ToArray()
 }
 
 function Assert-DirectoryName {
@@ -94,37 +89,31 @@ function Get-FrontmatterName {
     throw "SKILL.md frontmatter 缺少 name 字段：$Path"
 }
 
-$manifest = Read-Manifest -Path $manifestPath
+$allSkills = Read-Manifest -Path $manifestPath
 
 if ($List) {
     Write-Host '将发布（manifest [skills]）：'
-    foreach ($name in $manifest.Skills) { Write-Host "  - $name" }
-    Write-Host '发布时移除（manifest [retired]）：'
-    foreach ($name in $manifest.Retired) { Write-Host "  - $name" }
+    foreach ($name in $allSkills) { Write-Host "  - $name" }
     Write-Host "目标目录：$SkillsDir"
     exit 0
 }
 
-if ($manifest.Skills.Count -eq 0) {
-    throw "manifest 中没有 [skills] 条目：$manifestPath"
-}
-
 # 去重
 $seen = [System.Collections.Generic.HashSet[string]]::new()
-$allSkills = [System.Collections.Generic.List[string]]::new()
-foreach ($name in $manifest.Skills) {
+$uniqueSkills = [System.Collections.Generic.List[string]]::new()
+foreach ($name in $allSkills) {
     if (-not $seen.Add($name)) { throw "manifest [skills] 重复条目：$name" }
-    $allSkills.Add($name)
+    $uniqueSkills.Add($name)
 }
 
 # 选择要发布的 skill
 $toPublish = [System.Collections.Generic.List[string]]::new()
 if ($null -eq $Skill -or $Skill.Count -eq 0) {
-    foreach ($name in $allSkills) { $toPublish.Add($name) }
+    foreach ($name in $uniqueSkills) { $toPublish.Add($name) }
 } else {
     foreach ($name in $Skill) {
-        if ($allSkills -notcontains $name) {
-            throw "未知 skill：$name（manifest 中的可选项：$($allSkills -join ', ')）"
+        if ($uniqueSkills -notcontains $name) {
+            throw "未知 skill：$name（manifest 中的可选项：$($uniqueSkills -join ', ')）"
         }
         if ($toPublish -notcontains $name) { $toPublish.Add($name) }
     }
@@ -145,24 +134,8 @@ foreach ($name in $toPublish) {
     }
 }
 
-$retiredToRemove = [System.Collections.Generic.List[string]]::new()
-if (-not $NoRemoveLegacy) {
-    foreach ($name in $manifest.Retired) {
-        # 旧 skill 用宽松格式（至少 2 段），不套用新命名规则
-        if ($name -notmatch '^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$') {
-            throw "retired 目录名不合法：$name"
-        }
-        # 安全：绝不删除本次要发布的 skill，即使误写进 retired
-        if ($toPublish -contains $name) { continue }
-        if ($seen.Contains($name)) { continue }
-        # 已经不存在的旧 skill 静默跳过，不产生无意义的提示
-        if (-not (Test-Path -LiteralPath (Join-Path $SkillsDir $name))) { continue }
-        $retiredToRemove.Add($name)
-    }
-}
-
 Write-Host "目标目录：$SkillsDir"
-Write-Host "发布：$($toPublish.Count) 个；移除旧 skill：$($retiredToRemove.Count) 个"
+Write-Host "发布：$($toPublish.Count) 个"
 if ($DryRun) { Write-Host '[DRY-RUN] 以下操作不会实际执行' }
 
 foreach ($name in $toPublish) {
@@ -177,17 +150,6 @@ foreach ($name in $toPublish) {
     }
     Copy-Item -LiteralPath $src -Destination $dest -Recurse -Force
     Write-Host "[OK] 发布 $name"
-}
-
-foreach ($name in $retiredToRemove) {
-    $dest = Join-Path $SkillsDir $name
-    if (-not (Test-Path -LiteralPath $dest)) { continue }
-    if ($DryRun) {
-        Write-Host "[DRY-RUN] 移除旧 skill $dest"
-        continue
-    }
-    Remove-Item -LiteralPath $dest -Recurse -Force
-    Write-Host "[OK] 移除旧 skill $name"
 }
 
 Write-Host '完成。'
