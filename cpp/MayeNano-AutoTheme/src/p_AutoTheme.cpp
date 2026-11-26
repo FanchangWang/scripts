@@ -17,6 +17,11 @@
 #include <cstring>
 #include <process.h>
 
+// Plugin version — single source of truth, configured here in code.
+// Update this one macro to bump the version shown in the settings window
+// and reported to the host SDK (as PLUGIN_VERSION ".0").
+#define PLUGIN_VERSION "2.3.0"
+
 // ---------------------------------------------------------------------------
 // constants
 // ---------------------------------------------------------------------------
@@ -42,12 +47,15 @@ static const char* SUPPORTED_VERSION_TEXT =
 #define ID_STATIC_INFO    2001
 #define ID_STATIC_STATUS  2002
 #define ID_STATIC_NOTICE  2003
+#define ID_STATIC_VERSION 2004
 #define ID_COMBO_LIGHT    2011
 #define ID_COMBO_DARK     2012
 #define ID_CHK_ENABLE     2013
 #define ID_CHK_FOLLOW     2014
 #define ID_BTN_SAVE       2015
 #define ID_BTN_CLOSE      2016
+#define ID_BTN_PREVIEW_LIGHT 2017
+#define ID_BTN_PREVIEW_DARK  2018
 
 // ---------------------------------------------------------------------------
 // globals
@@ -83,6 +91,8 @@ static HWND              g_comboLight      = nullptr;
 static HWND              g_comboDark       = nullptr;
 static HWND              g_chkEnable       = nullptr;
 static HWND              g_chkFollow       = nullptr;
+static HWND              g_btnPreviewLight = nullptr;
+static HWND              g_btnPreviewDark  = nullptr;
 static HWND              g_staticStatus    = nullptr;
 static HWND              g_staticNotice    = nullptr;
 static HWND              g_appSettingsHwnd = nullptr;
@@ -92,6 +102,19 @@ static unsigned long     g_targetPid    = 0;
 
 static int               g_dpi  = 96;
 static HFONT             g_font = nullptr;
+
+// Theme preview while our own settings window is open.
+// 0 = no preview, 1 = light theme preview, 2 = dark theme preview.
+// While the window is open the monitor loop pauses auto theme switching so
+// the preview is not immediately overwritten; closing the window restores
+// automatic switching.
+static int               g_previewSlot = 0;
+
+// settings UI dark mode (follows Windows AppsUseLightTheme)
+static bool              g_uiDark       = false;
+static HBRUSH            g_uiBgBrush    = nullptr;   // window / static background
+static HBRUSH            g_uiEditBrush  = nullptr;   // combo edit/list background
+#define MN_UI_THEME      (WM_APP + 36)
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -507,6 +530,116 @@ static void CallInternalTheme(const std::string& theme) {
 // settings UI
 // ---------------------------------------------------------------------------
 
+// Apply light/dark styling to our own settings window. Uses only APIs that
+// exist on Windows 10+, and degrades silently on older builds.
+static void ApplySettingsTheme(bool dark) {
+    if (g_uiBgBrush)   { DeleteObject(g_uiBgBrush);   g_uiBgBrush = nullptr; }
+    if (g_uiEditBrush) { DeleteObject(g_uiEditBrush); g_uiEditBrush = nullptr; }
+    if (dark) {
+        g_uiBgBrush   = CreateSolidBrush(RGB(32, 32, 32));
+        g_uiEditBrush = CreateSolidBrush(RGB(45, 45, 48));
+    }
+
+    if (g_settingsWnd) {
+        // Dark title bar (DWMWA_USE_IMMERSIVE_DARK_MODE = 20, Win10 19041+)
+        HMODULE dwm = GetModuleHandleW(L"dwmapi.dll");
+        if (dwm) {
+            using PFN = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+            auto fn = (PFN)GetProcAddress(dwm, "DwmSetWindowAttribute");
+            if (fn) {
+                DWORD v = dark ? 1 : 0;
+                fn(g_settingsWnd, 20, &v, sizeof(v));
+            }
+        }
+    }
+
+    // uxtheme.dll is not linked at build time -> load dynamically.
+    // Undocumented per-window dark opt-in (ordinal 133) and SetWindowTheme.
+    HMODULE ux = LoadLibraryW(L"uxtheme.dll");
+    using PFN_THEME = HRESULT(WINAPI*)(HWND, LPCWSTR, LPCWSTR);
+    using PFN_ALLOW = BOOL(WINAPI*)(HWND, BOOL);
+    PFN_THEME setTheme = ux ? (PFN_THEME)GetProcAddress(ux, "SetWindowTheme") : nullptr;
+    PFN_ALLOW allowDark = ux ? (PFN_ALLOW)GetProcAddress(ux, MAKEINTRESOURCEA(133)) : nullptr;
+
+    auto apply = [&](HWND h, LPCWSTR darkTheme, LPCWSTR lightTheme) {
+        if (!h) return;
+        if (allowDark) allowDark(h, dark ? TRUE : FALSE);
+        if (setTheme)  setTheme(h, dark ? darkTheme : lightTheme, nullptr);
+        SendMessageW(h, WM_THEMECHANGED, 0, 0);
+        InvalidateRect(h, nullptr, TRUE);
+    };
+
+    if (setTheme || allowDark) {
+        // ComboBox needs "DarkMode_CFD", not "DarkMode_Explorer".
+        apply(g_comboLight, L"DarkMode_CFD", L"CFD");
+        apply(g_comboDark,  L"DarkMode_CFD", L"CFD");
+        // Buttons / checkboxes use "DarkMode_Explorer".
+        apply(g_chkEnable,  L"DarkMode_Explorer", L"Explorer");
+        apply(g_chkFollow,  L"DarkMode_Explorer", L"Explorer");
+        apply(g_btnPreviewLight, L"DarkMode_Explorer", L"Explorer");
+        apply(g_btnPreviewDark,  L"DarkMode_Explorer", L"Explorer");
+        if (g_settingsWnd) {
+            apply(GetDlgItem(g_settingsWnd, ID_BTN_SAVE),  L"DarkMode_Explorer", L"Explorer");
+            apply(GetDlgItem(g_settingsWnd, ID_BTN_CLOSE), L"DarkMode_Explorer", L"Explorer");
+        }
+    }
+    if (ux) FreeLibrary(ux);
+
+    // Repaint parent + all children so the new brushes take effect at once.
+    if (g_settingsWnd) {
+        RedrawWindow(g_settingsWnd, nullptr, nullptr,
+                     RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    }
+    LogA("settings theme -> %s", dark ? "dark" : "light");
+}
+
+// Keep the two preview buttons in sync with g_previewSlot.
+static void UpdatePreviewButtons() {
+    if (g_btnPreviewLight)
+        SetWindowTextW(g_btnPreviewLight, g_previewSlot == 1 ? L"取消预览" : L"预览主题");
+    if (g_btnPreviewDark)
+        SetWindowTextW(g_btnPreviewDark, g_previewSlot == 2 ? L"取消预览" : L"预览主题");
+}
+
+// Apply one specific theme right now. Shared by auto switching and preview so
+// both go through the same config + host-apply path.
+static void ApplyThemeNow(const std::string& desired) {
+    std::string current = ReadAppTheme();
+    if (current == desired) return;
+    if (!ThemeFileExists(desired)) {
+        LogA("theme file missing, skip apply: '%s'", desired.c_str());
+        return;
+    }
+    if (!WriteAppTheme(desired)) return;
+    if (mn::_MN_API_FN && mn::_MN_CTX)
+        (void)mn::Api::SetCfgItem("theme", desired.c_str());
+
+    auto* copy = new std::string(desired);
+    if (!PostMessageW(g_dispatcher, MN_APPLY_THEME, 0, (LPARAM)copy)) delete copy;
+}
+
+// slot: 0 = cancel preview (restore auto theme), 1 = light, 2 = dark.
+static void ApplyPreview(int slot) {
+    std::string theme;
+    if (g_lockReady) EnterCriticalSection(&g_stateLock);
+    g_previewSlot = slot;
+    if (slot == 1)      theme = g_lightTheme;
+    else if (slot == 2) theme = g_darkTheme;
+    else                theme = IsWindowsLightMode() ? g_lightTheme : g_darkTheme;
+    if (g_lockReady) LeaveCriticalSection(&g_stateLock);
+
+    if (g_enabled && g_functional) ApplyThemeNow(theme);
+    LogA("preview slot=%d theme='%s'", slot, theme.c_str());
+    UpdatePreviewButtons();
+}
+
+// Hide our settings window and let auto theme switching take over again.
+static void HideSettingsUI() {
+    if (!g_settingsWnd) return;
+    ShowWindow(g_settingsWnd, SW_HIDE);
+    if (g_previewSlot != 0) ApplyPreview(0);
+}
+
 static HWND MakeCtrl(HWND parent, const wchar_t* cls, const wchar_t* text,
                      int id, DWORD style) {
     HWND h = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style,
@@ -531,13 +664,16 @@ static void LayoutControls(HWND hwnd) {
         { g_staticNotice,                     16,  92, 480, 58 },
         { GetDlgItem(hwnd, 2101),             16, 160, 110, 20 }, // label Light
         { g_comboLight,                      132, 156, 280, 200 },
+        { g_btnPreviewLight,                 418, 156,  86, 23 }, // light preview
         { GetDlgItem(hwnd, 2102),             16, 194, 110, 20 }, // label Dark
         { g_comboDark,                       132, 190, 280, 200 },
+        { g_btnPreviewDark,                  418, 190,  86, 23 }, // dark preview
         { g_chkEnable,                        16, 228, 396, 24 },
         { g_chkFollow,                        16, 260, 396, 24 },
         { GetDlgItem(hwnd, 2103),             16, 296, 480, 36 }, // hint
         { GetDlgItem(hwnd, ID_BTN_SAVE),      16, 342, 110, 30 },
         { GetDlgItem(hwnd, ID_BTN_CLOSE),    136, 342, 110, 30 },
+        { GetDlgItem(hwnd, ID_STATIC_VERSION), 340, 348, 156, 20 }, // plugin version
     };
     for (const auto& it : items) {
         if (it.h) {
@@ -591,21 +727,27 @@ static void RefreshSettingsUI() {
 
     const wchar_t* infoText =
         L"本窗口用于设置 Maye Nano 自动跟随 Windows 浅色 / 深色模式切换应用主题。\r\n"
-        L"修改后点击「保存」立即生效，无需重启软件。";
+        L"本窗口打开时自动切换暂停，可用「预览主题」临时查看效果；关闭窗口后恢复自动切换。";
     SetWindowTextW(GetDlgItem(g_settingsWnd, ID_STATIC_INFO), infoText);
     SetWindowTextW(g_staticStatus, StatusText().c_str());
     SetWindowTextW(g_staticNotice, g_notice.c_str());
     SetWindowTextW(GetDlgItem(g_settingsWnd, 2103),
         L"也可通过 设置 → 插件 → AutoTheme → 右侧「···」→ 选项 打开本窗口。");
+    std::wstring verText = L"插件版本 v" + ToWide(PLUGIN_VERSION);
+    SetWindowTextW(GetDlgItem(g_settingsWnd, ID_STATIC_VERSION), verText.c_str());
 
     SendMessageW(g_chkEnable, BM_SETCHECK, g_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(g_chkFollow, BM_SETCHECK, g_openWithSettings ? BST_CHECKED : BST_UNCHECKED, 0);
     FillCombo(g_comboLight, g_lightTheme);
     FillCombo(g_comboDark, g_darkTheme);
+    UpdatePreviewButtons();
 }
 
 // Place the window next to / above the app Settings window, or the launcher.
-static void PlaceWindow() {
+// show=false 时只重新定位/布局，不显示窗口。
+// 用于 MN_DPI_SYNC：启动时 DPI 从 96 变为 144 会触发它，
+// 若这里显示窗口，就会绕过 g_notice / MN_SHOW_UI 的控制而误弹设置窗口。
+static void PlaceWindow(bool show = true) {
     HWND anchor = g_appSettingsHwnd;
     if (!anchor || !IsWindow(anchor)) {
         anchor = FindAppWindow(L"_ArWin_MayeNanoLauncher");
@@ -669,11 +811,14 @@ static void PlaceWindow() {
     }
 
     SetWindowTextW(g_settingsWnd, L"Auto Theme 插件设置");
+    UINT posFlags = show ? SWP_SHOWWINDOW : SWP_NOZORDER;
     SetWindowPos(g_settingsWnd, topMost ? HWND_TOPMOST : HWND_TOP,
-                 x, y, w, h, SWP_SHOWWINDOW);
-    ShowWindow(g_settingsWnd, SW_SHOW);
-    SetForegroundWindow(g_settingsWnd);
-    LogA("show settings at %d,%d %dx%d dpi=%d", x, y, w, h, g_dpi);
+                 x, y, w, h, posFlags);
+    if (show) {
+        ShowWindow(g_settingsWnd, SW_SHOW);
+        SetForegroundWindow(g_settingsWnd);
+        LogA("show settings at %d,%d %dx%d dpi=%d", x, y, w, h, g_dpi);
+    }
 }
 
 static void SaveSettingsUI() {
@@ -692,6 +837,7 @@ static void SaveSettingsUI() {
     g_darkTheme  = ToUtf8(dark);
     g_enabled    = enabled;
     g_openWithSettings = follow;
+    g_previewSlot = 0;   // saving ends any active preview
     if (g_lockReady) LeaveCriticalSection(&g_stateLock);
 
     if (g_functional && g_enabled) {
@@ -702,6 +848,8 @@ static void SaveSettingsUI() {
     RefreshSettingsUI();
     MessageBoxW(g_settingsWnd, L"配置已保存，立即生效。", L"Auto Theme",
                 MB_OK | MB_ICONINFORMATION);
+    // 确认后自动关闭设置窗口（并恢复自动主题切换）
+    HideSettingsUI();
 }
 
 static LRESULT CALLBACK SettingsWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -716,14 +864,19 @@ static LRESULT CALLBACK SettingsWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         MakeCtrl(hwnd, L"Static", L"浅色主题 (Light)", 2101, SS_LEFT);
         g_comboLight = MakeCtrl(hwnd, L"ComboBox", L"", ID_COMBO_LIGHT,
                                 CBS_DROPDOWNLIST | WS_TABSTOP);
+        g_btnPreviewLight = MakeCtrl(hwnd, L"Button", L"预览主题",
+                            ID_BTN_PREVIEW_LIGHT, BS_PUSHBUTTON | WS_TABSTOP);
         MakeCtrl(hwnd, L"Static", L"深色主题 (Dark)", 2102, SS_LEFT);
         g_comboDark = MakeCtrl(hwnd, L"ComboBox", L"", ID_COMBO_DARK,
                                CBS_DROPDOWNLIST | WS_TABSTOP);
+        g_btnPreviewDark = MakeCtrl(hwnd, L"Button", L"预览主题",
+                           ID_BTN_PREVIEW_DARK, BS_PUSHBUTTON | WS_TABSTOP);
         g_chkEnable = MakeCtrl(hwnd, L"Button", L"启用自动切换主题", ID_CHK_ENABLE,
                                BS_AUTOCHECKBOX | WS_TABSTOP);
         g_chkFollow = MakeCtrl(hwnd, L"Button", L"打开软件设置窗口时自动弹出本窗口",
                                ID_CHK_FOLLOW, BS_AUTOCHECKBOX | WS_TABSTOP);
         MakeCtrl(hwnd, L"Static", L"", 2103, SS_LEFT);
+        MakeCtrl(hwnd, L"Static", L"", ID_STATIC_VERSION, SS_RIGHT);
         MakeCtrl(hwnd, L"Button", L"保存", ID_BTN_SAVE, BS_PUSHBUTTON | WS_TABSTOP);
         MakeCtrl(hwnd, L"Button", L"关闭", ID_BTN_CLOSE, BS_PUSHBUTTON | WS_TABSTOP);
         LayoutControls(hwnd);
@@ -743,14 +896,54 @@ static LRESULT CALLBACK SettingsWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         RefreshSettingsUI();
         return 0;
     }
+    case WM_ERASEBKGND:
+        // Paint the whole client area. Without this, the window class brush
+        // (COLOR_WINDOW) paints white and only the Static controls above are
+        // dark -> a half-white / half-black window.
+        if (g_uiDark && g_uiBgBrush) {
+            HDC dc = (HDC)wp;
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+            FillRect(dc, &rc, g_uiBgBrush);
+            return TRUE;
+        }
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX:
+        // Combo text field / dropdown list (WM_CTLCOLOR* goes to the parent).
+        if (g_uiDark && g_uiEditBrush) {
+            HDC dc = (HDC)wp;
+            SetTextColor(dc, RGB(230, 230, 230));
+            SetBkColor(dc, RGB(45, 45, 48));
+            return (LRESULT)g_uiEditBrush;
+        }
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    case WM_CTLCOLORSTATIC: {
+        // Make static text readable on the dark background
+        HDC dc = (HDC)wp;
+        if (g_uiDark) {
+            SetTextColor(dc, RGB(230, 230, 230));
+            SetBkMode(dc, TRANSPARENT);
+            return (LRESULT)g_uiBgBrush;
+        }
+        SetTextColor(dc, RGB(0, 0, 0));
+        SetBkMode(dc, TRANSPARENT);
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+    }
     case WM_COMMAND:
         switch (LOWORD(wp)) {
         case ID_BTN_SAVE:  SaveSettingsUI(); return 0;
-        case ID_BTN_CLOSE: ShowWindow(hwnd, SW_HIDE); return 0;
+        case ID_BTN_CLOSE: HideSettingsUI(); return 0;
+        case ID_BTN_PREVIEW_LIGHT:
+            ApplyPreview(g_previewSlot == 1 ? 0 : 1);
+            return 0;
+        case ID_BTN_PREVIEW_DARK:
+            ApplyPreview(g_previewSlot == 2 ? 0 : 2);
+            return 0;
         }
         return 0;
     case WM_CLOSE:
-        ShowWindow(hwnd, SW_HIDE);
+        HideSettingsUI();
         return 0;
     case WM_DESTROY:
         if (g_font) { DeleteObject(g_font); g_font = nullptr; }
@@ -767,8 +960,13 @@ static LRESULT CALLBACK DispatcherWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
         return 0;
     }
     case MN_SHOW_UI:   PlaceWindow(); RefreshSettingsUI(); return 0;
-    case MN_HIDE_UI:   if (g_settingsWnd) ShowWindow(g_settingsWnd, SW_HIDE); return 0;
+    case MN_HIDE_UI:   HideSettingsUI(); return 0;
     case MN_REFRESH_UI: RefreshSettingsUI(); return 0;
+    case MN_UI_THEME:
+        g_uiDark = (wp == 0);
+        ApplySettingsTheme(g_uiDark);
+        RefreshSettingsUI();
+        return 0;
     case MN_DPI_SYNC:
         if (wp >= 96) {
             g_dpi = (int)wp;
@@ -776,7 +974,8 @@ static LRESULT CALLBACK DispatcherWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
             if (g_settingsWnd) {
                 LayoutControls(g_settingsWnd);
                 RefreshSettingsUI();
-                PlaceWindow();
+                // 仅重新定位，不要显示窗口（否则首次启动误弹设置窗口）
+                PlaceWindow(false);
             }
         }
         return 0;
@@ -841,24 +1040,26 @@ static void ApplyTheme(bool light) {
 
     if (!enabled || !functional) return;
 
-    std::string current = ReadAppTheme();
-    if (current == desired) return;
-    if (!ThemeFileExists(desired)) {
-        LogA("theme file missing, skip apply: '%s'", desired.c_str());
-        return;
-    }
-    if (!WriteAppTheme(desired)) return;
-    if (mn::_MN_API_FN && mn::_MN_CTX)
-        (void)mn::Api::SetCfgItem("theme", desired.c_str());
+    // Our settings window is open: the user may be previewing a theme.
+    // Pause automatic switching so the preview is not immediately replaced.
+    if (g_settingsWnd && IsWindowVisible(g_settingsWnd)) return;
 
-    auto* copy = new std::string(desired);
-    if (!PostMessageW(g_dispatcher, MN_APPLY_THEME, 0, (LPARAM)copy)) delete copy;
+    ApplyThemeNow(desired);
 }
 
 static unsigned __stdcall MonitorThread(LPVOID) {
     int lastPostedDpi = 0;
+    bool lastLight = IsWindowsLightMode();
     while (g_running.load()) {
-        ApplyTheme(IsWindowsLightMode());
+        bool light = IsWindowsLightMode();
+        ApplyTheme(light);
+
+        // UI theme follows the system: ask the dispatcher thread to restyle
+        if (light != lastLight) {
+            lastLight = light;
+            PostMessageW(g_dispatcher, MN_UI_THEME, light ? 1 : 0, 0);
+            LogA("ui theme change posted: %s", light ? "light" : "dark");
+        }
 
         // The launcher window appears after plugins load. Ask the UI thread
         // (via our dispatcher) to adopt its DPI; never touch controls here.
@@ -873,7 +1074,14 @@ static unsigned __stdcall MonitorThread(LPVOID) {
         }
 
         // Maye Nano re-asserts its own topmost state; keep our popup above it.
-        if (g_settingsWnd && IsWindowVisible(g_settingsWnd)) {
+        // But do NOT re-assert while a theme dropdown is open: this loop runs
+        // every 300ms, and forcing the settings window back to the top pushes
+        // it above its own (non-topmost) dropdown list, hiding the choices.
+        const UINT CB_GETDROPPEDSTATE_MSG = 0x0157;
+        bool dropdownOpen =
+            (g_comboLight && SendMessageW(g_comboLight, CB_GETDROPPEDSTATE_MSG, 0, 0)) ||
+            (g_comboDark  && SendMessageW(g_comboDark,  CB_GETDROPPEDSTATE_MSG, 0, 0));
+        if (!dropdownOpen && g_settingsWnd && IsWindowVisible(g_settingsWnd)) {
             LONG_PTR ex = GetWindowLongPtr(g_settingsWnd, GWL_EXSTYLE);
             HWND z = (ex & WS_EX_TOPMOST) ? HWND_TOPMOST : HWND_TOP;
             SetWindowPos(g_settingsWnd, z, 0, 0, 0, 0,
@@ -926,6 +1134,10 @@ static void StartMonitor() {
     LoadIni();
     InitThemeFunction();
     CreateWindows();
+
+    // Settings window follows Windows light/dark mode from the start
+    g_uiDark = !IsWindowsLightMode();
+    ApplySettingsTheme(g_uiDark);
 
     bool firstRun = (GetFileAttributesW(g_firstRunFlag.c_str()) == INVALID_FILE_ATTRIBUTES);
     if (firstRun) {
@@ -1007,7 +1219,7 @@ __MN_PLUGIN_IN__ mn::_PLUGIN_INFO _MN_Info(void* fn, void* ctx) {
         .sdk_version = MN_SDK_VERSION,
         .name        = "Auto Theme",
         .description = "Auto-switch Maye Nano theme with Windows light/dark mode",
-        .version     = "2.2.0.0",
+        .version     = PLUGIN_VERSION ".0",
         .author      = "guyuexuan",
         .email       = "",
         .homepage    = "",
