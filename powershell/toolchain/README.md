@@ -20,6 +20,7 @@ The `scripts` repository keeps source only.
 - `toolchain.ps1` - scanner, refresh queries, Markdown generator, skill generator
 - `refresh.ps1` - compatibility wrapper for `refresh`
 - `overrides.json` - durable conventions and configuration facts
+- `update-channels.json` - authoritative install/update channels per tool (do not update a tool through a different channel; `source` in `toolchain.ps1` may be stale)
 - `rea-env.json` - read-only REA wrapper validation config (env var -> tool id mapping)
 - `query-template.ps1` - template for the generated skill-local `query.ps1`
 - `skill-template.md` - template for the generated `SKILL.md`

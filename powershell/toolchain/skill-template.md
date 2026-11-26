@@ -34,6 +34,7 @@ Before answering whether a tool, runtime, package manager, or provider is instal
 These are constraints, not observations. They apply even when the manifest is not loaded.
 
 - **Never claim a tool is missing without the manifest.** Read `inventory.json`, or run `query.ps1 find <name>`, before saying something is not installed.
+- **Update channels are authoritative** in `inventory.json` (`update_channels` and each tool's `update_*` fields). Never update a tool through a different channel and never change its install method. The `source` field can be stale and is not the update channel. Detection is fine; upgrades require explicit user approval.
 - **Do not scan the filesystem** to discover tools. The manifest already answers inventory questions.
 - **Python is `uv`-managed.** There is no global `python`, `python3`, or `pip` on PATH. Run scripts with `uv run python <file>.py`, one-off CLIs with `uvx <tool>`, reusable CLIs with `uv tool install <tool>`. `uv pip` only works inside an active virtual environment.
 - **Windows automation uses `.cmd` launchers**: `npm.cmd`, `npx.cmd`, `pnpm.cmd`, `bun.cmd`. `.ps1` shims are for interactive PowerShell only.
@@ -47,12 +48,12 @@ These are constraints, not observations. They apply even when the manifest is no
 
 Convenience only. The authoritative copy of everything below is `config_facts` in `inventory.json`; if the two disagree, the manifest wins. Read it with `pwsh.exe -NoProfile -File "{{QUERY_PATH}}" config`.
 
-- **npm / npx / pnpm** use `https://registry.npmmirror.com/`. npm and npx are 12.2.3; pnpm is 12.21.0.
+- **npm / npx / pnpm** use `https://registry.npmmirror.com/`. npm and npx are 12.2.3; pnpm is 12.23.0. Node.js (npm/npx included) is winget-installed; npm self-updates via npm.
 - **Go** uses `GOPROXY=https://goproxy.cn,direct`.
 - **Proxy** is `http://192.168.31.50:7890` for GitHub, Google, and other blocked hosts. Git already has `http.proxy` and `https.proxy` set in `C:\Users\guyue\.gitconfig`; other tools may need `HTTP_PROXY`/`HTTPS_PROXY` in their own process.
 - **GitHub release and raw URLs** use the accelerator `https://github.allproxy.dpdns.org/<FULL https://github.com/... URL>` - the full original URL is the path, e.g. `https://github.allproxy.dpdns.org/https://github.com/OWNER/REPO/releases/download/v1/a.zip`. Host-only replacement returns 404/502. Keep normal `github.com` for API and git clone unless the user says otherwise.
 - **Git** is 2.56.1 with `core.autocrlf=true`, VS Code as editor, and `gh.exe` as the GitHub credential helper.
-- **gh CLI** is 2.105.0.
+- **gh CLI** is 2.106.0 (winget).
 - **Android**: SDK root is `C:\Users\guyue\AppData\Local\Android\Sdk`; Android Studio is `...\AppData\Local\Programs\Android Studio\bin\studio64.exe`; Android CLI is `...\Sdk\cmdline-tools\latest\bin\android.exe` (1.1.16919734) and replaces deprecated `sdkmanager`. The SDK also has NDK 29/30, emulator 37.3.10.0, build-tools, platforms, and system images. REA only uses `platform-tools\adb.exe`.
 - **Java installations**: the manifest lists every Java home found (Java 8 JRE x64/x86 plus the Oracle `java8path` alias, Zulu 11 JRE, 17, 21, the winget JDK 25, and Android Studio's bundled JBR). Prefer non-versioned junctions such as `C:\Program Files\Java\latest\jdk-21` and `C:\Program Files\Java\latest\jre-1.8`. The process `JAVA_HOME` is JDK 17; REA overrides it to the winget JDK 25 at `C:\Program Files\Microsoft\jdk-25.0.5.102-hotspot`.
 - **REA MCP** single source of truth is `C:\Users\guyue\.local\bin\rea-mcp.cmd`, launched as `"C:\Program Files\nodejs\npx.cmd" -y rea-agents@latest mcp`.

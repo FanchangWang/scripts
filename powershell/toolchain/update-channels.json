@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "scope": "user-global-windows",
+  "confirmed_on": "2026-11-27",
+  "authority": "This is the authoritative source for install/update channels. The `source` field in toolchain.ps1 / inventory.json may be stale and MUST NOT be used to decide how a tool is updated. Never update a tool through a channel other than the one recorded here. Detection (check) is safe; actual upgrades require explicit user approval.",
+  "channels": {
+    "winget": {
+      "description": "Installed and updated by Windows Package Manager. Use only the recorded package ID.",
+      "check": "winget upgrade --include-unknown",
+      "upgrade": "winget upgrade <package>"
+    },
+    "npm": {
+      "description": "Installed via npm (registry mirror https://registry.npmmirror.com/). npm itself self-updates; other packages are global npm installs.",
+      "check": "npm view <package> version",
+      "upgrade": "npm install -g <package>@latest"
+    },
+    "uv": {
+      "description": "uv-managed CPython or uv-installed tool. Never use global python/pip.",
+      "check": "uv python list --all-versions | uv tool list",
+      "upgrade": "uv python upgrade <minor> | uv tool upgrade --all"
+    },
+    "uvx": {
+      "description": "Ephemeral tool run via uvx; always resolves the latest release, no persistent install.",
+      "check": "uvx <tool> --version",
+      "upgrade": "uvx <tool> (automatic)"
+    },
+    "choco": {
+      "description": "Chocolatey package (often via UniGetUI).",
+      "check": "choco outdated",
+      "upgrade": "choco upgrade <package>"
+    },
+    "rustup": {
+      "description": "Rust toolchains managed by rustup.",
+      "check": "rustup check",
+      "upgrade": "rustup update"
+    },
+    "dotnet-tool": {
+      "description": "Global .NET tool.",
+      "check": "dotnet tool list --global / dotnet tool update --global <package> --check",
+      "upgrade": "dotnet tool update --global <package>"
+    },
+    "jetbrains-toolbox": {
+      "description": "Android Studio is installed and auto-updated by JetBrains Toolbox, not by winget or a standalone installer.",
+      "check": "JetBrains Toolbox app",
+      "upgrade": "Use JetBrains Toolbox UI; do not overwrite with winget"
+    },
+    "android-studio": {
+      "description": "Android SDK components are updated through Android Studio (SDK Manager / android sdk), not by a package manager.",
+      "check": "Android Studio SDK Manager",
+      "upgrade": "Use Android Studio UI, not a package manager"
+    },
+    "visual-studio-installer": {
+      "description": "Visual Studio and its bundled MSVC/MSBuild/CMake/Ninja ship with the VS installer.",
+      "check": "Visual Studio Installer",
+      "upgrade": "Use Visual Studio Installer, not a package manager"
+    },
+    "manual-fixed": {
+      "description": "Manually downloaded ZIP/JAR/installer, often pinned by REA. Do not auto-upgrade; version drift can break REA path mappings.",
+      "check": "Manual release-page check",
+      "upgrade": "Manual download only, with explicit approval"
+    },
+    "built-in": {
+      "description": "OS/tool built-in component; updated with the OS or its parent product.",
+      "check": "OS / parent product update",
+      "upgrade": "OS / parent product update"
+    }
+  },
+  "tools": {
+    "node": { "channel": "winget", "package": "OpenJS.NodeJS.LTS", "check": "winget upgrade OpenJS.NodeJS.LTS", "note": "Node.js 由 winget 安装（LTS 通道）。npm/npx 随 Node 一起安装。" },
+    "npm": { "channel": "npm", "package": "npm", "check": "npm view npm version", "upgrade": "npm install -g npm@latest", "note": "npm 自带，通过 npm 自身更新，不要用 winget 升级 Node 来更新 npm。" },
+    "npx": { "channel": "winget", "package": "OpenJS.NodeJS.LTS", "note": "随 Node.js 提供，不单独更新。" },
+    "pnpm": { "channel": "npm", "package": "pnpm", "check": "npm view pnpm version", "upgrade": "npm install -g pnpm@latest" },
+    "bun": { "channel": "npm", "package": "bun", "check": "npm view bun version", "upgrade": "npm install -g bun@latest" },
+    "go": { "channel": "winget", "package": "GoLang.Go", "check": "winget upgrade GoLang.Go" },
+    "dotnet": { "channel": "winget", "package": "Microsoft.VisualStudio.Community", "note": "实际由 Visual Studio 安装器带入（winget 记录为 Visual Studio Community）；不要用独立安装包覆盖。" },
+    "uv": { "channel": "winget", "package": "astral-sh.uv", "check": "winget upgrade astral-sh.uv" },
+    "uvx": { "channel": "winget", "package": "astral-sh.uv", "note": "随 uv 提供，不单独更新。" },
+    "python-uv-managed": { "channel": "uv", "check": "uv python list --all-versions", "upgrade": "uv python upgrade 3.12", "note": "已由用户手动升级到 3.12.16；稳定 shim 为 C:\\Users\\guyue\\.local\\bin\\python3.12.exe。小版本升级必须用 uv，不能用 winget/官方安装包。" },
+    "rustc": { "channel": "rustup", "check": "rustup check", "upgrade": "rustup update" },
+    "cargo": { "channel": "rustup", "check": "rustup check", "upgrade": "rustup update" },
+    "rustup": { "channel": "rustup", "check": "rustup check", "upgrade": "rustup self update" },
+    "php": { "channel": "winget", "package": "PHP.PHP.NTS.8.5", "check": "winget upgrade PHP.PHP.NTS.8.5" },
+    "composer": { "channel": "manual-fixed", "note": "现有记录为官方安装包（ARP），用户未指定更新通道；保持手动，不混用。" },
+    "git": { "channel": "winget", "package": "Git.Git", "check": "winget upgrade Git.Git" },
+    "git-lfs": { "channel": "winget", "package": "Git.Git", "note": "随 Git 提供。" },
+    "git-bash": { "channel": "winget", "package": "Git.Git", "note": "随 Git 提供。" },
+    "gh": { "channel": "winget", "package": "GitHub.cli", "check": "winget upgrade GitHub.cli" },
+    "winget": { "channel": "built-in", "note": "随 App Installer / 系统更新。" },
+    "choco": { "channel": "manual-fixed", "check": "choco outdated", "upgrade": "choco upgrade chocolatey", "note": "Chocolatey 自身。" },
+    "scoop": { "channel": "manual-fixed", "check": "scoop update", "upgrade": "scoop update scoop", "note": "Scoop 自身。" },
+    "pwsh": { "channel": "winget", "package": "Microsoft.PowerShell", "check": "winget upgrade Microsoft.PowerShell" },
+    "opencode": { "channel": "npm", "package": "opencode", "note": "CLI 走 npm；另有 winget 桌面版 Anomaly.OpenCode.Desktop，两者不要混用。" },
+    "code": { "channel": "winget", "package": "Microsoft.VisualStudioCode", "check": "winget upgrade Microsoft.VisualStudioCode" },
+    "visual-studio": { "channel": "visual-studio-installer", "package": "Microsoft.VisualStudio.Community", "check": "Visual Studio Installer" },
+    "vswhere": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
+    "msbuild": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
+    "msvc-cl": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
+    "msvc-link": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
+    "msvc-lib": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
+    "msvc-dumpbin": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
+    "msvc-env": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
+    "vs-cmake": { "channel": "visual-studio-installer", "note": "VS 内置 CMake，与 PATH 上独立 CMake 分开更新。" },
+    "vs-ninja": { "channel": "visual-studio-installer", "note": "VS 内置 Ninja，与 PATH 上独立 Ninja 分开更新。" },
+    "curl": { "channel": "built-in", "note": "Windows 系统自带。" },
+    "cmake": { "channel": "winget", "package": "Kitware.CMake", "check": "winget upgrade Kitware.CMake" },
+    "ninja": { "channel": "winget", "package": "Kitware.CMake", "note": "原手动安装的 Ninja 已由用户卸载；当前 ninja.exe 来自 winget 的 Kitware.CMake 包（C:\\Program Files\\CMake\\bin\\ninja.exe，1.12.1），随 CMake 更新。" },
+    "clang": { "channel": "winget", "package": "LLVM.LLVM", "check": "winget upgrade LLVM.LLVM", "note": "原手动安装的 LLVM 已由用户卸载，改用 winget LLVM.LLVM 重装；clang 23.1.6 位于 C:\\Program Files\\LLVM\\bin。" },
+    "objdump": { "channel": "manual-fixed", "note": "WinLibs binutils ZIP，REA_OBJDUMP_COMMAND，手动固定版本。" },
+    "wabt": { "channel": "manual-fixed", "note": "GitHub 加速 ZIP，REA 固定版本 1.0.42。" },
+    "rizin": { "channel": "winget", "package": "Rizin.Rizin", "check": "winget upgrade Rizin.Rizin" },
+    "tshark": { "channel": "winget", "package": "WiresharkFoundation.Wireshark", "check": "winget upgrade WiresharkFoundation.Wireshark" },
+    "capinfos": { "channel": "winget", "package": "WiresharkFoundation.Wireshark", "check": "winget upgrade WiresharkFoundation.Wireshark" },
+    "adb": { "channel": "android-studio", "note": "Android SDK platform-tools，随 Android Studio 更新。" },
+    "android-sdk": { "channel": "android-studio", "note": "SDK 组件通过 Android Studio 更新。" },
+    "android-studio": { "channel": "jetbrains-toolbox", "package": "JetBrains Toolbox", "check": "JetBrains Toolbox 自动更新", "note": "Studio 由 JetBrains Toolbox 安装并自动更新，不要用 winget 覆盖。" },
+    "android-cli": { "channel": "android-studio", "note": "SDK cmdline-tools，随 Android Studio/SDK 更新。" },
+    "sdkmanager": { "channel": "android-studio", "note": "SDK cmdline-tools（已弃用）。" },
+    "avdmanager": { "channel": "android-studio", "note": "SDK cmdline-tools。" },
+    "apkanalyzer": { "channel": "android-studio", "note": "SDK cmdline-tools。" },
+    "android-cli-helpers": { "channel": "android-studio", "note": "SDK cmdline-tools。" },
+    "android-emulator": { "channel": "android-studio", "note": "SDK 组件，通过 Android Studio 更新。" },
+    "android-ndk-29": { "channel": "android-studio", "note": "SDK 组件，通过 Android Studio 更新。" },
+    "android-ndk-30": { "channel": "android-studio", "note": "SDK 组件，通过 Android Studio 更新。" },
+    "android-build-tools": { "channel": "android-studio", "note": "SDK 组件，通过 Android Studio 更新。" },
+    "android-platforms": { "channel": "android-studio", "note": "SDK 组件，通过 Android Studio 更新。" },
+    "android-system-images": { "channel": "android-studio", "note": "SDK 组件，通过 Android Studio 更新。" },
+    "android-sdk-cmake": { "channel": "android-studio", "note": "SDK 内置 CMake，通过 SDK 更新。" },
+    "fastboot": { "channel": "android-studio", "note": "SDK platform-tools。" },
+    "apktool-3": { "channel": "manual-fixed", "note": "官方 JAR，手动下载固定版本；REA 活动版本 3.0.3。" },
+    "apktool-2": { "channel": "manual-fixed", "note": "旧版 2.9.3 保留，不自动升级。" },
+    "jadx-headless-mcp": { "channel": "manual-fixed", "note": "独立 MCP JAR 0.7.1，手动固定；winget 的 jadx 1.5.7 是 GUI 主程序，不要混用。" },
+    "ilspycmd": { "channel": "dotnet-tool", "check": "dotnet tool update --global ilspycmd --check", "upgrade": "dotnet tool update --global ilspycmd" },
+    "kuna": { "channel": "manual-fixed", "note": "官方 ZIP，手动固定 1.1003；容忍 REA 的 unsupported_host 警告。" },
+    "java-jdk25": { "channel": "winget", "package": "Microsoft.OpenJDK.25", "note": "Microsoft JDK 25，REA/Ghidra 使用；不要用其他 JDK 覆盖。" },
+    "java-jdk21": { "channel": "winget", "package": "Oracle.JDK.21", "check": "winget upgrade Oracle.JDK.21" },
+    "java-jdk17": { "channel": "winget", "package": "Oracle.JDK.17", "check": "winget upgrade Oracle.JDK.17" },
+    "java-jre8-x64": { "channel": "choco", "package": "jre8", "check": "choco outdated", "note": "choco jre8 同时安装 x64/x86，保持在 latest\\jre-1.8 junction。" },
+    "java-jre8-x86": { "channel": "choco", "package": "jre8", "check": "choco outdated" },
+    "java8path": { "channel": "winget", "package": "Oracle.JavaRuntimeEnvironment", "note": "Oracle JRE 8 的 java8path 别名（winget），与 choco jre8 是两套独立安装，不要混用。" },
+    "java-zulu11-jre": { "channel": "winget", "package": "Azul.Zulu.11.JRE", "check": "winget upgrade Azul.Zulu.11.JRE" },
+    "java-studio-jbr": { "channel": "android-studio", "note": "Android Studio 内置 JBR，随 Studio 更新。" },
+    "ghidra": { "channel": "manual-fixed", "note": "官方 ZIP，手动固定 12.2.0；需要 Java 25，旧版 12.1.4 保留。" },
+    "ida-pro": { "channel": "manual-fixed", "note": "正版授权手动安装，固定 9.4；不要通过包管理器升级。" },
+    "ida-mcp-config": { "channel": "manual-fixed", "note": "当前已恢复为旧版 idalib-mcp headless 注册（REA 6.10.1 只认这个）；官方 Hex-Rays ida-mcp 已安装但 REA 要到含 hexrays profile 的新版才支持。备份在 ida-mcp.json.bak，切换时把 command/args 改为 ida-mcp.exe stdio --agent=rea 并加 protocol=hexrays。" },
+    "ida-mcp": { "channel": "uv", "package": "ida-mcp", "check": "uv tool list", "upgrade": "uv tool upgrade ida-mcp", "note": "官方 Hex-Rays IDA MCP Server（HexRaysSA/ida-mcp），uv tool 安装，版本 20261028.0.3；GUI 插件由 uvx ida-hcli plugin install 安装。" },
+    "ida-hcli": { "channel": "uvx", "package": "ida-hcli", "check": "uvx ida-hcli --version", "upgrade": "uvx ida-hcli 自动取最新版", "note": "Hex-Rays CLI，用于安装/管理官方 IDA MCP 插件；按需 uvx 运行，不作为常驻工具。" },
+    "ida-python-venv": { "channel": "uv", "note": "IDA 专用 Python 虚拟环境 C:\\Users\\guyue\\AppData\\Roaming\\Hex-Rays\\IDA Pro\\venv，由 uvx ida-hcli ida python create-environment 创建，用户环境变量 IDAPYTHON_VENV_EXECUTABLE 已设置。" },
+    "chrome": { "channel": "winget", "package": "Google.Chrome", "check": "winget upgrade Google.Chrome" },
+    "rea-mcp": { "channel": "npm", "package": "rea-agents", "check": "npm view rea-agents version", "upgrade": "npx.cmd rea-agents@latest mcp (包装器固定该命令)", "note": "只更新 npx 拉取的 rea-agents；不要运行 rea-agents setup --client，也不要修改 rea-mcp.cmd。" },
+    "rea-skill": { "channel": "npm", "package": "rea-agents", "check": "npx.cmd -y rea-agents@latest doctor --skill --json : identity.expected_skill_version vs identity.skill.installed_version / installed_tool_count; 或看 SKILL.md frontmatter 的 metadata.version 与 tool_count", "upgrade": "npx.cmd -y rea-agents@latest setup --skill-client shared --skill --dry-run 预览后去掉 --dry-run 执行", "note": "只更新共享目录 C:\\Users\\guyue\\.agents\\skills，OpenCode 自动读取该目录；不要用 --skill-client opencode（它其实也回退到 shared），也不要加 --client（会改 MCP 注册），不要动 rea-mcp.cmd。REA 6.10.1 期望 v63 / 263 tools。WorkBuddy 下指向该目录的 junction 会让裸跑 doctor --skill 报 unmanaged/symbolic_link，这是归属告警不是版本不一致。" },
+    "reqable-mcp": { "channel": "winget", "package": "Reqable.Reqable", "check": "winget upgrade Reqable.Reqable", "note": "MCP 组件随 Reqable 主程序。" },
+    "frida-tools": { "channel": "uv", "check": "uv tool list", "upgrade": "uv tool upgrade frida-tools", "note": "uv tool 安装，用户已手动升级到 14.13.2；未列入 toolchain 清单，但已在本机安装。" },
+    "ida-pro-mcp": { "channel": "uv", "check": "uv tool list", "upgrade": "uv tool upgrade ida-pro-mcp", "note": "uv tool 安装；本机 2.0.0 高于 PyPI 1.4.0，不要降级。" },
+    "trafilatura": { "channel": "uv", "check": "uv tool list", "upgrade": "uv tool upgrade trafilatura", "note": "uv tool 安装，用户已手动升级到 2.4.0；未列入 toolchain 清单。" }
+  }
+}

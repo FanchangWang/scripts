@@ -19,6 +19,7 @@ $TemplatePath = Join-Path $ScriptRoot 'skill-template.md'
 $QueryTemplatePath = Join-Path $ScriptRoot 'query-template.ps1'
 $QueryPath = Join-Path $OutputDirectory 'query.ps1'
 $ReaCheckPath = Join-Path $ScriptRoot 'rea-env.json'
+$ChannelsPath = Join-Path $ScriptRoot 'update-channels.json'
 $Today = (Get-Date).ToString('yyyy-MM-dd')
 $RunHint = 'pwsh.exe -NoProfile -File "' + $PSCommandPath + '"'
 
@@ -93,28 +94,28 @@ function Get-Specs {
     @{ id='node'; name='Node.js'; category='runtime'; command='node'; exe='C:\Program Files\nodejs\node.exe'; args=@('--version'); source='official installer'; notes='v26.13.1. REA MCP wrapper uses this installation.'; tags=@('javascript','js','npm') },
     @{ id='npm'; name='npm'; category='package-manager'; command='npm'; exe='C:\Program Files\nodejs\npm.cmd'; args=@('--version'); source='official installer'; notes='12.2.3. Registry mirror: https://registry.npmmirror.com/ (user .npmrc).'; tags=@('javascript','registry') },
     @{ id='npx'; name='npx'; category='package-manager'; command='npx'; exe='C:\Program Files\nodejs\npx.cmd'; args=@('--version'); source='official installer'; notes='12.2.3. Use npx.cmd in Windows automation because the REA wrapper depends on .cmd launchers.'; tags=@('javascript','runner') },
-    @{ id='pnpm'; name='pnpm'; category='package-manager'; command='pnpm'; exe='C:\Users\guyue\AppData\Roaming\npm\pnpm.cmd'; args=@('--version'); source='npm'; notes='12.21.0. Registry mirror: https://registry.npmmirror.com/.'; tags=@('javascript','registry') },
+    @{ id='pnpm'; name='pnpm'; category='package-manager'; command='pnpm'; exe='C:\Users\guyue\AppData\Roaming\npm\pnpm.cmd'; args=@('--version'); source='npm'; notes='12.23.0. Registry mirror: https://registry.npmmirror.com/.'; tags=@('javascript','registry') },
     @{ id='bun'; name='Bun'; category='runtime'; command='bun'; exe='C:\Users\guyue\AppData\Roaming\npm\bun.cmd'; args=@('--version'); source='npm'; notes='1.4.5. Runtime, package manager, bundler, and test runner.'; tags=@('javascript','typescript') },
     @{ id='go'; name='Go'; category='sdk'; command='go'; exe='C:\Program Files\Go\bin\go.exe'; args=@('version'); source='official installer'; notes='GOPROXY=https://goproxy.cn,direct. GOROOT=C:\Program Files\Go.'; tags=@('golang') },
     @{ id='dotnet'; name='.NET SDK'; category='sdk'; command='dotnet'; exe='C:\Program Files\dotnet\dotnet.exe'; args=@('--version'); source='official installer'; notes='SDK 11.0.100. Use this host for ILSpy/ilspycmd tooling.'; tags=@('csharp','dotnet') },
-    @{ id='uv'; name='uv'; category='package-manager'; command='uv'; exe='C:\Users\guyue\AppData\Local\Microsoft\WinGet\Links\uv.exe'; args=@('--version'); source='winget'; notes='0.13.9. Python is uv-managed; no global python or pip on PATH.'; tags=@('python','uv') },
-    @{ id='uvx'; name='uvx'; category='package-manager'; command='uvx'; exe='C:\Users\guyue\AppData\Local\Microsoft\WinGet\Links\uvx.exe'; args=@('--version'); source='winget'; notes='0.13.9. Use uvx <tool> for one-off Python tool CLIs.'; tags=@('python','uv') },
-    @{ id='python-uv-managed'; name='Python (uv-managed CPython)'; category='runtime'; exe='C:\Users\guyue\AppData\Roaming\uv\python\cpython-3.12.15-windows-x86_64-none\python.exe'; args=@('--version'); source='uv'; notes='CPython 3.12.15. Run scripts with `uv run python file.py`; `python`/`pip` are not on PATH.'; tags=@('python','uv') },
+    @{ id='uv'; name='uv'; category='package-manager'; command='uv'; exe='C:\Users\guyue\AppData\Local\Microsoft\WinGet\Links\uv.exe'; args=@('--version'); source='winget'; notes='0.13.10. Python is uv-managed; no global python or pip on PATH.'; tags=@('python','uv') },
+    @{ id='uvx'; name='uvx'; category='package-manager'; command='uvx'; exe='C:\Users\guyue\AppData\Local\Microsoft\WinGet\Links\uvx.exe'; args=@('--version'); source='winget'; notes='0.13.10. Use uvx <tool> for one-off Python tool CLIs.'; tags=@('python','uv') },
+    @{ id='python-uv-managed'; name='Python (uv-managed CPython)'; category='runtime'; exe='C:\Users\guyue\.local\bin\python3.12.exe'; args=@('--version'); source='uv'; notes='CPython 3.12.16 (user-upgraded). Use the stable uv shim path so patch upgrades do not break probes. Run scripts with `uv run python file.py`; `python`/`pip` are not on PATH.'; tags=@('python','uv') },
     @{ id='rustc'; name='Rust compiler'; category='compiler'; command='rustc'; exe='C:\Users\guyue\.cargo\bin\rustc.exe'; args=@('--version'); source='rustup'; notes='rustc 1.99.1, stable-x86_64-pc-windows-msvc.'; tags=@('rust') },
     @{ id='cargo'; name='Cargo'; category='package-manager'; command='cargo'; exe='C:\Users\guyue\.cargo\bin\cargo.exe'; args=@('--version'); source='rustup'; notes='cargo 1.99.1.'; tags=@('rust') },
     @{ id='rustup'; name='rustup'; category='package-manager'; command='rustup'; exe='C:\Users\guyue\.cargo\bin\rustup.exe'; args=@('--version'); source='rustup'; notes='1.29.3; active/default toolchain stable-x86_64-pc-windows-msvc.'; tags=@('rust') },
-    @{ id='php'; name='PHP'; category='runtime'; command='php'; exe=$null; args=@('--version'); source='winget'; notes='PHP 8.5 NTS installed via winget package path; verify actual patch version with the command.'; tags=@('php') },
+    @{ id='php'; name='PHP'; category='runtime'; command='php'; exe=$null; args=@('--version'); source='winget'; notes='PHP 8.5.13 NTS installed via winget package PHP.PHP.NTS.8.5.'; tags=@('php') },
     @{ id='composer'; name='Composer'; category='package-manager'; command='composer'; exe=$null; args=@('--version'); source='official installer'; notes='PHP dependency manager.'; tags=@('php') },
     @{ id='git'; name='Git'; category='vcs'; command='git'; exe='C:\Program Files\Git\cmd\git.exe'; args=@('--version'); source='official installer'; notes='2.56.1.windows.1. Global proxy is http://192.168.31.50:7890; core.autocrlf=true; credentials use gh.exe.'; tags=@('vcs','github','proxy') },
     @{ id='git-lfs'; name='Git LFS'; category='vcs'; command='git'; exe='C:\Program Files\Git\cmd\git.exe'; args=@('lfs','version'); source='official installer'; notes='git-lfs 3.8.1.'; tags=@('vcs','lfs') },
     @{ id='git-bash'; name='Git Bash'; category='cli'; exe='C:\Program Files\Git\bin\bash.exe'; args=@('--version'); source='official installer'; notes='GNU bash 5.3.15(2)-release. Use this explicit path; `bash` on PATH resolves to C:\WINDOWS\system32\bash.exe.'; tags=@('shell','bash') },
-    @{ id='gh'; name='GitHub CLI'; category='cli'; command='gh'; exe='C:\Program Files\GitHub CLI\gh.exe'; args=@('--version'); source='winget'; notes='gh 2.105.0. Configured as Git credential helper for github.com and gist.github.com.'; tags=@('github','cli') },
+    @{ id='gh'; name='GitHub CLI'; category='cli'; command='gh'; exe='C:\Program Files\GitHub CLI\gh.exe'; args=@('--version'); source='winget'; notes='gh 2.106.0. Configured as Git credential helper for github.com and gist.github.com.'; tags=@('github','cli') },
     @{ id='winget'; name='winget'; category='package-manager'; command='winget'; exe='C:\Users\guyue\AppData\Local\Microsoft\WindowsApps\winget.exe'; args=@('--version'); source='built-in'; notes='v1.29.380. Preferred install source.'; tags=@('windows','installer') },
     @{ id='choco'; name='Chocolatey'; category='package-manager'; command='choco'; exe=$null; args=@('--version'); source='installer'; notes='Second install preference. Not found on PATH at refresh time.'; tags=@('windows','installer') },
     @{ id='scoop'; name='Scoop'; category='package-manager'; command='scoop'; exe=$null; args=@('--version'); source='installer'; notes='Shim directory C:\Users\guyue\scoop\shims is on PATH; verify with `scoop --version`.'; tags=@('windows','installer') },
     @{ id='pwsh'; name='PowerShell 7'; category='cli'; command='pwsh'; exe=$null; args=@('--version'); source='winget'; notes='Preferred shell in OpenCode config. This toolchain is a pwsh script.'; tags=@('shell','powershell') },
-    @{ id='opencode'; name='OpenCode'; category='cli'; command='opencode'; exe=$null; args=@('--version'); source='npm'; notes='v2.3.2. REA is registered as a disabled-by-default MCP server.'; tags=@('agent','ai') },
-    @{ id='code'; name='VS Code'; category='editor'; command='code'; exe='C:\Users\guyue\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd'; args=@('--version'); source='official installer'; notes='1.147.0. Also configured as global Git core.editor with --wait.'; tags=@('editor') },
+    @{ id='opencode'; name='OpenCode'; category='cli'; command='opencode'; exe=$null; args=@('--version'); source='npm'; notes='REA is registered as a disabled-by-default MCP server.'; tags=@('agent','ai') },
+    @{ id='code'; name='VS Code'; category='editor'; command='code'; exe='C:\Users\guyue\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd'; args=@('--version'); source='official installer'; notes='1.148.0. Also configured as global Git core.editor with --wait.'; tags=@('editor') },
     @{ id='visual-studio'; name='Visual Studio'; category='editor'; exe='C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\devenv.exe'; args=$null; source='official installer'; static_version='18.12.12412.261'; kind='executable'; notes='VS 18 Community at C:\Program Files\Microsoft Visual Studio\18\Community. Not on PATH; launch by absolute path.'; tags=@('visual-studio','ide','msvc') },
     @{ id='vswhere'; name='VS Where'; category='cli'; exe='C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'; args=$null; source='Visual Studio installer'; static_version='3.1.7.39155'; kind='executable'; notes='Locate Visual Studio installations and workloads. Outside the VS install dir.'; tags=@('visual-studio','discovery') },
     @{ id='msbuild'; name='MSBuild'; category='build'; exe='C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe'; args=$null; source='Visual Studio'; static_version='18.12.3.55912'; kind='executable'; notes='VS-bundled MSBuild. Use -version for runtime output; static_version comes from file version to avoid localized text.'; tags=@('visual-studio','build','dotnet') },
@@ -127,8 +128,8 @@ function Get-Specs {
     @{ id='vs-ninja'; name='VS-bundled Ninja'; category='build'; exe='C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe'; args=@('--version'); source='Visual Studio'; notes='1.13.2. Separate from standalone Ninja 1.12.1 on PATH.'; tags=@('visual-studio','ninja','build') },
     @{ id='curl'; name='curl'; category='network'; command='curl'; exe='C:\Windows\System32\curl.exe'; args=@('--version'); source='built-in'; notes='Windows built-in curl 8.22.0.'; tags=@('http','download') },
     @{ id='cmake'; name='CMake'; category='build'; command='cmake'; exe='C:\Program Files\CMake\bin\cmake.exe'; args=@('--version'); source='official installer'; notes='cmake 4.4.4.'; tags=@('build') },
-    @{ id='ninja'; name='Ninja'; category='build'; command='ninja'; exe='C:\Program Files\CMake\bin\ninja.exe'; args=@('--version'); source='official installer'; notes='ninja 1.12.1.'; tags=@('build') },
-    @{ id='clang'; name='Clang'; category='compiler'; command='clang'; exe='C:\Program Files\LLVM\bin\clang.exe'; args=@('--version'); source='official installer'; notes='clang 21.1.8 targeting x86_64-pc-windows-msvc.'; tags=@('c','cpp','compiler') },
+    @{ id='ninja'; name='Ninja'; category='build'; command='ninja'; exe='C:\Program Files\CMake\bin\ninja.exe'; args=@('--version'); source='winget'; notes='ninja 1.12.1 from the winget Kitware.CMake package; old standalone Ninja was removed.'; tags=@('build') },
+    @{ id='clang'; name='Clang'; category='compiler'; command='clang'; exe='C:\Program Files\LLVM\bin\clang.exe'; args=@('--version'); source='winget'; notes='clang 23.1.6 from winget LLVM.LLVM; old manual LLVM was removed.'; tags=@('c','cpp','compiler') },
     @{ id='objdump'; name='GNU objdump'; category='binary-analysis'; exe='C:\Users\guyue\code-tools\binary-analysis\binutils\2.47.20260726\mingw64\bin\objdump.exe'; args=@('--version'); source='official ZIP (WinLibs)'; notes='2.47.20260726. REA setting REA_OBJDUMP_COMMAND. No standard objdump on PATH; use this absolute path.'; tags=@('rea','binutils','disassembly') },
     @{ id='wabt'; name='WABT'; category='binary-analysis'; exe='C:\Users\guyue\code-tools\binary-analysis\wabt\1.0.42\bin\wasm-objdump.exe'; args=@('--version'); source='official ZIP (GitHub accelerated)'; notes='1.0.42, pinned by REA. REA setting REA_WABT_BIN_DIRECTORY points at the parent bin directory.'; tags=@('rea','wasm') },
     @{ id='rizin'; name='Rizin'; category='binary-analysis'; exe='C:\Program Files\Rizin\bin\rizin.exe'; args=@('-v'); source='installer'; notes='0.9.1. REA setting REA_RIZIN_COMMAND. Debug-session cleanup has Windows limitations; static command use is primary.'; tags=@('rea','disassembly','debug') },
@@ -165,10 +166,11 @@ function Get-Specs {
     @{ id='java-studio-jbr'; name='Android Studio bundled JBR'; category='runtime'; exe='C:\Users\guyue\AppData\Local\Programs\Android Studio\jbr\bin\java.exe'; args=@('-version'); source='Android Studio'; notes='25.0.4 JBR bundled with Android Studio. Intended for the IDE, not a general JAVA_HOME.'; tags=@('java','jbr','android') },
     @{ id='ghidra'; name='Ghidra'; category='binary-analysis'; exe='C:\Users\guyue\code-tools\binary-analysis\ghidra\12.2.0\support\analyzeHeadless.bat'; args=$null; source='official ZIP'; static_version='12.2.0'; kind='install-dir'; notes='REA setting GHIDRA_INSTALL_DIR. Requires Java 25; old 12.1.4 install retained.'; tags=@('rea','ghidra') },
     @{ id='ida-pro'; name='IDA Professional'; category='binary-analysis'; exe='C:\Program Files\IDA Professional 9.4\ida.exe'; args=$null; source='license/installer'; static_version='9.4'; kind='install-dir'; notes='REA setting IDADIR points to C:\Program Files\IDA Professional 9.4.'; tags=@('rea','ida') },
-    @{ id='ida-mcp-config'; name='IDA MCP config'; category='mcp'; exe='C:\Users\guyue\.local\share\rea\ida-mcp.json'; args=$null; source='manual'; static_version=$null; kind='config'; notes='REA setting REA_IDA_MCP_CONFIG.'; tags=@('rea','ida','config') },
+    @{ id='ida-mcp-config'; name='IDA MCP config'; category='mcp'; exe='C:\Users\guyue\.local\share\rea\ida-mcp.json'; args=$null; source='manual'; static_version=$null; kind='config'; notes='REA_IDA_MCP_CONFIG. Restored to legacy idalib-mcp headless registration because REA 6.10.1 cannot read the official hexrays profile; backup at ida-mcp.json.bak.'; tags=@('rea','ida','config') },
+    @{ id='ida-mcp'; name='Official Hex-Rays IDA MCP'; category='mcp'; command='ida-mcp'; exe='C:\Users\guyue\.local\bin\ida-mcp.exe'; args=$null; source='uv'; static_version='20261028.0.3'; kind='executable'; notes='HexRaysSA/ida-mcp installed via uv tool; GUI plugin installed by uvx ida-hcli. MCP stdio verified. REA will use it once a release supports protocol=hexrays.'; tags=@('ida','mcp','hexrays','uv') },
     @{ id='chrome'; name='Google Chrome'; category='network'; exe='C:\Program Files\Google\Chrome\Application\chrome.exe'; args=$null; source='official installer'; static_version=$null; kind='executable'; notes='REA setting REA_BROWSER_EXECUTABLE.'; tags=@('rea','browser') },
     @{ id='rea-mcp'; name='REA MCP wrapper'; category='mcp'; exe='C:\Users\guyue\.local\bin\rea-mcp.cmd'; args=$null; source='manual'; static_version='6.10.1 via npx rea-agents@latest'; kind='script'; notes='Single source of truth for REA env paths. Disabled by default in clients; connect/disconnect via OpenCode API only.'; tags=@('rea','mcp','wrapper') },
-    @{ id='rea-skill'; name='REA skill'; category='mcp'; exe='C:\Users\guyue\.agents\skills\reverse-engineer-anything\SKILL.md'; args=$null; source='rea-agents'; static_version='v63 / 263 tools'; kind='skill'; notes='Installed skill. Update with `npx.cmd rea-agents@latest setup --skill-client opencode --skill` only.'; tags=@('rea','skill') },
+    @{ id='rea-skill'; name='REA skill'; category='mcp'; exe='C:\Users\guyue\.agents\skills\reverse-engineer-anything\SKILL.md'; args=$null; source='rea-agents'; static_version='v63 / 263 tools'; kind='skill'; notes='Shared skill at C:\Users\guyue\.agents\skills; OpenCode reads it automatically. Check with `npx.cmd -y rea-agents@latest doctor --skill --json`. Update with `npx.cmd -y rea-agents@latest setup --skill-client shared --skill` only; never use --client.'; tags=@('rea','skill') },
     @{ id='reqable-mcp'; name='Reqable MCP'; category='mcp'; exe='C:\Program Files\Reqable\mcp-server.exe'; args=$null; source='official installer'; static_version=$null; kind='executable'; notes='Disabled by default. Used for live traffic capture; TShark here is offline pcap only.'; tags=@('reqable','mcp','proxy') }
   )
 }
@@ -212,6 +214,15 @@ function ConvertTo-Markdown {
     [void]$sb.AppendLine("| $($fact.id) | $(ConvertTo-CellText $fact.title) | $(ConvertTo-CellText $fact.value) | $(ConvertTo-CellText $fact.usage) |")
   }
   [void]$sb.AppendLine()
+  [void]$sb.AppendLine('## Update channels (authoritative; never change install method)')
+  [void]$sb.AppendLine()
+  [void]$sb.AppendLine('| ID | Channel | Package | Check | Upgrade command / note |')
+  [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
+  foreach ($tool in ($Inventory.tools | Sort-Object id)) {
+    $detail = if ($tool.update_command) { $tool.update_command } else { $tool.update_note }
+    [void]$sb.AppendLine("| $($tool.id) | $(ConvertTo-CellText $tool.update_channel) | $(ConvertTo-CellText $tool.update_package) | $(ConvertTo-CellText $tool.update_check) | $(ConvertTo-CellText $detail) |")
+  }
+  [void]$sb.AppendLine()
   [void]$sb.AppendLine('## Tools by category')
   [void]$sb.AppendLine()
   foreach ($group in ($Inventory.tools | Group-Object category | Sort-Object Name)) {
@@ -233,7 +244,24 @@ function Refresh-Inventory {
     throw "Missing overrides file: $OverridesPath"
   }
   $overrides = Get-Content -LiteralPath $OverridesPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $channels = if (Test-Path -LiteralPath $ChannelsPath) {
+    Get-Content -LiteralPath $ChannelsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  } else { $null }
   $tools = @(Get-Specs | ForEach-Object { New-ToolRecord $_ })
+  if ($channels) {
+    foreach ($t in $tools) {
+      $entry = $channels.tools.PSObject.Properties[$t.id]
+      if ($entry) {
+        $t | Add-Member -NotePropertyName 'update_channel' -NotePropertyValue $entry.Value.channel -Force
+        $t | Add-Member -NotePropertyName 'update_package' -NotePropertyValue $entry.Value.package -Force
+        $t | Add-Member -NotePropertyName 'update_check' -NotePropertyValue $entry.Value.check -Force
+        $t | Add-Member -NotePropertyName 'update_command' -NotePropertyValue $entry.Value.upgrade -Force
+        $t | Add-Member -NotePropertyName 'update_note' -NotePropertyValue $entry.Value.note -Force
+      } else {
+        $t | Add-Member -NotePropertyName 'update_channel' -NotePropertyValue 'unrecorded' -Force
+      }
+    }
+  }
 
   $categories = [ordered]@{}
   foreach ($t in $tools) {
@@ -258,10 +286,12 @@ function Refresh-Inventory {
       'Query with: pwsh.exe -NoProfile -File "' + $QueryPath + '" find <query>',
       'Show configuration with: pwsh.exe -NoProfile -File "' + $QueryPath + '" config',
       'Check core tools with: pwsh.exe -NoProfile -File "' + $QueryPath + '" doctor',
+      'Update channels are authoritative in update_channels / each tool''s update_* fields. Never update a tool through a different channel or change its install method.',
       'This manifest is generated; do not hand-edit it. Regeneration is a maintainer task.'
     )
     conventions = $overrides.conventions
     config_facts = $overrides.config_facts
+    update_channels = $channels
     tools = @($tools)
     summary = [ordered]@{
       total      = $tools.Count
