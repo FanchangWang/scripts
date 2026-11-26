@@ -128,6 +128,7 @@ if [[ $NO_REMOVE_LEGACY -eq 0 ]]; then
     [[ "$n" =~ ^[a-z][a-z0-9]*(-[a-z0-9]+)+$ ]] || die "retired 目录名不合法: $n"
     contains "$n" "${TO_PUBLISH[@]}" && continue   # 安全：不删本次要发布的
     contains "$n" "${SKILLS[@]}" && continue
+    [[ -e "$SKILLS_DIR/$n" ]] || continue          # 已不存在，静默跳过
     TO_REMOVE+=("$n")
   done
 fi
@@ -155,10 +156,7 @@ done
 
 for n in "${TO_REMOVE[@]}"; do
   dest="$SKILLS_DIR/$n"
-  if [[ ! -e "$dest" ]]; then
-    [[ $DRY_RUN -eq 0 ]] && printf '[SKIP] 旧 skill 不存在: %s\n' "$n"
-    continue
-  fi
+  [[ -e "$dest" ]] || continue
   if [[ $DRY_RUN -eq 1 ]]; then
     printf '[DRY-RUN] 移除旧 skill %s\n' "$dest"
     continue

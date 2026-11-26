@@ -155,6 +155,8 @@ if (-not $NoRemoveLegacy) {
         # 安全：绝不删除本次要发布的 skill，即使误写进 retired
         if ($toPublish -contains $name) { continue }
         if ($seen.Contains($name)) { continue }
+        # 已经不存在的旧 skill 静默跳过，不产生无意义的提示
+        if (-not (Test-Path -LiteralPath (Join-Path $SkillsDir $name))) { continue }
         $retiredToRemove.Add($name)
     }
 }
@@ -179,10 +181,7 @@ foreach ($name in $toPublish) {
 
 foreach ($name in $retiredToRemove) {
     $dest = Join-Path $SkillsDir $name
-    if (-not (Test-Path -LiteralPath $dest)) {
-        if (-not $DryRun) { Write-Host "[SKIP] 旧 skill 不存在：$name" }
-        continue
-    }
+    if (-not (Test-Path -LiteralPath $dest)) { continue }
     if ($DryRun) {
         Write-Host "[DRY-RUN] 移除旧 skill $dest"
         continue
