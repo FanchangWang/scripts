@@ -24,6 +24,16 @@
       "check": "uvx <tool> --version",
       "upgrade": "uvx <tool> (automatic)"
     },
+    "npx": {
+      "description": "Ephemeral tool run via npx.cmd from the npmmirror registry.",
+      "check": "npx.cmd -y <tool> list",
+      "upgrade": "npx.cmd -y <tool> update (or reinstall with a new source)"
+    },
+    "remote-oauth": {
+      "description": "Hosted remote MCP registration in an agent config; authenticated by the provider's OAuth flow, not by a local package manager.",
+      "check": "opencode mcp list",
+      "upgrade": "Managed by the remote provider; re-authenticate with `opencode mcp auth <name>` if needed"
+    },
     "choco": {
       "description": "Chocolatey package (often via UniGetUI).",
       "check": "choco outdated",
@@ -76,6 +86,7 @@
     "uv": { "channel": "winget", "package": "astral-sh.uv", "check": "winget upgrade astral-sh.uv" },
     "uvx": { "channel": "winget", "package": "astral-sh.uv", "note": "随 uv 提供，不单独更新。" },
     "python-uv-managed": { "channel": "uv", "check": "uv python list --all-versions", "upgrade": "uv python upgrade 3.12", "note": "已由用户手动升级到 3.12.16；稳定 shim 为 C:\\Users\\guyue\\.local\\bin\\python3.12.exe。小版本升级必须用 uv，不能用 winget/官方安装包。" },
+    "frida": { "channel": "uv", "check": "frida --version", "upgrade": "uv tool upgrade frida-tools", "note": "frida.exe 17.27.6 来自 uv tool frida-tools 14.13.2（C:\\Users\\guyue\\.local\\bin\\frida.exe）；动态插桩 CLI，不要改用 winget/安装器。" },
     "rustc": { "channel": "rustup", "check": "rustup check", "upgrade": "rustup update" },
     "cargo": { "channel": "rustup", "check": "rustup check", "upgrade": "rustup update" },
     "rustup": { "channel": "rustup", "check": "rustup check", "upgrade": "rustup self update" },
@@ -90,6 +101,7 @@
     "scoop": { "channel": "manual-fixed", "check": "scoop update", "upgrade": "scoop update scoop", "note": "Scoop 自身。" },
     "pwsh": { "channel": "winget", "package": "Microsoft.PowerShell", "check": "winget upgrade Microsoft.PowerShell" },
     "opencode": { "channel": "npm", "package": "opencode", "note": "CLI 走 npm；另有 winget 桌面版 Anomaly.OpenCode.Desktop，两者不要混用。" },
+    "cf": { "channel": "npm", "package": "cf", "check": "cf --version", "upgrade": "npm install -g cf@latest", "note": "Cloudflare CLI (beta) 1.0.0-rc.6，全局 npm 安装（C:\\Users\\guyue\\AppData\\Roaming\\npm\\cf.cmd），已由用户 cf auth login 授权。除有 Wrangler 配置的项目外，Cloudflare 操作优先用 cf。" },
     "code": { "channel": "winget", "package": "Microsoft.VisualStudioCode", "check": "winget upgrade Microsoft.VisualStudioCode" },
     "visual-studio": { "channel": "visual-studio-installer", "package": "Microsoft.VisualStudio.Community", "check": "Visual Studio Installer" },
     "vswhere": { "channel": "visual-studio-installer", "note": "随 Visual Studio 安装器。" },
@@ -148,8 +160,10 @@
     "chrome": { "channel": "winget", "package": "Google.Chrome", "check": "winget upgrade Google.Chrome" },
     "rea-mcp": { "channel": "npm", "package": "rea-agents", "check": "npm view rea-agents version", "upgrade": "npx.cmd rea-agents@latest mcp (包装器固定该命令)", "note": "只更新 npx 拉取的 rea-agents；不要运行 rea-agents setup --client，也不要修改 rea-mcp.cmd。" },
     "rea-skill": { "channel": "npm", "package": "rea-agents", "check": "npx.cmd -y rea-agents@latest doctor --skill --json : identity.expected_skill_version vs identity.skill.installed_version / installed_tool_count; 或看 SKILL.md frontmatter 的 metadata.version 与 tool_count", "upgrade": "npx.cmd -y rea-agents@latest setup --skill-client shared --skill --dry-run 预览后去掉 --dry-run 执行", "note": "只更新共享目录 C:\\Users\\guyue\\.agents\\skills，OpenCode 自动读取该目录；不要用 --skill-client opencode（它其实也回退到 shared），也不要加 --client（会改 MCP 注册），不要动 rea-mcp.cmd。REA 6.10.1 期望 v63 / 263 tools。WorkBuddy 下指向该目录的 junction 会让裸跑 doctor --skill 报 unmanaged/symbolic_link，这是归属告警不是版本不一致。" },
+    "cloudflare-skills": { "channel": "npx", "package": "skills", "check": "npx.cmd -y skills list -g", "upgrade": "npx.cmd -y skills update -g", "note": "cloudflare/skills 的 24 个技能已全局安装到 C:\\Users\\guyue\\.agents\\skills（命令：npx.cmd -y skills add https://github.com/cloudflare/skills -g -a codex -s '*' -y --json）。用 -a codex 是因为它的全局目录正是 ~/.agents/skills，不会写入 opencode 等 agent 私有目录；不要改用 --all 或 -a opencode。" },
+    "cloudflare-mcp": { "channel": "remote-oauth", "check": "opencode mcp list", "note": "OpenCode 全局配置中的远程 MCP：https://mcp.cloudflare.com/mcp（C:\\Users\\guyue\\.config\\opencode\\opencode.jsonc）。首次使用需 OAuth 授权：opencode mcp auth cloudflare；cf auth login 只授权 CLI，不授权 MCP。" },
     "reqable-mcp": { "channel": "winget", "package": "Reqable.Reqable", "check": "winget upgrade Reqable.Reqable", "note": "MCP 组件随 Reqable 主程序。" },
-    "frida-tools": { "channel": "uv", "check": "uv tool list", "upgrade": "uv tool upgrade frida-tools", "note": "uv tool 安装，用户已手动升级到 14.13.2；未列入 toolchain 清单，但已在本机安装。" },
+    "frida-tools": { "channel": "uv", "check": "uv tool list", "upgrade": "uv tool upgrade frida-tools", "note": "uv tool 安装，用户已手动升级到 14.13.2；提供 frida/frida-ps 等 CLI（frida.exe 17.27.6）。" },
     "ida-pro-mcp": { "channel": "uv", "check": "uv tool list", "upgrade": "uv tool upgrade ida-pro-mcp", "note": "uv tool 安装；本机 2.0.0 高于 PyPI 1.4.0，不要降级。" },
     "trafilatura": { "channel": "uv", "check": "uv tool list", "upgrade": "uv tool upgrade trafilatura", "note": "uv tool 安装，用户已手动升级到 2.4.0；未列入 toolchain 清单。" }
   }
