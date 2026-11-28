@@ -20,7 +20,7 @@
 // Plugin version — single source of truth, configured here in code.
 // Update this one macro to bump the version shown in the settings window
 // and reported to the host SDK (as PLUGIN_VERSION ".0").
-#define PLUGIN_VERSION "2.3.0"
+#define PLUGIN_VERSION "2.4.0"
 
 // ---------------------------------------------------------------------------
 // constants
@@ -30,13 +30,14 @@
 // hard-coded so no runtime analysis is needed for these builds.
 struct VersionEntry { const char* version; uintptr_t rva; };
 static const VersionEntry KNOWN_VERSIONS[] = {
+    { "7.1.0.261127", 0x181BC0 },
     { "7.0.1.261107", 0x1819D0 },
     { "6.2.0.260501", 0x17D970 },
     { "6.1.0.260422", 0x17D920 },
     { "6.0.0.260417", 0x17B150 },
 };
 static const char* SUPPORTED_VERSION_TEXT =
-    "7.0.1.261107 / 6.2.0.260501 / 6.1.0.260422 / 6.0.0.260417";
+    "7.1.0.261127 / 7.0.1.261107 / 6.2.0.260501 / 6.1.0.260422 / 6.0.0.260417";
 
 #define MN_APPLY_THEME (WM_APP + 31)
 #define MN_SHOW_UI     (WM_APP + 32)
@@ -510,8 +511,31 @@ static bool InvokeApply(PFN_ApplyTheme fn, const char* name) {
     }
 }
 
+// 7.1+ is the first build with the new SDK (Other plugin type, LoadTheme /
+// OpenWindow / LoadLang APIs, split init events). Detect it by version so one
+// DLL can still serve older hosts.
+static bool VersionAtLeast71(const std::string& v) {
+    int major = 0, minor = 0;
+    if (sscanf_s(v.c_str(), "%d.%d", &major, &minor) < 1)
+        return false;
+    return (major > 7) || (major == 7 && minor >= 1);
+}
+
+static bool ApiLoadThemeAvailable() {
+    return VersionAtLeast71(g_currentVersion);
+}
+
 static void CallInternalTheme(const std::string& theme) {
-    if (!g_functional || !g_applyRva) return;
+    if (!g_functional) return;
+
+    if (ApiLoadThemeAvailable() && mn::_MN_API_FN && mn::_MN_CTX) {
+        mn::Api::LoadTheme(theme.empty() ? nullptr : theme.c_str());
+        LogA("official LoadTheme called: '%s'", theme.c_str());
+        ApplyDwmBorder(theme);
+        return;
+    }
+
+    if (!g_applyRva) return;
     HMODULE mod = GetModuleHandleW(nullptr);
     if (!mod) return;
     auto fn = (PFN_ApplyTheme)((BYTE*)mod + g_applyRva);
@@ -621,12 +645,23 @@ static void ApplyThemeNow(const std::string& desired) {
 // slot: 0 = cancel preview (restore auto theme), 1 = light, 2 = dark.
 static void ApplyPreview(int slot) {
     std::string theme;
+    int previousSlot = 0;
     if (g_lockReady) EnterCriticalSection(&g_stateLock);
+    previousSlot = g_previewSlot;
     g_previewSlot = slot;
     if (slot == 1)      theme = g_lightTheme;
     else if (slot == 2) theme = g_darkTheme;
     else                theme = IsWindowsLightMode() ? g_lightTheme : g_darkTheme;
     if (g_lockReady) LeaveCriticalSection(&g_stateLock);
+
+    // 7.1+ can open the app's Settings window so there is a themed window to
+    // look at even when the launcher starts hidden. Called from WM_COMMAND on
+    // the main thread (OpenWindow is not thread safe).
+    if (slot != 0 && previousSlot == 0 &&
+        ApiLoadThemeAvailable() && mn::_MN_API_FN && mn::_MN_CTX) {
+        (void)mn::Api::OpenWindow(mn::Api::OWCODE::Set);
+        LogA("preview: OpenWindow(Set)");
+    }
 
     if (g_enabled && g_functional) ApplyThemeNow(theme);
     LogA("preview slot=%d theme='%s'", slot, theme.c_str());
@@ -1191,9 +1226,15 @@ mn::_MN_RESULT _MN_Notify(unsigned int msg, void* p1, void* /*p2*/) {
     case mn::code::notify::Destroy:
         StopMonitor();
         break;
-    case mn::code::notify::Search_Init: {
+    case mn::code::notify::Search_Init:
+    case mn::code::notify::InitType_Other: {
+        // 7.1+ Other-type plugins get InitType_Other with param1 = Null and
+        // need no search registration. Search-type hosts still send
+        // Search_Init with a _SEARCH_INFO pointer; keep a harmless dummy key
+        // so the host keeps the plugin alive.
+        LogA("init event msg=%u param=%p", msg, p1);
         auto info = (mn::_SEARCH_INFO*)p1;
-        if (!info) return 0;
+        if (!info) return True;
         info->name = "Auto Theme";
         info->desc = "Auto Theme (system light/dark)";
         info->boost = 0;
@@ -1215,6 +1256,12 @@ __MN_PLUGIN_IN__ mn::_PLUGIN_INFO _MN_Info(void* fn, void* ctx) {
     mn::_MN_API_FN = (mn::PFN_API_FN)fn;
     mn::_MN_CTX = ctx;
 
+    // API pointers are already usable here, so pick the plugin type that the
+    // host understands: Other on 7.1+, Search on older builds.
+    std::string ver = mn::Api::GetVersion();
+    bool other = VersionAtLeast71(ver);
+    LogA("_MN_Info host='%s' type=%s", ver.c_str(), other ? "Other" : "Search");
+
     return {
         .sdk_version = MN_SDK_VERSION,
         .name        = "Auto Theme",
@@ -1223,7 +1270,7 @@ __MN_PLUGIN_IN__ mn::_PLUGIN_INFO _MN_Info(void* fn, void* ctx) {
         .author      = "guyuexuan",
         .email       = "",
         .homepage    = "",
-        .type        = mn::code::type::Search,
+        .type        = other ? mn::code::type::Other : mn::code::type::Search,
         .fnNotify    = _MN_Notify,
     };
 }

@@ -49,6 +49,29 @@ void ApplyTheme(const char* utf8ThemeFile);  // NULL = 默认主题
 
 ImGui 有线程亲和性，直接从监控线程调用会崩溃。插件在 `_MN_Notify(Load)`（主线程回调）中创建 message-only 窗口，监控线程把主题名 `PostMessage` 过去，在窗口过程里调用内部函数。
 
+## 7.1 官方 LoadTheme API（替代逆向入口）
+
+7.1.0.261127 的 SDK 新增 `Api::LoadTheme`（opcode 310，非线程安全）：
+
+```cpp
+void LoadTheme(const char* themeFileName = Null); // u8 文件名（含后缀），Null = 默认
+```
+
+REA 检查新版本解包镜像：`.\theme\{}` 字符串仍只有一处引用，位于 RVA `0x181BC0`（旧版 `0x1819D0`），函数大小同为 `0x57B`，字节码 79% 一致（差异均为地址重定位）。说明内部主题函数仍在，官方 API 就是它的封装。
+
+7.1 还把插件类型拆成 `Search=100` / `Other=9999`，初始化事件也拆成
+`Search_Init=5000` / `InitType_Other=5999`。插件在 `_MN_Info` 里先用 API
+取宿主版本，动态选择类型：7.1+ 报 Other（无需假搜索注册），旧版报 Search。
+两个初始化事件都处理，因此一份 DLL 兼容新旧宿主。预览时 7.1+ 还会调用
+`OpenWindow(OWCODE::Set)` 打开软件设置窗口，解决“启动隐藏窗口时预览看不见”的问题。
+
+插件现在按版本分流：
+
+- `>= 7.1`：主线程调用官方 `mn::Api::LoadTheme()`，不再依赖逆向 RVA；
+- `< 7.1`：继续使用版本 → RVA 表 + 自动定位（SEH 保护）。
+
+两种路径都会写回 `cfg.json` 的 `theme`，并补上 DWM 边框颜色更新。
+
 ## 边框颜色（DWM）
 
 主题 JSON 里有 `win_border` 字段。软件自己的设置界面切换主题时会调用

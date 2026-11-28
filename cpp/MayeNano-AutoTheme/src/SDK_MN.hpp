@@ -1,4 +1,8 @@
 /**
+  * MayeNano minimum version:   7.1.x.x
+  * Last modified time:         2026-11-27 16:45
+  * 
+  * 
   * [字符编码]
   * 所有可见字符串编码必须为 UTF-8
   * 
@@ -14,6 +18,7 @@
   * 
   * 
 **/
+
 #ifndef __SDK_MN_HPP__
 #define __SDK_MN_HPP__
 
@@ -53,7 +58,8 @@ namespace mn {
         // 插件类型
         namespace type {
             enum : unsigned int {
-                Search = 100,// 插件类型-搜索
+                Search  = 100,          // 插件类型-搜索
+                Other   = 9999,         // 插件类型-其他
             };
         }
 
@@ -93,11 +99,18 @@ namespace mn {
                 Open_Option = 3000,
 
 
-                // 插件事件-搜索-初始化，插件类型为 mn::code::type::Search 时，触发此事件，并要求设置callback触发条件信息
+                // 插件事件-插件类型-初始化-搜索，插件类型为 mn::code::type::Search 时，触发此事件，并要求设置callback触发条件信息
                 //         param1: 指向 _SEARCH_INFO 的指针
                 //         param2: Null
                 //         return: 应返回 True
-                Search_Init = 5000,
+                Search_Init         = 5000,
+                InitType_Search     = 5000,
+
+                // 插件事件-插件类型-初始化-其他，插件类型为 mn::code::type::Other 时，触发此事件
+                //         param1: Null
+                //         param2: Null
+                //         return: 应返回 True
+                InitType_Other = 5999,
 
 
             };
@@ -112,6 +125,7 @@ namespace mn {
                 NewKey  = 102,          // 设置新的搜索关键词    [ val: param_0 (u8) ]
                 Cmd     = 103,          // 执行 cmd 命令         [ val: param_0 (u8) ]
                 Run     = 104,          // 执行 运行 命令        [ val: param_0 (u8) ]
+                Fn      = 105,          // 执行自定义函数        [ val: param_0, fn: param_1 (PFN_SEARCH_ITEMACTION_FN) ]
             };
         }
 
@@ -120,8 +134,8 @@ namespace mn {
 
 
 
-    using _MN_RESULT   = long long;
-    using PFN_API_FN  = void* (*)(void* ctx, unsigned int op, void* p1, void* p2, void* p3, void* p4, void* p5);
+    using _MN_RESULT = long long;
+    using PFN_API_FN = void* (*)(void* ctx, unsigned int op, void* p1, void* p2, void* p3, void* p4, void* p5);
     
 
 
@@ -188,6 +202,13 @@ namespace mn {
     // @param key_low  关键词[不包含前缀](小写)
     using PFN_SEARCH_CALLBACK = SEARCH_RESULT_LIST(*)(const char* prefix, const char* key, const char* key_low);
 
+    // 搜索ItemAction(执行自定义函数)
+    // @param val           来自 SEARCH_RESULT_ITEM.param_0 的值
+    // @param searchText    搜索框的内容
+    // @return 返回 Null 执行默认后续动作，返回 True 阻止关闭主窗口与搜索页面
+    // int _MN_Search_ItemAction_FN(const char* val, const char* searchText);
+    using PFN_SEARCH_ITEMACTION_FN = int(*)(const char* val, const char* searchText);
+
     // 搜索缓存释放(释放上次搜索的缓存)
     // void _MN_Search_Free_Callback();
     using PFN_SEARCH_FREE_CALLBACK = void (*)();
@@ -222,14 +243,40 @@ namespace mn {
 
     namespace Api {
 
+        // API 操作码
         enum class APIOPCODE : unsigned int {
-            GetVersion = 50,        // 获取 Maye Nano 版本号
-            GetSelfId = 100,       // 获取自身ID
-            GetSelfDir = 110,       // 获取自身目录
+            GetVersion  = 50,       // 获取 Maye Nano 版本号
+            GetSelfId   = 100,      // 获取自身ID
+            GetSelfDir  = 110,      // 获取自身目录
 
-            SetCfgItem = 210,       // 写配置项
-            GetCfgItem = 211,       // 读配置项
+            SetCfgItem  = 210,      // 写配置项
+            GetCfgItem  = 211,      // 读配置项
+
+            OpenWindow  = 300,      // 打开指定窗口(mn::Api::OWCODE::***) - [非线程安全]
+            LoadTheme   = 310,      // 加载主题文件(仅加载,不保存到配置文件) - [非线程安全]
+            LoadLang    = 311,      // 加载语言文件(仅加载,不保存到配置文件) - [非线程安全]
         };
+        
+        // 窗口
+        enum class OWCODE : unsigned int {
+            BuildInfo   = 100,      // 构建信息 [param: Null]
+            Update      = 101,      // 更新窗口 [param: Null]
+
+            Set         = 102,      // 设置         [param: Null]
+            EditCate    = 103,      // 编辑-分类    [unsigned int param: 分类ID] 
+            EditItem    = 104,      // 编辑-项目    [unsigned int param: 项目ID]
+
+
+            BuiltIn     = 105,      // 内置项目      [param: Null]
+
+            HotKeyView  = 106,      // 热键预览      [param: Null]
+            ThemeEdit   = 107,      // 主题编辑      [param: Null]
+
+            Taskmgr     = 108,      // 任务管理器    [param: Null]
+            Taskschd    = 109,      // 任务计划      [param: Null]
+
+        };
+        
 
         void* Call(unsigned int op, void* param_1 = Null, void* param_2 = Null, void* param_3 = Null, void* param_4 = Null, void* param_5 = Null) {
             if (!_MN_API_FN || !_MN_CTX) return Null;
@@ -285,6 +332,32 @@ namespace mn {
             buf.resize((std::min)((size_t)ws, buf.size()));
             return buf;
         }
+
+
+
+        // 打开指定窗口 - [非线程安全]
+        // @param ow    要打开的窗口
+        // @param param 传递的参数，详见 mn::Api::OWCODE::***
+        // @return bool
+        bool OpenWindow(OWCODE ow, void* param = Null) {
+            return (bool)Call(APIOPCODE::OpenWindow, (void*)ow, param);
+        }
+
+        // 加载指定主题文件(仅加载,不保存到配置文件) - [非线程安全]
+        // @param themeFileName [u8]要载入的主题文件名(含后缀)
+        // @return void
+        void LoadTheme(const char* themeFileName = Null) {
+            Call(APIOPCODE::LoadTheme, (void*)themeFileName);
+        }
+
+        // 加载指定语言文件(仅加载,不保存到配置文件) - [非线程安全]
+        // @param langFileName [u8]要载入的语言文件名(含后缀)
+        // @return void
+        void LoadLang(const char* langFileName = Null) {
+            Call(APIOPCODE::LoadLang, (void*)langFileName);
+        }
+
+
 
     }
 
