@@ -95,3 +95,63 @@ it("passes request method and body through", async () => {
 	expect(response.status).toBe(200);
 	expect(seen[0].method).toBe("POST");
 });
+
+it("searches Docker Hub repositories with an authenticated API call", async () => {
+	const seen = stubUpstream((url) =>
+		url.pathname === "/v2/users/login/"
+			? Response.json({ token: "test-hub-token" })
+			: Response.json({
+					count: 2,
+					results: [
+						{
+							repo_name: "library/nginx",
+							short_description: "Official Nginx",
+							star_count: 10,
+							pull_count: 99,
+							is_official: true,
+						},
+						{ repo_name: "acme/nginx-proxy" },
+					],
+				}),
+	);
+	const response = await SELF.fetch(
+		"https://example.com/search?q=nginx%20proxy&page=1&page_size=20",
+	);
+	expect(response.status).toBe(200);
+	const data = (await response.json()) as { count: number; results: { name: string }[] };
+	expect(data.count).toBe(2);
+	expect(data.results.map((item) => item.name)).toEqual(["library/nginx", "acme/nginx-proxy"]);
+	const searchUrl = seen.find((url) => url.pathname === "/v2/search/repositories/");
+	expect(searchUrl?.hostname).toBe("hub.docker.com");
+	expect(searchUrl?.searchParams.get("query")).toBe("nginx proxy");
+	expect(searchUrl?.searchParams.get("page_size")).toBe("20");
+});
+
+it("lists tags with a name filter for the requested repo", async () => {
+	const seen = stubUpstream((url) =>
+		url.pathname === "/v2/users/login/"
+			? Response.json({ token: "test-hub-token" })
+			: Response.json({
+					count: 1,
+					results: [{ name: "1.27-alpine", digest: "sha256:abc", last_updated: "2026-01-01" }],
+				}),
+	);
+	const response = await SELF.fetch(
+		"https://example.com/tags?repo=library/nginx&name=1.27&page=2&page_size=20",
+	);
+	expect(response.status).toBe(200);
+	const data = (await response.json()) as {
+		count: number;
+		results: { name: string; digest: string }[];
+	};
+	expect(data.results[0].name).toBe("1.27-alpine");
+	const tagsUrl = seen.find((url) => url.pathname.endsWith("/tags/"));
+	expect(tagsUrl?.pathname).toBe("/v2/namespaces/library/repositories/nginx/tags/");
+	expect(tagsUrl?.searchParams.get("name")).toBe("1.27");
+	expect(tagsUrl?.searchParams.get("page")).toBe("2");
+});
+
+it("rejects invalid tag repository names", async () => {
+	const response = await SELF.fetch("https://example.com/tags?repo=bad/name/extra");
+	expect(response.status).toBe(400);
+});
