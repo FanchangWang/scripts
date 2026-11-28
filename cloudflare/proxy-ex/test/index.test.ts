@@ -47,13 +47,61 @@ it("redirects the legacy q parameter", async () => {
 	expect(response.headers.get("Location")).toBe("https://example.com/https://example.org/a");
 });
 
-it("allows only GET and HEAD", async () => {
+it("requires a local Referer for mutating methods", async () => {
 	const response = await SELF.fetch("https://example.com/https://example.org/a", {
 		method: "POST",
 		body: "x",
 	});
-	expect(response.status).toBe(405);
-	expect(response.headers.get("Allow")).toBe("GET, HEAD");
+	expect(response.status).toBe(403);
+});
+
+it("forwards POST bodies from proxied pages", async () => {
+	let seenMethod = "";
+	let seenBody = "";
+	vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+		seenMethod = init?.method ?? "GET";
+		if (init?.body) {
+			seenBody = await new Response(init.body as BodyInit).text();
+		}
+		return new Response('{"ok":true}', {
+			headers: { "Content-Type": "application/json" },
+		});
+	});
+	const response = await SELF.fetch("https://example.com/https://example.org/api", {
+		method: "POST",
+		headers: { Referer: "https://example.com/https://example.org/page" },
+		body: '{"a":1}',
+	});
+	expect(response.status).toBe(200);
+	expect(seenMethod).toBe("POST");
+	expect(seenBody).toBe('{"a":1}');
+});
+
+it("allows other mutating methods with a local Referer", async () => {
+	const seen: string[] = [];
+	vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+		seen.push(init?.method ?? "GET");
+		return new Response("ok");
+	});
+	const response = await SELF.fetch("https://example.com/https://example.org/api", {
+		method: "PUT",
+		headers: { Referer: "https://example.com/https://example.org/page" },
+		body: "data",
+	});
+	expect(response.status).toBe(200);
+	expect(seen).toEqual(["PUT"]);
+});
+
+it("answers OPTIONS preflight locally", async () => {
+	const seen = stubUpstream(() => new Response("unexpected"));
+	const response = await SELF.fetch("https://example.com/https://example.org/api", {
+		method: "OPTIONS",
+		headers: { "Access-Control-Request-Headers": "authorization,content-type" },
+	});
+	expect(response.status).toBe(204);
+	expect(response.headers.get("Access-Control-Allow-Methods")).toContain("POST");
+	expect(response.headers.get("Access-Control-Allow-Headers")).toBe("authorization,content-type");
+	expect(seen).toHaveLength(0);
 });
 
 it("blocks private addresses, userinfo, non-http schemes and odd ports", async () => {

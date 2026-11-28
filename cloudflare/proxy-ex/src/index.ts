@@ -46,14 +46,40 @@ function passthroughHeaders(upstream: Response): Headers {
 	return headers;
 }
 
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function hasProxyReferer(request: Request, incoming: URL): boolean {
+	const referer = request.headers.get("Referer");
+	if (!referer) return false;
+	try {
+		const ref = new URL(referer);
+		return ref.host === incoming.host && ref.protocol === incoming.protocol;
+	} catch {
+		return false;
+	}
+}
+
+function preflightResponse(request: Request): Response {
+	return new Response(null, {
+		status: 204,
+		headers: {
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+			"Access-Control-Allow-Headers": request.headers.get("Access-Control-Request-Headers") ?? "*",
+			"Access-Control-Max-Age": "86400",
+		},
+	});
+}
+
 export default {
 	async fetch(request) {
 		const method = request.method;
-		if (method !== "GET" && method !== "HEAD") {
-			return textResponse("Method Not Allowed", 405, { Allow: "GET, HEAD" });
-		}
-
 		const incoming = new URL(request.url);
+
+		if (method === "OPTIONS") return preflightResponse(request);
+		if (MUTATING_METHODS.has(method) && !hasProxyReferer(request, incoming)) {
+			return textResponse("Referer required", 403);
+		}
 
 		if (incoming.pathname === "/" && incoming.searchParams.has("q")) {
 			const q = incoming.searchParams.get("q") ?? "";
@@ -91,6 +117,8 @@ export default {
 			upstream = await fetch(target.url, {
 				method,
 				headers: outboundHeaders(request),
+				body:
+					method === "GET" || method === "HEAD" || method === "OPTIONS" ? undefined : request.body,
 				redirect: "follow",
 			});
 		} catch (error) {
