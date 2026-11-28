@@ -1,0 +1,35 @@
+{
+	"name": "proxy-ex",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "cf dev",
+		"build": "cf build",
+		"deploy": "cf deploy",
+		"check": "cf workers types && vp check",
+		"format": "vp fmt",
+		"test": "vp test",
+		"typecheck": "cf workers types && vp check --no-fmt --no-lint"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "^2.0.0-rc.0",
+		"@cloudflare/vitest-plugin": "^1.8.3",
+		"cf": "^1.0.0-rc.6",
+		"typescript": "^7.0.2",
+		"vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
+		"vite-plus": "1.4.0",
+		"vitest": "5.0.5"
+	},
+	"overrides": {
+		"vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
+		"vitest": "5.0.5"
+	},
+	"engines": {
+		"node": "^22.23.0 || ^24.22.0 || ^26.12.0"
+	},
+	"allowScripts": {
+		"esbuild@0.28.2": true,
+		"workerd@1.20261123.1": true,
+		"workerd@1.20261127.1": true
+	}
+}

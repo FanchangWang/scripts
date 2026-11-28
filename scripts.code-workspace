@@ -120,6 +120,22 @@
 			"path": "api/wx_pusher"
 		},
 		{
+			"name": "cloudflare docker Docker 镜像代理",
+			"path": "cloudflare/docker"
+		},
+		{
+			"name": "cloudflare ghview GitHub Raw/Pages 查看代理",
+			"path": "cloudflare/ghview"
+		},
+		{
+			"name": "cloudflare github GitHub 下载加速代理",
+			"path": "cloudflare/github"
+		},
+		{
+			"name": "cloudflare proxy-ex 通用网页代理",
+			"path": "cloudflare/proxy-ex"
+		},
+		{
 			"name": "skill ui-android-compose Compose UI 设计规范",
 			"path": "skill/ui-android-compose"
 		},

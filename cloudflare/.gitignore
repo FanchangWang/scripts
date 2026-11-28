@@ -1,0 +1,4 @@
+# cf CLI 本地项目状态 / 构建产物
+.cloudflare/
+.dist/
+node_modules/

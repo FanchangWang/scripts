@@ -8,6 +8,7 @@
 |---|---|---|---|
 | [android](android/) | Android（Kotlin / Gradle）工程 | 1 | [README](android/README.md) |
 | [api](api/) | 第三方接口调试集合（httpYac `.http` + 少量脚本） | 7 | [README](api/README.md) |
+| [cloudflare](cloudflare/) | Cloudflare Workers / Pages 的 JS/TS 项目（cf CLI 管理） | 4 | [README](cloudflare/README.md) |
 | [cpp](cpp/) | C++ / Win32 原生项目 | 1 | [README](cpp/README.md) |
 | [dotnet](dotnet/) | .NET / C# 工程（LTS） | 1 | [README](dotnet/README.md) |
 | [nodejs](nodejs/) | Node.js 原生 ESM 项目 | 1 | [README](nodejs/README.md) |
@@ -35,6 +36,15 @@
 | [qinglong](api/qinglong/) | httpYac `.http` | 青龙面板认证、环境变量接口调试样例 | [README](api/qinglong/README.md) |
 | [stock_xueqiu](api/stock_xueqiu/) | httpYac `.http` | 雪球行情 / K 线 / 分钟线接口样例 | [README](api/stock_xueqiu/README.md) |
 | [wx_pusher](api/wx_pusher/) | httpYac `.http` | wxPusher 微信推送消息接口样例 | [README](api/wx_pusher/README.md) |
+
+### [cloudflare](cloudflare/)
+
+| 目录 | 技术栈 | 一句话用途 | 文档 |
+|---|---|---|---|
+| [docker](cloudflare/docker/) | Worker / ES Module | Docker Hub 等多注册表镜像代理（PAT + 原样转发） | [README](cloudflare/docker/README.md) |
+| [ghview](cloudflare/ghview/) | Worker / ES Module | GitHub Raw / Pages 查看代理 + 链接生成器 | [README](cloudflare/ghview/README.md) |
+| [github](cloudflare/github/) | Worker / ES Module | GitHub 生态代理 + `/deep/` 深度转换 | [README](cloudflare/github/README.md) |
+| [proxy-ex](cloudflare/proxy-ex/) | Worker / ES Module | 通用 URL 代理（原样转发） | [README](cloudflare/proxy-ex/README.md) |
 
 ### [cpp](cpp/)
 
