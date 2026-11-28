@@ -43,6 +43,13 @@ function passthroughHeaders(upstream: Response): Headers {
 	headers.delete("Content-Security-Policy");
 	headers.delete("Content-Security-Policy-Report-Only");
 	headers.delete("Set-Cookie");
+	// Never let the edge cache a proxy response: stale/old-version responses
+	// would otherwise survive deployments for hours.
+	headers.delete("Cache-Control");
+	headers.delete("Age");
+	headers.delete("Expires");
+	headers.delete("ETag");
+	headers.set("Cache-Control", "no-store");
 	return headers;
 }
 
@@ -106,10 +113,25 @@ export default {
 		} catch (error) {
 			const canonical = canonicalFromReferer(request, incoming);
 			if (canonical) {
-				return Response.redirect(new URL(canonical, incoming.href).href, 302);
+				const dest = request.headers.get("Sec-Fetch-Dest") ?? "";
+				const accept = request.headers.get("Accept") ?? "";
+				const isDocument =
+					dest === "document" || (method === "GET" && accept.includes("text/html"));
+				if (isDocument) {
+					return Response.redirect(new URL(canonical, incoming.href).href, 302);
+				}
+				// Subresources and API calls must keep their method/body and must not
+				// be redirected; serve them in place using the recovered upstream URL.
+				try {
+					target = resolveProxyTarget(canonical, "");
+				} catch {
+					const message = error instanceof Error ? error.message : "Invalid URL";
+					return textResponse(message, message === "Target not allowed" ? 403 : 400);
+				}
+			} else {
+				const message = error instanceof Error ? error.message : "Invalid URL";
+				return textResponse(message, message === "Target not allowed" ? 403 : 400);
 			}
-			const message = error instanceof Error ? error.message : "Invalid URL";
-			return textResponse(message, message === "Target not allowed" ? 403 : 400);
 		}
 
 		let upstream: Response;

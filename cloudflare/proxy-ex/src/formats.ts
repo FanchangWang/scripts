@@ -3,6 +3,51 @@ export interface ProxyTarget {
 	kind: "full" | "host";
 }
 
+/** Static file names can contain dots but are never hostnames. */
+const FILE_EXTENSIONS = new Set([
+	"js",
+	"css",
+	"json",
+	"map",
+	"xml",
+	"html",
+	"htm",
+	"txt",
+	"md",
+	"png",
+	"jpg",
+	"jpeg",
+	"gif",
+	"webp",
+	"avif",
+	"svg",
+	"ico",
+	"bmp",
+	"woff",
+	"woff2",
+	"ttf",
+	"otf",
+	"eot",
+	"pdf",
+	"zip",
+	"gz",
+	"tar",
+	"mp3",
+	"mp4",
+	"webm",
+	"wasm",
+	"php",
+	"asp",
+	"aspx",
+	"jsp",
+]);
+
+function looksLikeHost(segment: string): boolean {
+	if (!segment.includes(".") || segment.includes("/")) return false;
+	const last = segment.split(".").pop() ?? "";
+	return last.length >= 2 && !FILE_EXTENSIONS.has(last.toLowerCase());
+}
+
 function isIpLiteral(host: string): boolean {
 	if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
 		const parts = host.split(".").map(Number);
@@ -45,7 +90,7 @@ export function resolveProxyTarget(pathname: string, search: string): ProxyTarge
 	if (pathname.startsWith("/https://") || pathname.startsWith("/http://")) {
 		raw = pathname.slice(1);
 		kind = "full";
-	} else if (first.includes(".")) {
+	} else if (looksLikeHost(first)) {
 		raw = `https://${rest}`;
 		kind = "host";
 	} else {
@@ -84,7 +129,7 @@ function upstreamRootFromReferer(refPath: string): string | null {
 		}
 	}
 	const first = refPath.split("/")[1] ?? "";
-	return first.includes(".") ? `/${first}/` : null;
+	return looksLikeHost(first) ? `/${first}/` : null;
 }
 
 /**
