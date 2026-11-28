@@ -1,6 +1,6 @@
 # ghview
 
-GitHub Raw / GitHub Pages 的只读查看代理，对应线上 Worker `ghview`。已按 Cloudflare 官方 `cf` 工作流完全重写为 TypeScript ES Module，并于 2026-11-27 部署上线（Version ID `3a4073a6-0f55-407d-96a9-55b3f2b8a572`）。
+GitHub Raw / GitHub Pages 的只读查看代理，对应线上 Worker `ghview`。已按 Cloudflare 官方 `cf` 工作流完全重写为 TypeScript ES Module，并于 2026-11-27 部署上线（最新 Version ID `0ec2f737-ebfd-4e84-b871-86f117dce53b`）。
 
 ## 线上信息
 
@@ -50,7 +50,7 @@ npm run build      # cf build，仅构建
 
 ## 部署
 
-已通过 `cf deploy` 部署：同时发布到 `https://ghview.2651919937.workers.dev` 与 `ghview.allproxy.dpdns.org`，当前 Version ID `151e3112-8e78-4f94-9f92-6ec3f79bbb83`。
+已通过 `cf deploy` 部署：同时发布到 `https://ghview.2651919937.workers.dev` 与 `ghview.allproxy.dpdns.org`，当前 Version ID `0ec2f737-ebfd-4e84-b871-86f117dce53b`。
 
 线上验证：
 

@@ -50,6 +50,6 @@ npm run build  # cf build
 
 ## 部署
 
-已通过 `cf deploy` 部署到 `https://github.2651919937.workers.dev` 与 `github.allproxy.dpdns.org`，当前 Version ID `6c936bb9-45ea-480f-a4f8-774a1ba1f887`。
+已通过 `cf deploy` 部署到 `https://github.2651919937.workers.dev` 与 `github.allproxy.dpdns.org`，当前 Version ID `15180a71-b333-4d58-888a-628b13b1284e`。
 
 线上验证：根路径 200；Raw 简写 200；非 GitHub 域名返回 403；深度模式下 `install.ps1` 中 14 处 GitHub 链接已改写到代理域名。

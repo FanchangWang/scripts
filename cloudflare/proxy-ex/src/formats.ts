@@ -69,10 +69,30 @@ export function toProxyPath(url: URL): string {
 }
 
 /**
- * Root-relative subresources lose the proxy prefix. Recover the upstream base
- * from the document URL carried in Referer, without cookies or URL rewriting.
+ * Recover the upstream origin root from a proxied document URL. Only the
+ * origin is used: paths like `/static/a.js` are root-relative on the upstream,
+ * not relative to the current document directory.
  */
-export function resolveFromReferer(request: Request, incoming: URL): ProxyTarget | null {
+function upstreamRootFromReferer(refPath: string): string | null {
+	if (refPath.startsWith("/https://") || refPath.startsWith("/http://")) {
+		try {
+			const url = new URL(refPath.slice(1));
+			if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+			return `/${url.protocol}//${url.host}/`;
+		} catch {
+			return null;
+		}
+	}
+	const first = refPath.split("/")[1] ?? "";
+	return first.includes(".") ? `/${first}/` : null;
+}
+
+/**
+ * Build the canonical proxy path for a bare request that lost its upstream
+ * prefix. The caller should redirect to it before serving content, so the
+ * document URL itself keeps the upstream origin for later Referer lookups.
+ */
+export function canonicalFromReferer(request: Request, incoming: URL): string | null {
 	const referer = request.headers.get("Referer");
 	if (!referer) return null;
 
@@ -84,23 +104,7 @@ export function resolveFromReferer(request: Request, incoming: URL): ProxyTarget
 	}
 	if (ref.origin !== incoming.origin) return null;
 
-	const slash = ref.pathname.lastIndexOf("/");
-	const basePath = ref.pathname.slice(0, slash + 1);
-	const first = basePath.replace(/^\//, "").split("/")[0] ?? "";
-	if (
-		!basePath.startsWith("/https://") &&
-		!basePath.startsWith("/http://") &&
-		!first.includes(".")
-	) {
-		return null;
-	}
-
-	try {
-		return resolveProxyTarget(
-			`${basePath}${incoming.pathname.replace(/^\//, "")}${incoming.search}`,
-			"",
-		);
-	} catch {
-		return null;
-	}
+	const root = upstreamRootFromReferer(ref.pathname);
+	if (!root) return null;
+	return `${root}${incoming.pathname.replace(/^\//, "")}${incoming.search}`;
 }

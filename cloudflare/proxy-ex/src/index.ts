@@ -1,4 +1,4 @@
-import { resolveFromReferer, resolveProxyTarget, toProxyPath } from "./formats.ts";
+import { canonicalFromReferer, resolveProxyTarget, toProxyPath } from "./formats.ts";
 import { PAGE_HTML } from "./page.ts";
 
 function textResponse(
@@ -78,13 +78,12 @@ export default {
 		try {
 			target = resolveProxyTarget(incoming.pathname, incoming.search);
 		} catch (error) {
-			const viaReferer = resolveFromReferer(request, incoming);
-			if (viaReferer) {
-				target = viaReferer;
-			} else {
-				const message = error instanceof Error ? error.message : "Invalid URL";
-				return textResponse(message, message === "Target not allowed" ? 403 : 400);
+			const canonical = canonicalFromReferer(request, incoming);
+			if (canonical) {
+				return Response.redirect(new URL(canonical, incoming.href).href, 302);
 			}
+			const message = error instanceof Error ? error.message : "Invalid URL";
+			return textResponse(message, message === "Target not allowed" ? 403 : 400);
 		}
 
 		let upstream: Response;

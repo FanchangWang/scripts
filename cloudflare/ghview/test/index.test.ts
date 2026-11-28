@@ -98,26 +98,38 @@ it("forces HTML MIME for raw HTML and marks upstream errors no-store", async () 
 	expect(response.headers.get("Cache-Control")).toBe("no-store");
 });
 
-it("rewrites root-relative subresources using the document Referer", async () => {
+it("redirects root-relative subresources to the canonical proxy URL", async () => {
 	const seen = stubUpstream(() => new Response("body"));
 	const response = await SELF.fetch("https://example.com/styles/index.css", {
 		headers: {
 			Referer: "https://example.com/gh/owner/repo/main/index.html",
 		},
+		redirect: "manual",
 	});
-	expect(response.status).toBe(200);
-	expect(seen[0].href).toBe("https://raw.githubusercontent.com/owner/repo/main/styles/index.css");
+	expect(response.status).toBe(302);
+	expect(response.headers.get("Location")).toBe(
+		"https://example.com/https://raw.githubusercontent.com/styles/index.css",
+	);
+	const followed = await SELF.fetch(response.headers.get("Location")!);
+	expect(followed.status).toBe(200);
+	expect(seen[0].href).toBe("https://raw.githubusercontent.com/styles/index.css");
 });
 
-it("resolves root-relative resources for Full URL documents too", async () => {
+it("redirects root-relative resources for Full URL documents too", async () => {
 	const seen = stubUpstream(() => new Response("body"));
 	const response = await SELF.fetch("https://example.com/assets/app.js", {
 		headers: {
 			Referer: "https://example.com/https://owner.github.io/repo/index.html",
 		},
+		redirect: "manual",
 	});
-	expect(response.status).toBe(200);
-	expect(seen[0].href).toBe("https://owner.github.io/repo/assets/app.js");
+	expect(response.status).toBe(302);
+	expect(response.headers.get("Location")).toBe(
+		"https://example.com/https://owner.github.io/assets/app.js",
+	);
+	const followed = await SELF.fetch(response.headers.get("Location")!);
+	expect(followed.status).toBe(200);
+	expect(seen[0].href).toBe("https://owner.github.io/assets/app.js");
 });
 
 it("fixes text/plain MIME for raw CSS and JavaScript", async () => {

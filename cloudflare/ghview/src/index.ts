@@ -166,38 +166,47 @@ function resolveTarget(pathname: string, search: string): Resolution {
 }
 
 /**
- * Root-relative subresources (`/styles/app.css`) lose the proxy prefix.
- * Browsers send the document URL in Referer, so reconstruct the upstream path
- * from it. This is stateless and also covers URLs built at runtime by scripts.
+ * Reconstruct the canonical proxy URL for bare paths using the document URL
+ * from Referer. Only the upstream origin root is used, so root-relative
+ * resources map to the upstream host root rather than the document directory.
+ * The caller redirects to this URL before serving content, keeping later
+ * Referer lookups intact.
  */
-function resolveFromReferer(request: Request, incoming: URL): Resolution {
-	const invalid: Resolution = {
-		ok: false,
-		status: 400,
-		message: "Unsupported path",
-	};
+function canonicalFromReferer(request: Request, incoming: URL): string | null {
 	const referer = request.headers.get("Referer");
-	if (!referer) return invalid;
+	if (!referer) return null;
 
 	let ref: URL;
 	try {
 		ref = new URL(referer);
 	} catch {
-		return invalid;
+		return null;
 	}
-	if (ref.origin !== incoming.origin) return invalid;
+	if (ref.origin !== incoming.origin) return null;
 
-	const slash = ref.pathname.lastIndexOf("/");
-	const basePath = ref.pathname.slice(0, slash + 1);
-	if (
-		!basePath.startsWith("/gh/") &&
-		!basePath.startsWith("/ghpages/") &&
-		!/^\/https?:\/\//.test(basePath)
-	) {
-		return invalid;
+	const path = ref.pathname;
+	let root: string | null = null;
+	if (path.startsWith("/https://") || path.startsWith("/http://")) {
+		try {
+			const upstream = new URL(path.slice(1));
+			if (upstream.protocol === "https:" || upstream.protocol === "http:") {
+				root = `/${upstream.protocol}//${upstream.host}/`;
+			}
+		} catch {
+			return null;
+		}
+	} else if (path.startsWith("/gh/")) {
+		const parts = path.slice(4).split("/").filter(Boolean);
+		if (parts.length >= 3) root = `/https://${RAW_HOST}/`;
+	} else if (path.startsWith("/ghpages/")) {
+		const parts = path.slice(9).split("/").filter(Boolean);
+		if (parts.length >= 2 && /^[A-Za-z0-9-]+$/.test(parts[0])) {
+			root = `/https://${parts[0]}.github.io/`;
+		}
 	}
+	if (!root) return null;
 
-	return resolveTarget(`${basePath}${incoming.pathname.replace(/^\//, "")}${incoming.search}`, "");
+	return `${root}${incoming.pathname.replace(/^\//, "")}${incoming.search}`;
 }
 
 export default {
@@ -218,8 +227,10 @@ export default {
 
 		let resolution = resolveTarget(incoming.pathname, incoming.search);
 		if (!resolution.ok) {
-			const viaReferer = resolveFromReferer(request, incoming);
-			if (viaReferer.ok) resolution = viaReferer;
+			const canonical = canonicalFromReferer(request, incoming);
+			if (canonical) {
+				return Response.redirect(new URL(canonical, incoming.href).href, 302);
+			}
 		}
 		if (!resolution.ok) {
 			return textResponse(resolution.message, resolution.status);

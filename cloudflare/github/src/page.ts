@@ -8,6 +8,7 @@ export const PAGE_HTML = `<!doctype html>
 :root{color-scheme:light dark;--bg:#f6f8fa;--panel:#fff;--text:#1f2328;--muted:#59636e;--line:#d1d9e0;--accent:#0969da;--accent-hover:#0550ae;--accent-text:#fff;--danger:#cf222e;--warn-bg:#fff8c5;--warn-line:#d4a72c}
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--panel:#161b22;--text:#e6edf3;--muted:#9198a1;--line:#30363d;--accent:#2f81f7;--accent-hover:#4493f8;--danger:#f85149;--warn-bg:#3b2f00;--warn-line:#9e6a03}}
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 main{max-width:820px;margin:0 auto;padding:44px 20px}
 h1{margin:0 0 8px;font-size:26px}

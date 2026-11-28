@@ -65,15 +65,33 @@ it("blocks private addresses, userinfo, non-http schemes and odd ports", async (
 	expect(seen).toHaveLength(0);
 });
 
-it("recovers root-relative subresources from Referer", async () => {
+it("redirects root-relative subresources to the canonical proxy URL", async () => {
 	const seen = stubUpstream(() => new Response("body"));
 	const response = await SELF.fetch("https://example.com/styles/index.css", {
 		headers: {
 			Referer: "https://example.com/https://example.org/docs/index.html",
 		},
+		redirect: "manual",
 	});
-	expect(response.status).toBe(200);
-	expect(seen[0].href).toBe("https://example.org/docs/styles/index.css");
+	expect(response.status).toBe(302);
+	const location = response.headers.get("Location");
+	expect(location).toBe("https://example.com/https://example.org/styles/index.css");
+
+	const followed = await SELF.fetch(location!);
+	expect(followed.status).toBe(200);
+	expect(seen[0].href).toBe("https://example.org/styles/index.css");
+});
+
+it("redirects bare document paths to the canonical proxy URL", async () => {
+	stubUpstream(() => new Response("html"));
+	const response = await SELF.fetch("https://example.com/video/16325/", {
+		headers: { Referer: "https://example.com/https://example.org/" },
+		redirect: "manual",
+	});
+	expect(response.status).toBe(302);
+	expect(response.headers.get("Location")).toBe(
+		"https://example.com/https://example.org/video/16325/",
+	);
 });
 
 it("passes through Content-Type and strips only CSP and Set-Cookie", async () => {

@@ -46,7 +46,7 @@ npm run build  # cf build
 
 ## 部署
 
-已通过 `cf deploy` 部署到 `https://docker.2651919937.workers.dev` 与 `docker.allproxy.dpdns.org`，当前 Version ID `49e73b30-5eec-4620-a667-d349f538f6d8`。临时 secrets 文件已删除。
+已通过 `cf deploy` 部署到 `https://docker.2651919937.workers.dev` 与 `docker.allproxy.dpdns.org`，当前 Version ID `c061ff40-7973-47e7-af88-53156a4a8e18`。临时 secrets 文件已删除。
 
 线上验证：搜索 `nginx` 返回 200（`count=296949`，`X-Cache: HIT`）；标签 `library/nginx` 过滤 `1.27` 返回 200；`library/alpine` manifest 仍返回 200。
 

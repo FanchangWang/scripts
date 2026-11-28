@@ -52,6 +52,6 @@ npm run build  # cf build
 
 ## 部署
 
-已通过 `cf deploy` 部署到 `https://proxy-ex.2651919937.workers.dev` 与 `proxy.allproxy.dpdns.org`，当前 Version ID `8627425b-ed6e-4211-903f-f13f09fb1307`。配置只保留 `proxy.allproxy.dpdns.org`。
+已通过 `cf deploy` 部署到 `https://proxy-ex.2651919937.workers.dev` 与 `proxy.allproxy.dpdns.org`，当前 Version ID `eb0e4c41-6470-4426-8019-ad03c14a6b3e`。配置只保留 `proxy.allproxy.dpdns.org`。
 
 线上验证：根路径 200；任意域名 `https://example.com/` 代理 200；私网地址 `https://127.0.0.1/a` 返回 403。
