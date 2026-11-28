@@ -14,6 +14,7 @@ skill/
 ├── publish.ps1           # PowerShell 7 发布脚本
 ├── publish.sh            # Git Bash / POSIX sh 发布脚本
 ├── AGENTS.md             # 在本目录工作时的 agent 约定
+├── create-android-compose/ # 新建 Android Compose 项目（仅创建）
 ├── ui-android-compose/   # Android Compose UI 设计
 ├── audit-android-compose/# Android Kotlin/Compose 项目代码审计
 └── ui-web-windows/       # Windows Web 应用 UI 设计（深浅色）
@@ -40,6 +41,7 @@ skill/
 
 | 目录 | 用途 |
 |---|---|
+| [create-android-compose](create-android-compose/) | 新建 Android Compose 项目，仅创建期使用；官方 Empty Activity 模板 + Kotlin DSL / version catalog / Navigation 3 / edge-to-edge，旧项目不适用 |
 | [ui-android-compose](ui-android-compose/) | Android Compose UI 设计，遵循 Google 最新 Material 3 / Compose 规范；两阶段流程（主题 token → UI）+ 自检清单，反 AI slop |
 | [audit-android-compose](audit-android-compose/) | Android Kotlin/Compose 项目全工程审计，证据驱动，分域清单 + 工作流 + 报告模板 |
 | [ui-web-windows](ui-web-windows/) | Windows 桌面 Web 应用 UI 设计，深浅色主题双轨、Fluent 风格、无障碍对比度、反 AI slop |

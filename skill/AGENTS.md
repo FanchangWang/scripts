@@ -8,4 +8,4 @@
 - `SKILL.md` 保持精简，大体量规则拆到 `references/`、`checklists/`、`workflows/`、`templates/`。部分 agent 对 skill 正文有 8 KB 上限，正文只保留入口、流程和索引。
 - skill 内容必须与具体机器的绝对路径、账号、密钥无关；这类信息用参数或环境变量表达。
 - 按仓库约定，新增子项目要同步加入根目录 `scripts.code-workspace` 的 `folders`，并在根目录 `README.md` 的分组索引与项目索引中登记。
-- 旧 skill（`ui-android`、`mobile-android-design`、`android-compose-code-audit`）的内容已归纳进新的三个 skill，发布目录里的旧副本是整理时**一次性人工删除**的；不要在发布脚本里恢复任何删除名单。
+- 旧 skill（`ui-android`、`mobile-android-design`、`android-compose-code-audit`）的内容已归纳进现有的 Android skill，发布目录里的旧副本是整理时**一次性人工删除**的；不要在发布脚本里恢复任何删除名单。

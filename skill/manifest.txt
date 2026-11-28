@@ -12,6 +12,7 @@
 #   作用小类  compose / kotlin / web / ...
 
 [skills]
+create-android-compose
 ui-android-compose
 audit-android-compose
 ui-web-windows

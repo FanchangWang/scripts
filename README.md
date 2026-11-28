@@ -15,7 +15,7 @@
 | [powershell](powershell/) | Windows 系统维护 PowerShell 脚本 | 3 | [README](powershell/README.md) |
 | [python](python/) | Python 工具 / 脚本 / Web 服务（uv 管理） | 11 | [README](python/README.md) |
 | [qinglong](qinglong/) | 青龙面板定时脚本 | 5 | [README](qinglong/README.md) |
-| [skill](skill/) | 给 AI agent 用的 skill 源码与发布脚本 | 3 | [README](skill/README.md) |
+| [skill](skill/) | 给 AI agent 用的 skill 源码与发布脚本 | 4 | [README](skill/README.md) |
 
 ## 项目索引
 
@@ -102,6 +102,7 @@
 
 | 目录 | 技术栈 | 一句话用途 | 文档 |
 |---|---|---|---|
+| [create-android-compose](skill/create-android-compose/) | Markdown skill / Kotlin / Gradle | 新建 Android Compose 项目骨架，仅创建期使用，遵循 Google 推荐技术栈，旧项目不适用 | [README](skill/create-android-compose/README.md) |
 | [ui-android-compose](skill/ui-android-compose/) | Markdown skill / Jetpack Compose | Android Compose UI 设计，遵循 Google 最新 Material 3 规范，两阶段流程 + 反 AI slop 自检 | [README](skill/ui-android-compose/README.md) |
 | [audit-android-compose](skill/audit-android-compose/) | Markdown skill / Kotlin | Android Kotlin/Compose 项目全工程审计，证据驱动，分域清单 + 工作流 + 报告模板 | [README](skill/audit-android-compose/README.md) |
 | [ui-web-windows](skill/ui-web-windows/) | Markdown skill / CSS | Windows Web 应用 UI 设计，深浅色双轨主题、Fluent 风格、对比度与无障碍自检 | [README](skill/ui-web-windows/README.md) |

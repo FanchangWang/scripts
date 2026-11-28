@@ -136,6 +136,10 @@
 			"path": "cloudflare/proxy-ex"
 		},
 		{
+			"name": "skill create-android-compose 新建 Compose 项目",
+			"path": "skill/create-android-compose"
+		},
+		{
 			"name": "skill ui-android-compose Compose UI 设计规范",
 			"path": "skill/ui-android-compose"
 		},
