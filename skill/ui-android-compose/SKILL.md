@@ -71,9 +71,9 @@ config/detekt/detekt.yml           # 静态检查配置
 
 颜色只走 `MaterialTheme.colorScheme.*`（`Color(0xFF...)` 仅允许在 `Color.kt`）；字体只走 `MaterialTheme.typography.*`（`.sp` 仅允许在 `Type.kt`）；圆角只走 `MaterialTheme.shapes.*`；间距只走 `MaterialTheme.spacing.*`（xs=4, sm=8, md=16, lg=24, xl=32, xxl=48）；触控目标 ≥48dp。`references/` 中迁移来的旧示例可能带硬编码数值，**仅表意、禁止照搬**，按本节换算或先扩充 `Spacing.kt`。
 
-## Modifier 与预览
+## Modifier、状态与预览
 
-固定顺序、spacedBy、RTL、预览矩阵见 `references/structure-and-modifiers.md`。每个 public Composable 要有 `@Preview`（Light/Dark + Phone/Foldable/Tablet/Desktop）。
+Modifier 顺序、状态/Kotlin 约束、预览矩阵见 `references/structure-and-modifiers.md`。每个 public Composable 加 `@Preview`（Light/Dark + Phone/Foldable/Tablet/Desktop）。
 
 ## 硬规则
 
@@ -94,7 +94,7 @@ config/detekt/detekt.yml           # 静态检查配置
 |---|---|
 | `references/anchors.md` | Step 1：8 套锚点，必须完整读，不要凭记忆引用 |
 | `references/ban-patterns.md` | Step 1 展示禁用项；Step 2/3 验证 |
-| `references/structure-and-modifiers.md` | Step 3：根布局、Modifier 顺序、预览矩阵 |
+| `references/structure-and-modifiers.md` | Step 3：根布局、Modifier、状态/Kotlin、预览 |
 | `references/component-anatomy.md` | Step 3：写任何 composable 之前 |
 | `references/motion.md` | Step 3：任何过渡 / 动画 |
 | `references/copy-voice.md` | Step 3：任何用户可见字符串 |

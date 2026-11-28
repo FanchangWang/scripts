@@ -14,6 +14,7 @@ references/component-anatomy.md       逐组件尺寸/状态规则
 references/motion.md                  M3 motion token、spring、reduced motion
 references/copy-voice.md              真实文案、sentence case、本地化
 references/icons-imagery.md           Material Symbols 单一家族、图片、TalkBack
+references/structure-and-modifiers.md 根布局、Modifier 顺序、状态/Kotlin 配套约束、预览
 references/verification.md            Token Audit / UI Audit（强制）
 references/edge-to-edge.md            Activity、insets、IME（Google 官方规范）
 references/navigation-adaptive.md     类型安全路由、返回栈、WindowSizeClass
