@@ -9,7 +9,7 @@ export const PAGE_HTML = `<!doctype html>
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--panel:#161b22;--text:#e6edf3;--muted:#9198a1;--line:#30363d;--accent:#2f81f7;--accent-hover:#4493f8;--danger:#f85149;--chip:#0d419d}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-main{max-width:860px;margin:0 auto;padding:44px 20px}
+main{max-width:960px;margin:0 auto;padding:44px 20px}
 h1{margin:0 0 8px;font-size:26px}
 h2{font-size:18px;margin-top:32px}
 .lead,.muted{color:var(--muted)}
@@ -29,8 +29,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .meta{margin:6px 0;color:var(--muted);font-size:13px}
 code,.url{display:block;padding:9px 10px;border-radius:6px;background:var(--bg);border:1px solid var(--line);word-break:break-all;font:13px ui-monospace,SFMono-Regular,Consolas,monospace}
 pre{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px;overflow:auto;font-size:13px}
-.tag-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line)}
-.tag-row code{flex:1;display:block;padding:6px 8px;font-size:12px}
+.tag-row{display:grid;gap:7px;padding:10px 0;border-bottom:1px solid var(--line)}
+.tag-line,.digest-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tag-line code,.digest-line code{flex:1;min-width:0;display:block;padding:6px 8px;font-size:12px;word-break:break-all}
+.digest-line{color:var(--muted);font-size:12px}
 .filter-row{display:flex;gap:10px;margin-bottom:10px}
 .filter-row input{flex:1}
 </style>
@@ -116,10 +118,19 @@ function renderTags(box,repo,filter,page,size){
    var line=el("div","tag-row");
    var name=repo+":"+tag.name;
    var cmd="docker pull "+origin+"/"+name;
-   line.appendChild(el("code",null,cmd));
+   var first=el("div","tag-line");
+   first.appendChild(el("code",null,cmd));
    var copyBtn=button("复制",null,function(){copy(cmd,copyBtn);});
-   line.appendChild(copyBtn);
-   if(tag.digest)line.appendChild(el("span","muted",tag.digest.slice(0,20)+"…"));
+   first.appendChild(copyBtn);
+   line.appendChild(first);
+   if(tag.digest){
+    var second=el("div","digest-line");
+    second.appendChild(el("span",null,"sha256"));
+    second.appendChild(el("code",null,tag.digest));
+    var digestBtn=button("复制 digest",null,function(){copy(tag.digest,digestBtn);});
+    second.appendChild(digestBtn);
+    line.appendChild(second);
+   }
    list.appendChild(line);
   });
   if(data.results.length===0)list.appendChild(el("p","muted","没有匹配的版本。"));
